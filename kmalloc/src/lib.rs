@@ -8,5 +8,5 @@
 extern crate std;
 
 pub mod buddy;
-mod freelist;
+// mod freelist;
 mod list;
