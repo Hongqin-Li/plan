@@ -18,9 +18,8 @@ use core::{
 };
 use core::{alloc::Layout, mem, ptr};
 
-use synctools::mcs::MCSLock;
-
 use crate::list::List;
+use mcs::{Mutex, Slot};
 
 /// Round down to the nearest multiple of n.
 #[inline]
@@ -322,29 +321,37 @@ impl MultiBuddySystem {
 
 /// A thread safe buddy system allocator.
 pub struct Allocator {
-    inner: MCSLock<MultiBuddySystem>,
+    inner: Mutex<MultiBuddySystem>,
 }
 
 impl Allocator {
     /// Create a allocator with empty memory.
     pub const fn new() -> Self {
         Self {
-            inner: MCSLock::new(MultiBuddySystem::new()),
+            inner: Mutex::new(MultiBuddySystem::new()),
         }
     }
 
     /// Add free memory [begin, end) to this allocator.
     pub unsafe fn add_zone(&mut self, page_size: usize, begin: usize, end: usize) {
-        self.inner.lock().add_zone(page_size, begin, end);
+        let mut slot = Slot::new();
+        {
+            self.inner.lock(&mut slot).add_zone(page_size, begin, end);
+        }
     }
 }
 
 unsafe impl GlobalAlloc for Allocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        self.inner.lock().alloc(layout)
+        let mut slot = Slot::new();
+        let p = { self.inner.lock(&mut slot).alloc(layout) };
+        p
     }
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-        self.inner.lock().dealloc(ptr, layout);
+        let mut slot = Slot::new();
+        {
+            self.inner.lock(&mut slot).dealloc(ptr, layout);
+        }
     }
 }
 
