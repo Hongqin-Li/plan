@@ -455,6 +455,13 @@
 <span id="452">452</span>
 <span id="453">453</span>
 <span id="454">454</span>
+<span id="455">455</span>
+<span id="456">456</span>
+<span id="457">457</span>
+<span id="458">458</span>
+<span id="459">459</span>
+<span id="460">460</span>
+<span id="461">461</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="doccomment">//! # Buddy system allocator</span>
 <span class="doccomment">//!</span>
@@ -476,9 +483,8 @@
 };
 <span class="kw">use</span> <span class="ident">core</span>::{<span class="ident">alloc</span>::<span class="ident">Layout</span>, <span class="ident">mem</span>, <span class="ident">ptr</span>};
 
-<span class="kw">use</span> <span class="ident">synctools</span>::<span class="ident">mcs</span>::<span class="ident">MCSLock</span>;
-
 <span class="kw">use</span> <span class="kw">crate</span>::<span class="ident">list</span>::<span class="ident">List</span>;
+<span class="kw">use</span> <span class="ident">mcs</span>::{<span class="ident">Mutex</span>, <span class="ident">Slot</span>};
 
 <span class="doccomment">/// Round down to the nearest multiple of n.</span>
 <span class="attribute">#[<span class="ident">inline</span>]</span>
@@ -780,29 +786,37 @@
 
 <span class="doccomment">/// A thread safe buddy system allocator.</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">Allocator</span> {
-    <span class="ident">inner</span>: <span class="ident">MCSLock</span><span class="op">&lt;</span><span class="ident">MultiBuddySystem</span><span class="op">&gt;</span>,
+    <span class="ident">inner</span>: <span class="ident">Mutex</span><span class="op">&lt;</span><span class="ident">MultiBuddySystem</span><span class="op">&gt;</span>,
 }
 
 <span class="kw">impl</span> <span class="ident">Allocator</span> {
     <span class="doccomment">/// Create a allocator with empty memory.</span>
     <span class="kw">pub</span> <span class="kw">const</span> <span class="kw">fn</span> <span class="ident">new</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
         <span class="self">Self</span> {
-            <span class="ident">inner</span>: <span class="ident">MCSLock</span>::<span class="ident">new</span>(<span class="ident">MultiBuddySystem</span>::<span class="ident">new</span>()),
+            <span class="ident">inner</span>: <span class="ident">Mutex</span>::<span class="ident">new</span>(<span class="ident">MultiBuddySystem</span>::<span class="ident">new</span>()),
         }
     }
 
     <span class="doccomment">/// Add free memory [begin, end) to this allocator.</span>
     <span class="kw">pub</span> <span class="kw">unsafe</span> <span class="kw">fn</span> <span class="ident">add_zone</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">page_size</span>: <span class="ident">usize</span>, <span class="ident">begin</span>: <span class="ident">usize</span>, <span class="ident">end</span>: <span class="ident">usize</span>) {
-        <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">add_zone</span>(<span class="ident">page_size</span>, <span class="ident">begin</span>, <span class="ident">end</span>);
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">slot</span> <span class="op">=</span> <span class="ident">Slot</span>::<span class="ident">new</span>();
+        {
+            <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">slot</span>).<span class="ident">add_zone</span>(<span class="ident">page_size</span>, <span class="ident">begin</span>, <span class="ident">end</span>);
+        }
     }
 }
 
 <span class="kw">unsafe</span> <span class="kw">impl</span> <span class="ident">GlobalAlloc</span> <span class="kw">for</span> <span class="ident">Allocator</span> {
     <span class="kw">unsafe</span> <span class="kw">fn</span> <span class="ident">alloc</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">layout</span>: <span class="ident">Layout</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw-2">*</span><span class="kw-2">mut</span> <span class="ident">u8</span> {
-        <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">alloc</span>(<span class="ident">layout</span>)
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">slot</span> <span class="op">=</span> <span class="ident">Slot</span>::<span class="ident">new</span>();
+        <span class="kw">let</span> <span class="ident">p</span> <span class="op">=</span> { <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">slot</span>).<span class="ident">alloc</span>(<span class="ident">layout</span>) };
+        <span class="ident">p</span>
     }
     <span class="kw">unsafe</span> <span class="kw">fn</span> <span class="ident">dealloc</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">ptr</span>: <span class="kw-2">*</span><span class="kw-2">mut</span> <span class="ident">u8</span>, <span class="ident">layout</span>: <span class="ident">Layout</span>) {
-        <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">dealloc</span>(<span class="ident">ptr</span>, <span class="ident">layout</span>);
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">slot</span> <span class="op">=</span> <span class="ident">Slot</span>::<span class="ident">new</span>();
+        {
+            <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">slot</span>).<span class="ident">dealloc</span>(<span class="ident">ptr</span>, <span class="ident">layout</span>);
+        }
     }
 }
 
