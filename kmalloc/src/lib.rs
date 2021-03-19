@@ -7,6 +7,7 @@
 #[macro_use]
 extern crate std;
 
-pub mod buddy;
-// mod freelist;
+mod buddy;
 mod list;
+
+pub use buddy::Allocator;
