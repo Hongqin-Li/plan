@@ -19,6 +19,7 @@ use core::{alloc::Layout, mem, ptr};
 
 use crate::list::List;
 use mcs::{Mutex, Slot};
+use typenum::{marker_traits::PowerOfTwo, Unsigned};
 
 /// Round down to the nearest multiple of n.
 #[inline]
@@ -46,6 +47,13 @@ fn father(i: usize) -> usize {
 fn buddy_idx(i: usize) -> usize {
     i ^ 1
 }
+#[inline]
+fn to_order(pgsize: usize, layout: &Layout) -> usize {
+    debug_assert!(pgsize.is_power_of_two());
+    debug_assert!(layout.align().is_power_of_two());
+    let npage = (max(layout.size().next_power_of_two(), layout.align()) + pgsize - 1) / pgsize;
+    npage.trailing_zeros() as usize
+}
 
 /// Buddy System Allocator Structure.
 ///
@@ -60,12 +68,9 @@ fn buddy_idx(i: usize) -> usize {
 /// +-------------+--------+-----------+-------------------+
 ///                                    ^
 ///                                    |      
-///                    page_begin is a multiple of page_size
+///                    page_begin is a multiple of P
 /// ```
-pub struct BuddySystem {
-    /// Should be power of 2.
-    page_size: usize,
-
+pub struct BuddySystem<P> {
     /// Should be less than 32.
     max_order: usize,
 
@@ -84,10 +89,10 @@ pub struct BuddySystem {
     freelist: [List; 32],
 
     /// Pointer to next buddy system, used by MultiBuddySystem.
-    next: *mut BuddySystem,
+    next: *mut BuddySystem<P>,
 }
 
-impl BuddySystem {
+impl<P: Unsigned + PowerOfTwo> BuddySystem<P> {
     #[inline]
     unsafe fn set_bit(&mut self, i: usize) {
         let p = self.bitmap_begin + i / 8;
@@ -115,45 +120,30 @@ impl BuddySystem {
     }
 
     #[inline]
-    fn to_order(&self, layout: &Layout) -> usize {
-        debug_assert!(self.page_size.is_power_of_two());
-        debug_assert!(layout.align().is_power_of_two());
-        let npage = (max(layout.size().next_power_of_two(), layout.align()) + self.page_size - 1)
-            / self.page_size;
-        npage.trailing_zeros() as usize
-    }
-
-    #[inline]
     fn bitmap_idx(&self, p: usize, order: usize) -> usize {
-        (1 << (self.max_order - order)) + (((p - self.page_begin) / self.page_size) >> order)
+        (1 << (self.max_order - order)) + (((p - self.page_begin) / P::to_usize()) >> order)
     }
 
     /// Construct a buddy system allocator at memory [begin, end) with specific page size.
     ///
     /// Notice that it guarantees safety only if the access to [begin, end) is safe
     /// and `self` is a static variable.
-    pub unsafe fn build(
-        page_size: usize,
-        mut begin: usize,
-        end: usize,
-    ) -> Result<&'static mut Self, ()> {
-        assert_eq!(page_size.is_power_of_two(), true);
-        assert!(page_size >= mem::size_of::<List>());
+    pub unsafe fn build(mut begin: usize, end: usize) -> Result<&'static mut Self, ()> {
+        assert!(P::to_usize() >= mem::size_of::<List>());
         let b = &mut (*(begin as *mut Self));
         begin += size_of::<Self>();
         if begin >= end {
             return Err(());
         }
         b.max_order = b.freelist.len();
-        b.page_size = page_size;
         b.bitmap_begin = begin;
         b.next = ptr::null_mut();
 
         for i in 0..b.freelist.len() {
             let n: usize = 1 << i;
             let bitmap_end = begin + round_up(2 * n, 8) / 8;
-            let page_begin = round_up(bitmap_end, page_size);
-            let page_end = page_begin + n * page_size;
+            let page_begin = round_up(bitmap_end, P::to_usize());
+            let page_end = page_begin + n * P::to_usize();
             if page_end <= end {
                 b.max_order = i;
                 b.npages = n;
@@ -176,7 +166,7 @@ impl BuddySystem {
 
     /// Allocate a range of memory specified by `layout`.
     pub unsafe fn alloc(&mut self, layout: Layout) -> *mut u8 {
-        let order = self.to_order(&layout);
+        let order = to_order(P::to_usize(), &layout);
         let mut d = order;
         let mut p = ptr::null_mut();
         while d <= self.max_order {
@@ -189,7 +179,7 @@ impl BuddySystem {
                     d -= 1;
                     List::push_front(
                         &mut self.freelist[d],
-                        (p as usize + (1 << d) * self.page_size) as *mut List,
+                        (p as usize + (1 << d) * P::to_usize()) as *mut List,
                     );
                     i = left(i);
                     self.set_bit(i);
@@ -210,14 +200,14 @@ impl BuddySystem {
         debug_assert_eq!(ptr.is_null(), false);
         debug_assert!(self.page_begin <= (ptr as usize) && (ptr as usize) < self.page_end);
 
-        let mut order = self.to_order(&layout);
+        let mut order = to_order(P::to_usize(), &layout);
         let mut i = self.bitmap_idx(ptr as usize, order);
         let mut p = ptr as usize;
         while i != 1 && self.get_bit(buddy_idx(i)) == false {
             let bp = if i < buddy_idx(i) {
-                p + (1 << order) * self.page_size
+                p + (1 << order) * P::to_usize()
             } else {
-                p - (1 << order) * self.page_size
+                p - (1 << order) * P::to_usize()
             };
             List::drop(bp as *mut List);
             self.unset_bit(i);
@@ -246,8 +236,7 @@ impl BuddySystem {
             let r = right(u);
 
             let npages = 1 << d;
-            let addr =
-                self.page_begin + npages * self.page_size * (u - (1 << (self.max_order - d)));
+            let addr = self.page_begin + npages * P::to_usize() * (u - (1 << (self.max_order - d)));
 
             // 1-nodes that don't have any 1-node child are allocated chunks.
             if tag == true && (d == 0 || (self.get_bit(l) == false && self.get_bit(r) == false)) {
@@ -297,11 +286,11 @@ impl BuddySystem {
 }
 
 /// Allocator that holds multiple buddy systems.
-pub struct MultiBuddySystem {
-    head: *mut BuddySystem,
+pub struct MultiBuddySystem<P> {
+    head: *mut BuddySystem<P>,
 }
 
-impl MultiBuddySystem {
+impl<P: Unsigned + PowerOfTwo + 'static> MultiBuddySystem<P> {
     /// Create an empty multi-buddy system allocator.
     pub const fn new() -> Self {
         Self {
@@ -317,11 +306,11 @@ impl MultiBuddySystem {
     /// memory left by previous buddy system and terminate when it fails to build.
     ///
     /// This may add O(logN) buddy systems, where N = end - begin.
-    pub unsafe fn add_zone(&mut self, page_size: usize, mut begin: usize, end: usize) {
+    pub unsafe fn add_zone(&mut self, mut begin: usize, end: usize) {
         #[cfg(any(test, debug_assertions))]
-        assert_eq!(self.overlap(begin, end, 0 as *mut BuddySystem), false);
+        assert_eq!(self.overlap(begin, end, 0 as *mut BuddySystem<P>), false);
 
-        while let Ok(p) = BuddySystem::build(page_size, begin, end) {
+        while let Ok(p) = BuddySystem::<P>::build(begin, end) {
             p.next = self.head;
             self.head = p;
             begin = p.page_end;
@@ -373,7 +362,7 @@ impl MultiBuddySystem {
     }
 
     #[cfg(any(test, debug_assertions))]
-    pub unsafe fn overlap(&self, begin: usize, end: usize, ignore: *mut BuddySystem) -> bool {
+    pub unsafe fn overlap(&self, begin: usize, end: usize, ignore: *mut BuddySystem<P>) -> bool {
         let mut b = self.head;
         while !b.is_null() {
             if b != ignore {
@@ -388,11 +377,11 @@ impl MultiBuddySystem {
 }
 
 /// A thread-safe allocator with multiple buddy systems.
-pub struct Allocator {
-    inner: Mutex<MultiBuddySystem>,
+pub struct Allocator<P> {
+    inner: Mutex<MultiBuddySystem<P>>,
 }
 
-impl Allocator {
+impl<P: Unsigned + PowerOfTwo + 'static> Allocator<P> {
     /// Create a allocator with empty memory.
     pub const fn new() -> Self {
         Self {
@@ -401,16 +390,16 @@ impl Allocator {
     }
 
     /// Add free memory [begin, end) to this allocator.
-    pub unsafe fn add_zone(&mut self, page_size: usize, begin: usize, end: usize) {
+    pub unsafe fn add_zone(&mut self, begin: usize, end: usize) {
         let mut slot = Slot::new();
         {
-            self.inner.lock(&mut slot).add_zone(page_size, begin, end);
+            self.inner.lock(&mut slot).add_zone(begin, end);
         }
         // self.inner.lock().add_zone(page_size, begin, end);
     }
 }
 
-unsafe impl GlobalAlloc for Allocator {
+unsafe impl<P: Unsigned + PowerOfTwo + 'static> GlobalAlloc for Allocator<P> {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         let mut slot = Slot::new();
         let p = { self.inner.lock(&mut slot).alloc(layout) };
@@ -426,10 +415,12 @@ unsafe impl GlobalAlloc for Allocator {
 
 #[cfg(test)]
 mod tests {
+    use typenum::U64;
+
     use super::*;
 
-    const NBUF: usize = 4 * 1024;
-    const PGSIZE: usize = 64; // Should be large enough to store the List structure.
+    const NBUF: usize = 10 * 4096;
+    type PGSIZE = U64; // Should be large enough to store the List structure.
 
     #[test]
     fn test_utils() {
@@ -446,19 +437,19 @@ mod tests {
 
     #[test]
     fn test_buddy() {
-        let buf: [u8; NBUF] = [0; NBUF];
+        let buf = [0u8; NBUF];
         let mem_begin = buf.as_ptr() as usize;
         let mem_end = buf.as_ptr() as usize + NBUF;
 
         unsafe {
-            let b = BuddySystem::build(PGSIZE, mem_begin, mem_end).unwrap();
+            let b: &mut BuddySystem<PGSIZE> = BuddySystem::build(mem_begin, mem_end).unwrap();
             assert!(mem_begin < b.page_end && b.page_end <= mem_end);
             b.check();
             let layouts = [
                 Layout::from_size_align(4, 2).unwrap(),
                 Layout::from_size_align(5, 4).unwrap(),
-                Layout::from_size_align(2 * PGSIZE, PGSIZE).unwrap(),
-                Layout::from_size_align(PGSIZE, PGSIZE).unwrap(),
+                Layout::from_size_align(2 * PGSIZE::to_usize(), PGSIZE::to_usize()).unwrap(),
+                Layout::from_size_align(PGSIZE::to_usize(), PGSIZE::to_usize()).unwrap(),
             ];
 
             let mut to_dealloc = vec![];
@@ -472,7 +463,7 @@ mod tests {
             }
 
             loop {
-                let ly = Layout::from_size_align(PGSIZE, PGSIZE).unwrap();
+                let ly = Layout::from_size_align(PGSIZE::to_usize(), PGSIZE::to_usize()).unwrap();
                 let ptr = b.alloc(ly.clone());
                 if ptr.is_null() {
                     break;
@@ -492,32 +483,32 @@ mod tests {
     #[test]
     #[should_panic]
     fn test_add_zone() {
-        let buf: [u8; NBUF] = [0; NBUF];
+        let buf = [0u8; NBUF];
         let mem_begin = buf.as_ptr() as usize;
         let mem_end = buf.as_ptr() as usize + NBUF;
-        let mut b = MultiBuddySystem::new();
+        let mut b: MultiBuddySystem<PGSIZE> = MultiBuddySystem::new();
 
         unsafe {
-            b.add_zone(PGSIZE, mem_begin, mem_end);
-            b.add_zone(PGSIZE, mem_begin, mem_end);
+            b.add_zone(mem_begin, mem_end);
+            b.add_zone(mem_begin, mem_end);
         }
     }
 
     #[test]
     fn test_multi_buddy() {
-        let buf: [u8; NBUF] = [0; NBUF];
+        let buf = [0u8; NBUF];
         let mem_begin = buf.as_ptr() as usize;
         let mem_end = buf.as_ptr() as usize + NBUF;
-        let mut b = MultiBuddySystem::new();
+        let mut b: MultiBuddySystem<PGSIZE> = MultiBuddySystem::new();
 
         unsafe {
-            b.add_zone(PGSIZE, mem_begin, mem_end);
+            b.add_zone(mem_begin, mem_end);
 
             let layouts = [
                 Layout::from_size_align(4, 2).unwrap(),
                 Layout::from_size_align(5, 4).unwrap(),
-                Layout::from_size_align(2 * PGSIZE, PGSIZE).unwrap(),
-                Layout::from_size_align(PGSIZE, PGSIZE).unwrap(),
+                Layout::from_size_align(2 * PGSIZE::to_usize(), PGSIZE::to_usize()).unwrap(),
+                Layout::from_size_align(PGSIZE::to_usize(), PGSIZE::to_usize()).unwrap(),
             ];
 
             let mut to_dealloc = vec![];
@@ -529,7 +520,7 @@ mod tests {
             }
 
             loop {
-                let ly = Layout::from_size_align(PGSIZE, PGSIZE).unwrap();
+                let ly = Layout::from_size_align(PGSIZE::to_usize(), PGSIZE::to_usize()).unwrap();
                 let ptr = b.alloc(ly.clone());
                 if ptr.is_null() {
                     break;
