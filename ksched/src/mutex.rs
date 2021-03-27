@@ -1,26 +1,18 @@
 use core::ops::{Deref, DerefMut};
 use core::{alloc::AllocError, fmt};
 use core::{
-    borrow::BorrowMut,
-    cell::{Cell, UnsafeCell},
+    cell::UnsafeCell,
     future::Future,
     pin::Pin,
-    sync::atomic::AtomicBool,
-    task::{Context, Poll, Waker},
+    task::{Context, Poll},
 };
-// use std::process;
-use core::sync::atomic::{AtomicUsize, Ordering};
-/// FIXME: Use falliable_collection.
-extern crate alloc;
-use alloc::{collections::VecDeque, sync::Arc};
-/// use core::time::{Duration, Instant};
-use core::usize;
-use spin::{Mutex as Spinlock};
+use spin::Mutex as Spinlock;
 
+use crate::slpque::SleepQueue;
 
-struct MutexInner {
+struct Inner {
     locked: bool,
-    waiter: WakerSet,
+    slpque: SleepQueue,
 }
 
 /// An async mutex.
@@ -46,7 +38,7 @@ struct MutexInner {
 /// ```
 pub struct Mutex<T: ?Sized> {
     /// Guard towards status and waiting queue.
-    inner: Spinlock<MutexInner>,
+    inner: Spinlock<Inner>,
 
     /// The value inside the mutex.
     data: UnsafeCell<T>,
@@ -67,7 +59,10 @@ impl<T> Mutex<T> {
     /// ```
     pub fn new(data: T) -> Mutex<T> {
         Mutex {
-            inner: Spinlock::new(MutexInner{locked: false, waiter: WakerSet::new()}),
+            inner: Spinlock::new(Inner {
+                locked: false,
+                slpque: SleepQueue::new(),
+            }),
             data: UnsafeCell::new(data),
         }
     }
@@ -118,7 +113,7 @@ impl<T: ?Sized> Mutex<T> {
             fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
                 let mut g = self.mutex.inner.lock();
                 let result = if g.locked {
-                    match g.waiter.insert(cx) {
+                    match g.slpque.sleep(cx.waker().clone()) {
                         Ok(_) => Poll::Pending,
                         Err(_) => Poll::Ready(Err(AllocError)),
                     }
@@ -131,6 +126,32 @@ impl<T: ?Sized> Mutex<T> {
         }
 
         Lock { mutex: self }.await
+    }
+
+    /// Attempts to acquire the mutex.
+    ///
+    /// If the mutex could not be acquired at this time, then [`None`] is returned. Otherwise, a
+    /// guard is returned that releases the mutex when dropped.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ksched::sync::Mutex;
+    ///
+    /// let mutex = Mutex::new(10);
+    /// if let Some(guard) = mutex.try_lock() {
+    ///     assert_eq!(*guard, 10);
+    /// }
+    /// # ;
+    /// ```
+    #[inline]
+    pub fn try_lock(&self) -> Option<MutexGuard<'_, T>> {
+        if let Some(mut g) = self.inner.try_lock() {
+            g.locked = true;
+            Some(MutexGuard(self))
+        } else {
+            None
+        }
     }
 
     /// Returns a mutable reference to the underlying data.
@@ -155,6 +176,22 @@ impl<T: ?Sized> Mutex<T> {
     }
 }
 
+impl<T: fmt::Debug + ?Sized> fmt::Debug for Mutex<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        struct Locked;
+        impl fmt::Debug for Locked {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str("<locked>")
+            }
+        }
+
+        match self.try_lock() {
+            None => f.debug_struct("Mutex").field("data", &Locked).finish(),
+            Some(guard) => f.debug_struct("Mutex").field("data", &&*guard).finish(),
+        }
+    }
+}
+
 impl<T> From<T> for Mutex<T> {
     fn from(val: T) -> Mutex<T> {
         Mutex::new(val)
@@ -173,15 +210,47 @@ pub struct MutexGuard<'a, T: ?Sized>(&'a Mutex<T>);
 unsafe impl<T: Send + ?Sized> Send for MutexGuard<'_, T> {}
 unsafe impl<T: Sync + ?Sized> Sync for MutexGuard<'_, T> {}
 
+impl<'a, T: ?Sized> MutexGuard<'a, T> {
+    /// Returns a reference to the mutex a guard came from.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # ksched::sched::spawn(async {
+    /// use ksched::sync::{Mutex, MutexGuard};
+    ///
+    /// let mutex = Mutex::new(10i32);
+    /// let guard = mutex.lock().await.expect("oom");
+    /// dbg!(MutexGuard::source(&guard));
+    /// # }).expect("oom");
+    /// # ksched::sched::run_all();
+    /// ```
+    pub fn source(guard: &MutexGuard<'a, T>) -> &'a Mutex<T> {
+        guard.0
+    }
+}
+
 impl<T: ?Sized> Drop for MutexGuard<'_, T> {
     fn drop(&mut self) {
         // Notify waiters.
         let mut g = self.0.inner.lock();
-        g.waiter.notify_one();
+        g.slpque.wakeup_one();
         g.locked = false;
 
         #[cfg(test)]
         println!("mutex guard drop");
+    }
+}
+
+impl<T: fmt::Debug + ?Sized> fmt::Debug for MutexGuard<'_, T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Debug::fmt(&**self, f)
+    }
+}
+
+impl<T: fmt::Display + ?Sized> fmt::Display for MutexGuard<'_, T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        (**self).fmt(f)
     }
 }
 
@@ -199,73 +268,13 @@ impl<T: ?Sized> DerefMut for MutexGuard<'_, T> {
     }
 }
 
-// NOTE this should only ever be used in "Thread mode"
-pub struct WakerSet {
-    inner: UnsafeCell<Inner>,
-}
-
-impl WakerSet {
-    pub fn new() -> Self {
-        Self {
-            inner: UnsafeCell::new(Inner::new()),
-        }
-    }
-    pub fn notify_all(&self) {
-        // Safe since UnsafeCell is not sync.
-        unsafe { (*self.inner.get()).notify_all() }
-    }
-
-    pub fn notify_one(&self) {
-        // Safe since UnsafeCell is not sync.
-        unsafe { (*self.inner.get()).notify_one() }
-    }
-
-    pub fn insert(&self, cx: &Context<'_>) -> Result<(), AllocError> {
-        // Safe since UnsafeCell is not sync.
-        unsafe { (*self.inner.get()).insert(cx) }
-    }
-}
-
-struct Inner {
-    // NOTE the number of entries is capped at `NTASKS`
-    entries: VecDeque<Waker>,
-}
-
-impl Inner {
-    fn new() -> Self {
-        Self {
-            entries: VecDeque::new(),
-        }
-    }
-
-    /// Notifies at most one blocked operation.
-    fn notify_one(&mut self) {
-        if let Some(w) = self.entries.pop_front() {
-            w.wake();
-        }
-    }
-
-    /// Notifies all blocked operations.
-    fn notify_all(&mut self) {
-        while let Some(w) = self.entries.pop_front() {
-            w.wake();
-        }
-    }
-
-    fn insert(&mut self, cx: &Context<'_>) -> Result<(), AllocError> {
-        let w = cx.waker().clone();
-        self.entries.try_reserve(1).map_err(|e| AllocError)?;
-        self.entries.push_back(w);
-        Ok(())
-    }
-}
-
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
     use std::thread;
 
     use super::*;
-    use crate::sched::{spawn, run_all};
+    use crate::sched::{run_all, spawn};
     use crate::yield_now::yield_now;
 
     #[test]
@@ -282,7 +291,8 @@ mod tests {
                 *lk += 1;
                 yield_now().await;
                 println!("task {}: end", i);
-            }).unwrap();
+            })
+            .unwrap();
         }
 
         let mut handles = vec![];
@@ -293,13 +303,13 @@ mod tests {
                 spawn(async move {
                     let g = data.lock().await.unwrap();
                     assert_eq!(*g, N);
-                }).unwrap();
+                })
+                .unwrap();
                 run_all();
             }));
         }
         for h in handles {
             h.join().unwrap();
         }
-        
     }
 }

@@ -22,10 +22,9 @@ A Secure Fork of RT-Thread Nano in Rust
   - [ ] Cached allocator.(like slab)
   - [ ] Testing.
   - [ ] Benchmark.
-- [ ] Async scheduler
-  - [x] Basic scheduler and yield(inspired by [async-std](https://github.com/async-rs/async-std))
-  - [x] Mutex.
-  - [ ] Condvar.
+- [ ] Async scheduler: port [async-std](https://github.com/async-rs/async-std)
+  - [x] Basic scheduler and yield.
+  - [x] Mutex/Condvar.
   - [ ] RT-Mutex.
   - [ ] Benchmark.
 - [ ] IPC
