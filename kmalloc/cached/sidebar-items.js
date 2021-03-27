@@ -1,0 +1,1 @@
+initSidebarItems({"struct":[["Allocator","A thread-safe allocator with multiple buddy systems."],["Cached","Allocator with cached pages."]]});

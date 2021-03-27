@@ -1,0 +1,1 @@
+initSidebarItems({"struct":[["Allocator","A thread-safe allocator with multiple buddy systems."],["BuddySystem","Buddy System Allocator Structure."],["MultiBuddySystem","Allocator that holds multiple buddy systems."]]});

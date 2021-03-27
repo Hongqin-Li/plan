@@ -1,0 +1,3 @@
+(function() {var implementors = {};
+implementors["ksched"] = [{"text":"impl&lt;T&gt; <a class=\"trait\" href=\"https://doc.rust-lang.org/nightly/core/convert/trait.From.html\" title=\"trait core::convert::From\">From</a>&lt;T&gt; for <a class=\"struct\" href=\"ksched/mutex/struct.Mutex.html\" title=\"struct ksched::mutex::Mutex\">Mutex</a>&lt;T&gt;","synthetic":false,"types":["ksched::mutex::Mutex"]}];
+if (window.register_implementors) {window.register_implementors(implementors);} else {window.pending_implementors = implementors;}})()
