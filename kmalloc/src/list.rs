@@ -1,3 +1,16 @@
+use core::ptr::null_mut;
+
+pub struct Freelist {
+    pub next: *mut Freelist,
+}
+impl Freelist {
+    pub const fn new() -> Self {
+        Self {
+            next: null_mut()
+        }
+    }
+}
+
 #[derive(Copy, Clone, Debug)]
 pub struct List {
     pub prev: *mut List,

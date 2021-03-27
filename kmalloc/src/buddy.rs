@@ -17,7 +17,7 @@ use core::{
 };
 use core::{alloc::Layout, mem, ptr};
 
-use crate::list::List;
+use crate::{list::List, to_order};
 use mcs::{Mutex, Slot};
 use typenum::{marker_traits::PowerOfTwo, Unsigned};
 
@@ -46,13 +46,6 @@ fn father(i: usize) -> usize {
 #[inline]
 fn buddy_idx(i: usize) -> usize {
     i ^ 1
-}
-#[inline]
-fn to_order(pgsize: usize, layout: &Layout) -> usize {
-    debug_assert!(pgsize.is_power_of_two());
-    debug_assert!(layout.align().is_power_of_two());
-    let npage = (max(layout.size().next_power_of_two(), layout.align()) + pgsize - 1) / pgsize;
-    npage.trailing_zeros() as usize
 }
 
 /// Buddy System Allocator Structure.
@@ -223,6 +216,11 @@ impl<P: Unsigned + PowerOfTwo> BuddySystem<P> {
         self.check();
     }
 
+    /// Check the properties maintained by buddy system.
+    ///
+    /// - 1-nodes that don't have any 1-node child are allocated chunks.
+    /// - Root 0-nodes and 0-nodes whose father is 1-node and buddy is 1-node are free chunks.
+    /// - Children of any 0-node must be also 0-nodes.
     #[cfg(any(test, debug_assertions))]
     pub unsafe fn check(&self) {
         let mut nalloc = 0;
@@ -361,6 +359,8 @@ impl<P: Unsigned + PowerOfTwo + 'static> MultiBuddySystem<P> {
         }
     }
 
+    /// Check that if memory [begin, end) is overlapped with any zone in
+    /// the buddy system except the ignored one.
     #[cfg(any(test, debug_assertions))]
     pub unsafe fn overlap(&self, begin: usize, end: usize, ignore: *mut BuddySystem<P>) -> bool {
         let mut b = self.head;
