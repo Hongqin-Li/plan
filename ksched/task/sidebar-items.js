@@ -1,1 +1,1 @@
-initSidebarItems({});
+initSidebarItems({"fn":[["run","Run tasks until idle."],["run_all","Run until all tasks are finished."],["spawn","Spawn a new task to be run."],["yield_now","Cooperatively gives up a timeslice to the task scheduler."]],"struct":[["Executor","Executor holds a list of tasks to be processed"]]});

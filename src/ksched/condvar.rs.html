@@ -382,16 +382,16 @@
     <span class="doccomment">/// # Examples</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// ```</span>
-    <span class="doccomment">/// # ksched::sched::spawn(async {</span>
+    <span class="doccomment">/// # ksched::task::spawn(async {</span>
     <span class="doccomment">/// use std::sync::Arc;</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// use ksched::sync::{Mutex, Condvar};</span>
-    <span class="doccomment">/// use ksched::sched;</span>
+    <span class="doccomment">/// use ksched::task;</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// let pair = Arc::new((Mutex::new(false), Condvar::new()));</span>
     <span class="doccomment">/// let pair2 = pair.clone();</span>
     <span class="doccomment">///</span>
-    <span class="doccomment">/// sched::spawn(async move {</span>
+    <span class="doccomment">/// task::spawn(async move {</span>
     <span class="doccomment">///     let (lock, cvar) = &amp;*pair2;</span>
     <span class="doccomment">///     let mut started = lock.lock().await.expect(&quot;oom&quot;);</span>
     <span class="doccomment">///     *started = true;</span>
@@ -406,7 +406,7 @@
     <span class="doccomment">///     started = cvar.wait(started).await.expect(&quot;oom&quot;);</span>
     <span class="doccomment">/// }</span>
     <span class="doccomment">/// # }).expect(&quot;oom&quot;);</span>
-    <span class="doccomment">/// # ksched::sched::run_all();</span>
+    <span class="doccomment">/// # ksched::task::run_all();</span>
     <span class="doccomment">/// ```</span>
     <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">clippy</span>::<span class="ident">needless_lifetimes</span>)]</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">wait</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">T</span><span class="op">&gt;</span>(

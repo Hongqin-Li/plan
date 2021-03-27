@@ -1,1 +1,1 @@
-initSidebarItems({"mod":[["condvar",""],["mutex",""],["sched",""],["slpque",""],["sync",""],["task",""],["yield_now","Yield future from async_std"]]});
+initSidebarItems({"mod":[["condvar",""],["mutex",""],["slpque",""],["sync",""],["task",""]]});
