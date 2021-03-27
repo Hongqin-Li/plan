@@ -4,7 +4,7 @@ SeRT
 <br/></h1>
 
 <p align="center">
-A Secure Reimplementation of RT-Thread Nano in Rust
+A Secure Fork of RT-Thread Nano in Rust
 </p>
 
 <div align="center">
@@ -17,10 +17,19 @@ A Secure Reimplementation of RT-Thread Nano in Rust
 
 
 - [x] Github CI and doc.
-- [ ] Memory management(verified buddy system).
+- [ ] Memory management.
+  - [x] Multi buddy system.
+  - [ ] Cached allocator.(like slab)
+  - [ ] Testing.
+  - [ ] Benchmark.
+- [ ] Async scheduler
+  - [x] Basic scheduler and yield(inspired by [async-std](https://github.com/async-rs/async-std))
+  - [x] Mutex.
+  - [ ] Condvar.
+  - [ ] RT-Mutex.
+  - [ ] Benchmark.
+- [ ] IPC
 - [ ] Timer and clock.
-- [ ] Object.
-- [ ] Process management: thread, IPC, idle
 
 This is a Rust port of [RT-Thread Nano](https://github.com/RT-Thread/rtthread-nano) focusing on correctness and efficiency.
 
