@@ -5,9 +5,7 @@ pub struct Freelist {
 }
 impl Freelist {
     pub const fn new() -> Self {
-        Self {
-            next: null_mut()
-        }
+        Self { next: null_mut() }
     }
 }
 

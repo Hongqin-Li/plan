@@ -84,16 +84,16 @@ impl Condvar {
     /// # Examples
     ///
     /// ```
-    /// # ksched::sched::spawn(async {
+    /// # ksched::task::spawn(async {
     /// use std::sync::Arc;
     ///
     /// use ksched::sync::{Mutex, Condvar};
-    /// use ksched::sched;
+    /// use ksched::task;
     ///
     /// let pair = Arc::new((Mutex::new(false), Condvar::new()));
     /// let pair2 = pair.clone();
     ///
-    /// sched::spawn(async move {
+    /// task::spawn(async move {
     ///     let (lock, cvar) = &*pair2;
     ///     let mut started = lock.lock().await.expect("oom");
     ///     *started = true;
@@ -108,7 +108,7 @@ impl Condvar {
     ///     started = cvar.wait(started).await.expect("oom");
     /// }
     /// # }).expect("oom");
-    /// # ksched::sched::run_all();
+    /// # ksched::task::run_all();
     /// ```
     #[allow(clippy::needless_lifetimes)]
     pub async fn wait<'a, T>(

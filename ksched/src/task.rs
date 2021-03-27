@@ -97,7 +97,7 @@ lazy_static! {
 /// # Examples
 ///
 /// ```
-/// ksched::sched::spawn(async {
+/// ksched::task::spawn(async {
 ///    println!("hello, world");
 /// }).expect("oom");
 /// ```
@@ -110,13 +110,12 @@ pub fn spawn(future: impl Future<Output = ()> + 'static + Send) -> Result<(), Al
 /// # Examples
 ///
 /// ```
-/// use ksched::sched::{spawn, run};
-/// use ksched::yield_now::yield_now;
+/// use ksched::task;
 ///
-/// ksched::sched::spawn(async {
-///     yield_now().await;
+/// task::spawn(async {
+///     task::yield_now().await;
 /// }).expect("oom");
-/// ksched::sched::run();
+/// task::run();
 /// ```
 pub fn run() {
     loop {
@@ -136,10 +135,45 @@ pub fn run() {
 /// # Examples
 ///
 /// ```
-/// ksched::sched::run_all();
+/// ksched::task::run_all();
 /// ```
 pub fn run_all() {
     while DEFAULT_EXECUTOR.lock().ntasks > 0 {
         run();
     }
+}
+
+/// Cooperatively gives up a timeslice to the task scheduler.
+///
+/// Calling this function will move the currently executing future to the back
+/// of the execution queue, making room for other futures to execute. This is
+/// especially useful after running CPU-intensive operations inside a future.
+///
+/// # Examples
+///
+/// ```
+/// # ksched::task::spawn(async {
+/// #
+/// ksched::task::yield_now().await;
+/// #
+/// # });
+/// # ksched::task::run_all();
+/// ```
+pub async fn yield_now() {
+    struct YieldNow(bool);
+
+    impl Future for YieldNow {
+        type Output = ();
+        fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+            if !self.0 {
+                self.0 = true;
+                cx.waker().wake_by_ref();
+                Poll::Pending
+            } else {
+                Poll::Ready(())
+            }
+        }
+    }
+
+    YieldNow(false).await
 }

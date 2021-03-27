@@ -22,7 +22,7 @@ struct Inner {
 /// # Examples
 ///
 /// ```
-/// # ksched::sched::spawn(async {
+/// # ksched::task::spawn(async {
 /// use ksched::mutex::Mutex;
 ///
 /// let m: Mutex<usize> = Mutex::new(1);
@@ -34,7 +34,7 @@ struct Inner {
 /// let guard = m.lock().await.expect("oom");
 /// assert_eq!(*guard, 2);
 /// # });
-/// # ksched::sched::run_all();
+/// # ksched::task::run_all();
 /// ```
 pub struct Mutex<T: ?Sized> {
     /// Guard towards status and waiting queue.
@@ -92,14 +92,14 @@ impl<T: ?Sized> Mutex<T> {
     /// # Examples
     ///
     /// ```
-    /// # ksched::sched::spawn(async {
+    /// # ksched::task::spawn(async {
     /// use ksched::mutex::Mutex;
     ///
     /// let mutex: Mutex<usize> = Mutex::new(10);
     /// let guard = mutex.lock().await.expect("oom");
     /// assert_eq!(*guard, 10);
     /// # });
-    /// # ksched::sched::run_all();
+    /// # ksched::task::run_all();
     /// ```
     #[inline]
     pub async fn lock(&self) -> Result<MutexGuard<'_, T>, AllocError> {
@@ -162,14 +162,14 @@ impl<T: ?Sized> Mutex<T> {
     /// # Examples
     ///
     /// ```
-    /// # ksched::sched::spawn(async {
+    /// # ksched::task::spawn(async {
     /// use ksched::mutex::Mutex;
     ///
     /// let mut mutex: Mutex<usize> = Mutex::new(0);
     /// *mutex.get_mut() = 10;
     /// assert_eq!(*mutex.lock().await.expect("oom"), 10);
     /// # });
-    /// # ksched::sched::run_all();
+    /// # ksched::task::run_all();
     /// ```
     pub fn get_mut(&mut self) -> &mut T {
         unsafe { &mut *self.data.get() }
@@ -216,14 +216,14 @@ impl<'a, T: ?Sized> MutexGuard<'a, T> {
     /// # Examples
     ///
     /// ```
-    /// # ksched::sched::spawn(async {
+    /// # ksched::task::spawn(async {
     /// use ksched::sync::{Mutex, MutexGuard};
     ///
     /// let mutex = Mutex::new(10i32);
     /// let guard = mutex.lock().await.expect("oom");
     /// dbg!(MutexGuard::source(&guard));
     /// # }).expect("oom");
-    /// # ksched::sched::run_all();
+    /// # ksched::task::run_all();
     /// ```
     pub fn source(guard: &MutexGuard<'a, T>) -> &'a Mutex<T> {
         guard.0
@@ -274,8 +274,7 @@ mod tests {
     use std::thread;
 
     use super::*;
-    use crate::sched::{run_all, spawn};
-    use crate::yield_now::yield_now;
+    use crate::task::{run_all, spawn, yield_now};
 
     #[test]
     fn test_mutex() {
