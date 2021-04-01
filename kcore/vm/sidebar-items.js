@@ -1,0 +1,1 @@
+initSidebarItems({"enum":[["Segment","Segment."]],"struct":[["AddressSpace","Address space manager."],["Page","Physical page."],["SegmentInner","Inner data of a segment."]],"trait":[["PageTable","Page table."]]});
