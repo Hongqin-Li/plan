@@ -27,6 +27,8 @@ A Secure Fork of RT-Thread Nano in Rust
   - [x] Mutex/Condvar.
   - [ ] RT-Mutex.
   - [ ] Benchmark.
+- [ ] Address space: inspired by [plan9](https://github.com/0intro/plan9).
+- [ ] Namespace and device model: inspired by [plan9](https://github.com/0intro/plan9)
 - [ ] IPC
 - [ ] Timer and clock.
 

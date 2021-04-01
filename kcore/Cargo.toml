@@ -1,5 +1,5 @@
 [package]
-name = "rt-kern"
+name = "kcore"
 version = "0.1.0"
 authors = ["Hongqin-Li <ihongqinli@gmail.com>"]
 edition = "2018"
