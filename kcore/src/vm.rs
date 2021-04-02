@@ -15,15 +15,15 @@ pub trait PageTable: Sized {
     /// Create a new page table.
     fn new() -> Result<Self, Error>;
 
-    /// Map virtual address [va, va + len) to physical address [pa, pa + len).
+    /// Map virtual address `[va, va+pg.size())` to physical page `pg`.
     ///
     /// It is required to be atomic, i.e., undo the mapping if failed.
-    /// Caller guarantees that pages in [va, va+len) are unmapped.
+    /// Caller guarantees that pages in `[va, va+pg.size())` are unmapped.
     fn map(&mut self, va: usize, pg: &Page<Self>) -> Result<(), Error>;
 
-    /// Unmap the pages in [va, va+len) in this page table.
+    /// Unmap the pages in `[va, va+len)` in this page table.
     ///
-    /// Caller guarantees that [va, va+len) has been mapped before unmapping them.
+    /// Caller guarantees that `[va, va+len)` has been mapped before.
     fn unmap(&mut self, va: usize, len: usize);
 }
 
@@ -116,7 +116,7 @@ impl<P: PageTable> AddressSpace<P> {
         })
     }
 
-    /// Check if range [va.start, va.end) is overlap with any segments.
+    /// Check if range [rg.start, rg.end) is overlap with any segments.
     ///
     /// Returns the index of the overlap segment.
     fn overlap(&self, rg: &Range<usize>) -> Option<usize> {
@@ -143,8 +143,8 @@ impl<P: PageTable> AddressSpace<P> {
     /// Segments are not allowed to be overlap with each other. But can optionaly overwrite old
     /// segments.
     ///
-    /// Returns true if added. This overwriting procedure is NOT atomic, i.e., if overwriting failed,
-    /// the overwritten segment will be dropped.
+    /// Returns true if added. The overwriting procedure is NOT atomic, i.e., if overwriting failed,
+    /// the overwritten segment will be dropped. But normal(non-overwrite) procedure is atomic.
     pub fn attach(
         &mut self,
         range: Range<usize>,
