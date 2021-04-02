@@ -27,6 +27,7 @@ pub fn arc_new<T>(x: T) -> Result<Arc<T>, Error> {
 }
 
 /// Kernel errors.
+#[derive(Debug)]
 pub enum Error {
     /// When global allocator returns zero.
     OutOfMemory,
