@@ -1,10 +1,10 @@
 
 <h1 align="center">
-SeRT
+Plan
 <br/></h1>
 
 <p align="center">
-A Secure Fork of RT-Thread Nano in Rust
+Platform-agnostic operating system building blocks in Rust, inspired by <a href="https://9p.io/plan9/">Plan 9</a>.
 </p>
 
 <div align="center">
@@ -16,24 +16,27 @@ A Secure Fork of RT-Thread Nano in Rust
 <br/><br/>
 
 
-- [x] Github CI and doc.
-- [ ] Memory management.
-  - [x] Multi buddy system.
-  - [ ] Cached allocator.(like slab)
-  - [ ] Testing.
-  - [ ] Benchmark.
+- [ ] Memory management
+  - [x] Multi buddy system
+  - [ ] Cached allocator(like slab)
+  - [ ] Testing
+  - [ ] Benchmark
 - [ ] Async scheduler: port [async-std](https://github.com/async-rs/async-std)
-  - [x] Basic scheduler and yield.
-  - [x] Mutex/Condvar.
-  - [ ] RT-Mutex.
-  - [ ] Benchmark.
-- [ ] Address space: inspired by [plan9](https://github.com/0intro/plan9).
-- [ ] Namespace and device model: inspired by [plan9](https://github.com/0intro/plan9)
+  - [x] Basic scheduler and yield
+  - [x] Mutex/Condvar
+  - [ ] RT-Mutex
+  - [ ] Benchmark
+- [x] Address space: used for mmap
+- [ ] Namespace: port [plan9](https://github.com/0intro/plan9)
+- [ ] Device model
 - [ ] IPC
-- [ ] Timer and clock.
-
-This is a Rust port of [RT-Thread Nano](https://github.com/RT-Thread/rtthread-nano) focusing on correctness and efficiency.
+- [ ] Timer and clock
 
 ## Project structure
 
-
+```
+.
+├── kmalloc: Buddy system allocator
+├── ksched: Async scheduler and synchronization primitives
+└── kcore: Address space, namespace and device model
+```
