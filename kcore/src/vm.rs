@@ -5,7 +5,7 @@ use core::ptr;
 use core::ptr::NonNull;
 use core::{alloc::Layout, marker::PhantomData, ops::Range};
 
-use crate::utils::{arc_new, vec_push, Error};
+use crate::utils::{arc_new, intersect, vec_push, Error};
 
 /// Page table.
 pub trait PageTable: Sized {
@@ -118,9 +118,8 @@ impl<P: PageTable> AddressSpace<P> {
 
     /// Check if range [rg.start, rg.end) is overlap with any segments.
     ///
-    /// Returns the index of the overlap segment.
+    /// Returns the index of the first overlap segment.
     fn overlap(&self, rg: &Range<usize>) -> Option<usize> {
-        let intersect = |a: &Range<usize>, b: &Range<usize>| a.start < b.end && a.end > b.start;
         for (i, s) in self.seg.iter().enumerate() {
             match s {
                 Segment::Local(s) => {
@@ -160,22 +159,29 @@ impl<P: PageTable> AddressSpace<P> {
 
         let mut map_len = 0;
         let mut f = || {
-            let mut replace = None;
-            if let Some(i) = self.overlap(&range) {
-                if !overwrite {
-                    return Ok(false);
-                }
-                // Unmap and drop the conflict segment.
-                let seg = self.seg.remove(i);
-                match seg {
-                    Segment::Local(ref i) => {
-                        self.pgdir.unmap(i.range.start, i.range.len());
+            let mut i = 0;
+            while i < self.seg.len() {
+                let rg = match &self.seg[i] {
+                    Segment::Local(s) => s.range.clone(),
+                    Segment::Shared(s) => s.range.clone(),
+                };
+                if intersect(&range, &rg) {
+                    if !overwrite {
+                        return Ok(false);
                     }
-                    Segment::Shared(ref i) => {
-                        self.pgdir.unmap(i.range.start, i.range.len());
+                    // Unmap and drop the conflict segment.
+                    let seg = self.seg.swap_remove(i);
+                    match seg {
+                        Segment::Local(ref i) => {
+                            self.pgdir.unmap(i.range.start, i.range.len());
+                        }
+                        Segment::Shared(ref i) => {
+                            self.pgdir.unmap(i.range.start, i.range.len());
+                        }
                     }
+                } else {
+                    i += 1;
                 }
-                replace = Some(i);
             }
 
             let mut pages = Vec::new();
@@ -195,11 +201,7 @@ impl<P: PageTable> AddressSpace<P> {
             } else {
                 Segment::Local(inner)
             };
-            if let Some(i) = replace {
-                self.seg[i] = new_seg;
-            } else {
-                vec_push(&mut self.seg, new_seg)?;
-            }
+            vec_push(&mut self.seg, new_seg)?;
             return Ok(true);
         };
         match f() {
@@ -216,7 +218,7 @@ impl<P: PageTable> AddressSpace<P> {
     /// Returns true if removed.
     pub fn detach(&mut self, saddr: usize) -> Result<bool, Error> {
         if let Some(i) = self.overlap(&(saddr..(saddr + 1))) {
-            let rg = match self.seg.remove(i) {
+            let rg = match self.seg.swap_remove(i) {
                 Segment::Local(inner) => inner.range,
                 Segment::Shared(inner) => inner.range.clone(),
             };
@@ -456,6 +458,42 @@ mod tests {
             vm.attach((2 * PGSIZE)..(3 * PGSIZE), false, true).unwrap(),
             true
         );
+    }
+
+    #[test]
+    fn test_overwrite_multiple_seg() {
+        let mut vm = AddressSpace::<MyPageTable>::new().unwrap();
+        assert_eq!(vm.attach(0..PGSIZE, false, false).unwrap(), true);
+        assert_eq!(
+            vm.attach(2 * PGSIZE..3 * PGSIZE, false, false).unwrap(),
+            true
+        );
+        assert_eq!(
+            vm.attach(4 * PGSIZE..6 * PGSIZE, false, false).unwrap(),
+            true
+        );
+
+        assert_eq!(vm.seg.len(), 3);
+
+        assert_eq!(vm.attach(PGSIZE..5 * PGSIZE, false, false).unwrap(), false);
+        assert_eq!(vm.attach(PGSIZE..5 * PGSIZE, false, true).unwrap(), true);
+        assert_eq!(vm.seg.len(), 2);
+
+        match &vm.seg[0] {
+            Segment::Local(s) => {
+                assert_eq!(s.range, 0..PGSIZE);
+                assert_eq!(s.pages.len(), 1);
+            }
+            Segment::Shared(_) => unreachable!(),
+        }
+
+        match &vm.seg[1] {
+            Segment::Local(s) => {
+                assert_eq!(s.range, PGSIZE..5 * PGSIZE);
+                assert_eq!(s.pages.len(), 4);
+            }
+            Segment::Shared(_) => unreachable!(),
+        }
     }
 
     #[test]

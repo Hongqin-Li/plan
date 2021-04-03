@@ -1,5 +1,7 @@
 //! Simple util funtions.
 
+use core::ops::Range;
+
 use alloc::{sync::Arc, vec::Vec};
 
 /// Round down to the nearest multiple of n.
@@ -12,6 +14,11 @@ pub fn round_down(x: usize, n: usize) -> usize {
 #[inline]
 pub fn round_up(x: usize, n: usize) -> usize {
     round_down(x + n - 1, n)
+}
+
+/// Check if two ranges are intersect with each other.
+pub fn intersect(a: &Range<usize>, b: &Range<usize>) -> bool {
+    a.start < b.end && a.end > b.start
 }
 
 /// Wrapper to push back an element into a vector.
