@@ -254,6 +254,10 @@
 <span id="251">251</span>
 <span id="252">252</span>
 <span id="253">253</span>
+<span id="254">254</span>
+<span id="255">255</span>
+<span id="256">256</span>
+<span id="257">257</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="doccomment">//! Bitmap-based priority queue implementation.</span>
 
@@ -431,16 +435,20 @@
     <span class="kw">where</span>
         <span class="ident">P</span>: <span class="ident">PriqueTrait</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span>,
     {
-        <span class="ident">test_pushpop1</span>(<span class="ident">P</span>::<span class="ident">new</span>().<span class="ident">unwrap</span>());
+        <span class="comment">// Small cases.</span>
+        <span class="kw">for</span> <span class="ident">i</span> <span class="kw">in</span> <span class="number">1</span>..<span class="ident">P</span>::<span class="ident">max_nice</span>() {
+            <span class="ident">test_pushpop1</span>(<span class="ident">P</span>::<span class="ident">new</span>().<span class="ident">unwrap</span>(), <span class="ident">i</span>);
+        }
+        <span class="comment">// Large case.</span>
+        <span class="ident">test_pushpop1</span>(<span class="ident">P</span>::<span class="ident">new</span>().<span class="ident">unwrap</span>(), <span class="number">10000</span>);
         <span class="ident">test_invalid_priority1</span>(<span class="ident">P</span>::<span class="ident">new</span>().<span class="ident">unwrap</span>());
         <span class="ident">test_preemption1</span>(<span class="ident">P</span>::<span class="ident">new</span>().<span class="ident">unwrap</span>());
     }
 
-    <span class="kw">fn</span> <span class="ident">test_pushpop1</span><span class="op">&lt;</span><span class="ident">P</span><span class="op">&gt;</span>(<span class="kw-2">mut</span> <span class="ident">pq</span>: <span class="ident">P</span>)
+    <span class="kw">fn</span> <span class="ident">test_pushpop1</span><span class="op">&lt;</span><span class="ident">P</span><span class="op">&gt;</span>(<span class="kw-2">mut</span> <span class="ident">pq</span>: <span class="ident">P</span>, <span class="ident">n</span>: <span class="ident">usize</span>)
     <span class="kw">where</span>
         <span class="ident">P</span>: <span class="ident">PriqueTrait</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span>,
     {
-        <span class="kw">let</span> <span class="ident">n</span> <span class="op">=</span> <span class="number">10000</span>;
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">items</span> <span class="op">=</span> <span class="ident">Vec</span>::<span class="ident">new</span>();
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">rng</span> <span class="op">=</span> <span class="ident">rand</span>::<span class="ident">thread_rng</span>();
 

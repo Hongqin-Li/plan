@@ -538,6 +538,88 @@
 <span id="535">535</span>
 <span id="536">536</span>
 <span id="537">537</span>
+<span id="538">538</span>
+<span id="539">539</span>
+<span id="540">540</span>
+<span id="541">541</span>
+<span id="542">542</span>
+<span id="543">543</span>
+<span id="544">544</span>
+<span id="545">545</span>
+<span id="546">546</span>
+<span id="547">547</span>
+<span id="548">548</span>
+<span id="549">549</span>
+<span id="550">550</span>
+<span id="551">551</span>
+<span id="552">552</span>
+<span id="553">553</span>
+<span id="554">554</span>
+<span id="555">555</span>
+<span id="556">556</span>
+<span id="557">557</span>
+<span id="558">558</span>
+<span id="559">559</span>
+<span id="560">560</span>
+<span id="561">561</span>
+<span id="562">562</span>
+<span id="563">563</span>
+<span id="564">564</span>
+<span id="565">565</span>
+<span id="566">566</span>
+<span id="567">567</span>
+<span id="568">568</span>
+<span id="569">569</span>
+<span id="570">570</span>
+<span id="571">571</span>
+<span id="572">572</span>
+<span id="573">573</span>
+<span id="574">574</span>
+<span id="575">575</span>
+<span id="576">576</span>
+<span id="577">577</span>
+<span id="578">578</span>
+<span id="579">579</span>
+<span id="580">580</span>
+<span id="581">581</span>
+<span id="582">582</span>
+<span id="583">583</span>
+<span id="584">584</span>
+<span id="585">585</span>
+<span id="586">586</span>
+<span id="587">587</span>
+<span id="588">588</span>
+<span id="589">589</span>
+<span id="590">590</span>
+<span id="591">591</span>
+<span id="592">592</span>
+<span id="593">593</span>
+<span id="594">594</span>
+<span id="595">595</span>
+<span id="596">596</span>
+<span id="597">597</span>
+<span id="598">598</span>
+<span id="599">599</span>
+<span id="600">600</span>
+<span id="601">601</span>
+<span id="602">602</span>
+<span id="603">603</span>
+<span id="604">604</span>
+<span id="605">605</span>
+<span id="606">606</span>
+<span id="607">607</span>
+<span id="608">608</span>
+<span id="609">609</span>
+<span id="610">610</span>
+<span id="611">611</span>
+<span id="612">612</span>
+<span id="613">613</span>
+<span id="614">614</span>
+<span id="615">615</span>
+<span id="616">616</span>
+<span id="617">617</span>
+<span id="618">618</span>
+<span id="619">619</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="doccomment">//! # Buddy system allocator</span>
 <span class="doccomment">//!</span>
@@ -551,11 +633,7 @@
 <span class="doccomment">//! Allocation and deallocation are both guaranteed to finish within O(log n),</span>
 <span class="doccomment">//! where n is the size of memory handled by this buddy system.</span>
 <span class="doccomment">//!</span>
-<span class="kw">use</span> <span class="ident">core</span>::{
-    <span class="ident">alloc</span>::<span class="ident">GlobalAlloc</span>,
-    <span class="ident">cmp</span>::{<span class="ident">max</span>, <span class="ident">min</span>},
-    <span class="ident">mem</span>::<span class="ident">size_of</span>,
-};
+<span class="kw">use</span> <span class="ident">core</span>::{<span class="ident">alloc</span>::<span class="ident">GlobalAlloc</span>, <span class="ident">cmp</span>::<span class="ident">min</span>, <span class="ident">mem</span>::<span class="ident">size_of</span>};
 <span class="kw">use</span> <span class="ident">core</span>::{<span class="ident">alloc</span>::<span class="ident">Layout</span>, <span class="ident">mem</span>, <span class="ident">ptr</span>};
 
 <span class="kw">use</span> <span class="kw">crate</span>::{<span class="ident">list</span>::<span class="ident">List</span>, <span class="ident">to_order</span>};
@@ -698,9 +776,8 @@
         <span class="prelude-val">Ok</span>(<span class="ident">b</span>)
     }
 
-    <span class="doccomment">/// Allocate a range of memory specified by `layout`.</span>
-    <span class="kw">pub</span> <span class="kw">unsafe</span> <span class="kw">fn</span> <span class="ident">alloc</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">layout</span>: <span class="ident">Layout</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw-2">*</span><span class="kw-2">mut</span> <span class="ident">u8</span> {
-        <span class="kw">let</span> <span class="ident">order</span> <span class="op">=</span> <span class="ident">to_order</span>(<span class="ident">P</span>::<span class="ident">to_usize</span>(), <span class="kw-2">&amp;</span><span class="ident">layout</span>);
+    <span class="doccomment">/// Alloccate memory by order.</span>
+    <span class="kw">pub</span> <span class="kw">unsafe</span> <span class="kw">fn</span> <span class="ident">alloc1</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">order</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw-2">*</span><span class="kw-2">mut</span> <span class="ident">u8</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">d</span> <span class="op">=</span> <span class="ident">order</span>;
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">p</span> <span class="op">=</span> <span class="ident">ptr</span>::<span class="ident">null_mut</span>();
         <span class="kw">while</span> <span class="ident">d</span> <span class="op">&lt;</span><span class="op">=</span> <span class="self">self</span>.<span class="ident">max_order</span> {
@@ -729,12 +806,9 @@
         <span class="ident">p</span>
     }
 
-    <span class="doccomment">/// Free the block of memory starting from `ptr` with specific `layout`.</span>
-    <span class="kw">pub</span> <span class="kw">unsafe</span> <span class="kw">fn</span> <span class="ident">dealloc</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">ptr</span>: <span class="kw-2">*</span><span class="kw-2">mut</span> <span class="ident">u8</span>, <span class="ident">layout</span>: <span class="ident">Layout</span>) {
-        <span class="macro">debug_assert_eq</span><span class="macro">!</span>(<span class="ident">ptr</span>.<span class="ident">is_null</span>(), <span class="bool-val">false</span>);
-        <span class="macro">debug_assert</span><span class="macro">!</span>(<span class="self">self</span>.<span class="ident">page_begin</span> <span class="op">&lt;</span><span class="op">=</span> (<span class="ident">ptr</span> <span class="kw">as</span> <span class="ident">usize</span>) <span class="op">&amp;&amp;</span> (<span class="ident">ptr</span> <span class="kw">as</span> <span class="ident">usize</span>) <span class="op">&lt;</span> <span class="self">self</span>.<span class="ident">page_end</span>);
-
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">order</span> <span class="op">=</span> <span class="ident">to_order</span>(<span class="ident">P</span>::<span class="ident">to_usize</span>(), <span class="kw-2">&amp;</span><span class="ident">layout</span>);
+    <span class="doccomment">/// Free the block of memory starting from `ptr` with specific order.</span>
+    <span class="doccomment">/// Return the order of the freed page after merging possible buddy pages.</span>
+    <span class="kw">pub</span> <span class="kw">unsafe</span> <span class="kw">fn</span> <span class="ident">free</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">ptr</span>: <span class="kw-2">*</span><span class="kw-2">mut</span> <span class="ident">u8</span>, <span class="kw-2">mut</span> <span class="ident">order</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">usize</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">i</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">bitmap_idx</span>(<span class="ident">ptr</span> <span class="kw">as</span> <span class="ident">usize</span>, <span class="ident">order</span>);
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">p</span> <span class="op">=</span> <span class="ident">ptr</span> <span class="kw">as</span> <span class="ident">usize</span>;
         <span class="kw">while</span> <span class="ident">i</span> <span class="op">!</span><span class="op">=</span> <span class="number">1</span> <span class="op">&amp;&amp;</span> <span class="self">self</span>.<span class="ident">get_bit</span>(<span class="ident">buddy_idx</span>(<span class="ident">i</span>)) <span class="op">=</span><span class="op">=</span> <span class="bool-val">false</span> {
@@ -755,6 +829,20 @@
 
         <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">any</span>(<span class="ident">test</span>, <span class="ident">debug_assertions</span>))]</span>
         <span class="self">self</span>.<span class="ident">check</span>();
+
+        <span class="ident">order</span>
+    }
+
+    <span class="doccomment">/// Allocate memory specified by `layout`.</span>
+    <span class="kw">pub</span> <span class="kw">unsafe</span> <span class="kw">fn</span> <span class="ident">alloc</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">layout</span>: <span class="ident">Layout</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw-2">*</span><span class="kw-2">mut</span> <span class="ident">u8</span> {
+        <span class="self">self</span>.<span class="ident">alloc1</span>(<span class="ident">to_order</span>(<span class="ident">P</span>::<span class="ident">to_usize</span>(), <span class="kw-2">&amp;</span><span class="ident">layout</span>))
+    }
+
+    <span class="doccomment">/// Free the block of memory starting from `ptr` with specific `layout`.</span>
+    <span class="kw">pub</span> <span class="kw">unsafe</span> <span class="kw">fn</span> <span class="ident">dealloc</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">ptr</span>: <span class="kw-2">*</span><span class="kw-2">mut</span> <span class="ident">u8</span>, <span class="ident">layout</span>: <span class="ident">Layout</span>) {
+        <span class="macro">debug_assert_eq</span><span class="macro">!</span>(<span class="ident">ptr</span>.<span class="ident">is_null</span>(), <span class="bool-val">false</span>);
+        <span class="macro">debug_assert</span><span class="macro">!</span>(<span class="self">self</span>.<span class="ident">page_begin</span> <span class="op">&lt;</span><span class="op">=</span> (<span class="ident">ptr</span> <span class="kw">as</span> <span class="ident">usize</span>) <span class="op">&amp;&amp;</span> (<span class="ident">ptr</span> <span class="kw">as</span> <span class="ident">usize</span>) <span class="op">&lt;</span> <span class="self">self</span>.<span class="ident">page_end</span>);
+        <span class="self">self</span>.<span class="ident">free</span>(<span class="ident">ptr</span>, <span class="ident">to_order</span>(<span class="ident">P</span>::<span class="ident">to_usize</span>(), <span class="kw-2">&amp;</span><span class="ident">layout</span>));
     }
 
     <span class="doccomment">/// Check the properties maintained by buddy system.</span>
@@ -859,34 +947,44 @@
         <span class="self">self</span>.<span class="ident">check</span>();
     }
 
-    <span class="doccomment">/// Allocate memory according to layout.</span>
+    <span class="doccomment">/// Allocate memory of `2^order` pages.</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// Loop through every registered zone and try allocating.</span>
     <span class="doccomment">/// O(logN) per zone.</span>
-    <span class="kw">pub</span> <span class="kw">unsafe</span> <span class="kw">fn</span> <span class="ident">alloc</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">layout</span>: <span class="ident">Layout</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw-2">*</span><span class="kw-2">mut</span> <span class="ident">u8</span> {
+    <span class="kw">pub</span> <span class="kw">unsafe</span> <span class="kw">fn</span> <span class="ident">alloc1</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">order</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw-2">*</span><span class="kw-2">mut</span> <span class="ident">u8</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">b</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">head</span>;
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">p</span>: <span class="kw-2">*</span><span class="kw-2">mut</span> <span class="ident">u8</span> <span class="op">=</span> <span class="ident">ptr</span>::<span class="ident">null_mut</span>();
         <span class="kw">while</span> <span class="op">!</span><span class="ident">b</span>.<span class="ident">is_null</span>() <span class="op">&amp;&amp;</span> <span class="ident">p</span>.<span class="ident">is_null</span>() {
-            <span class="ident">p</span> <span class="op">=</span> (<span class="kw-2">*</span><span class="ident">b</span>).<span class="ident">alloc</span>(<span class="ident">layout</span>);
+            <span class="ident">p</span> <span class="op">=</span> (<span class="kw-2">*</span><span class="ident">b</span>).<span class="ident">alloc1</span>(<span class="ident">order</span>);
             <span class="ident">b</span> <span class="op">=</span> (<span class="kw-2">*</span><span class="ident">b</span>).<span class="ident">next</span>;
         }
         <span class="ident">p</span>
     }
 
+    <span class="doccomment">/// Allocate memory according to layout.</span>
+    <span class="kw">pub</span> <span class="kw">unsafe</span> <span class="kw">fn</span> <span class="ident">alloc</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">layout</span>: <span class="ident">Layout</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw-2">*</span><span class="kw-2">mut</span> <span class="ident">u8</span> {
+        <span class="self">self</span>.<span class="ident">alloc1</span>(<span class="ident">to_order</span>(<span class="ident">P</span>::<span class="ident">to_usize</span>(), <span class="kw-2">&amp;</span><span class="ident">layout</span>))
+    }
+
     <span class="doccomment">/// Free memory pointed by ptr with specific layout.</span>
     <span class="doccomment">///</span>
+    <span class="doccomment">/// Return the order of the freed page after merging possible buddy pages.</span>
     <span class="doccomment">/// Loop through every registered buddy system and try deallocating.</span>
     <span class="doccomment">/// O(logN) per zone.</span>
-    <span class="kw">pub</span> <span class="kw">unsafe</span> <span class="kw">fn</span> <span class="ident">dealloc</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">ptr</span>: <span class="kw-2">*</span><span class="kw-2">mut</span> <span class="ident">u8</span>, <span class="ident">layout</span>: <span class="ident">Layout</span>) {
+    <span class="kw">pub</span> <span class="kw">unsafe</span> <span class="kw">fn</span> <span class="ident">free</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">ptr</span>: <span class="kw-2">*</span><span class="kw-2">mut</span> <span class="ident">u8</span>, <span class="ident">order</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">usize</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">b</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">head</span>;
         <span class="kw">while</span> <span class="op">!</span><span class="ident">b</span>.<span class="ident">is_null</span>() {
             <span class="kw">if</span> (<span class="kw-2">*</span><span class="ident">b</span>).<span class="ident">page_begin</span> <span class="op">&lt;</span><span class="op">=</span> <span class="ident">ptr</span> <span class="kw">as</span> <span class="ident">usize</span> <span class="op">&amp;&amp;</span> (<span class="ident">ptr</span> <span class="kw">as</span> <span class="ident">usize</span>) <span class="op">&lt;</span> (<span class="kw-2">*</span><span class="ident">b</span>).<span class="ident">page_end</span> {
-                (<span class="kw-2">*</span><span class="ident">b</span>).<span class="ident">dealloc</span>(<span class="ident">ptr</span>, <span class="ident">layout</span>);
-                <span class="kw">return</span>;
+                <span class="kw">return</span> (<span class="kw-2">*</span><span class="ident">b</span>).<span class="ident">free</span>(<span class="ident">ptr</span>, <span class="ident">order</span>);
             }
             <span class="ident">b</span> <span class="op">=</span> (<span class="kw-2">*</span><span class="ident">b</span>).<span class="ident">next</span>;
         }
         <span class="macro">panic</span><span class="macro">!</span>(<span class="string">&quot;pointer doesn&#39;t fall into any buddy system&quot;</span>);
+    }
+
+    <span class="doccomment">/// Free memory of specific layout.</span>
+    <span class="kw">pub</span> <span class="kw">unsafe</span> <span class="kw">fn</span> <span class="ident">dealloc</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">ptr</span>: <span class="kw-2">*</span><span class="kw-2">mut</span> <span class="ident">u8</span>, <span class="ident">layout</span>: <span class="ident">Layout</span>) {
+        <span class="self">self</span>.<span class="ident">free</span>(<span class="ident">ptr</span>, <span class="ident">to_order</span>(<span class="ident">P</span>::<span class="ident">to_usize</span>(), <span class="kw-2">&amp;</span><span class="ident">layout</span>));
     }
 
     <span class="doccomment">/// Check that buddy systems donot overlap with each other.</span>
@@ -955,13 +1053,79 @@
 }
 
 <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">test</span>)]</span>
-<span class="kw">mod</span> <span class="ident">tests</span> {
+<span class="kw">pub</span> <span class="kw">mod</span> <span class="ident">tests</span> {
+    <span class="kw">use</span> <span class="ident">core</span>::<span class="ident">ops</span>::<span class="ident">Range</span>;
+
+    <span class="kw">use</span> <span class="ident">rand</span>::{<span class="ident">prelude</span>::<span class="ident">SliceRandom</span>, <span class="ident">Rng</span>};
+    <span class="kw">use</span> <span class="ident">std</span>::<span class="ident">vec</span>::<span class="ident">Vec</span>;
     <span class="kw">use</span> <span class="ident">typenum</span>::<span class="ident">U64</span>;
 
     <span class="kw">use</span> <span class="kw">super</span>::<span class="kw-2">*</span>;
 
     <span class="kw">const</span> <span class="ident">NBUF</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="number">10</span> <span class="op">*</span> <span class="number">4096</span>;
-    <span class="kw">type</span> <span class="ident">PGSIZE</span> <span class="op">=</span> <span class="ident">U64</span>; <span class="comment">// Should be large enough to store the List structure.</span>
+    <span class="kw">pub</span> <span class="kw">type</span> <span class="ident">PGSIZE</span> <span class="op">=</span> <span class="ident">U64</span>; <span class="comment">// Should be large enough to store the List structure.</span>
+
+    <span class="kw">fn</span> <span class="ident">to_layout</span>(<span class="ident">order</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Layout</span> {
+        <span class="kw">let</span> <span class="ident">sz</span> <span class="op">=</span> (<span class="number">1</span> <span class="op">&lt;</span><span class="op">&lt;</span> <span class="ident">order</span>) <span class="op">*</span> <span class="ident">PGSIZE</span>::<span class="ident">to_usize</span>();
+        <span class="ident">Layout</span>::<span class="ident">from_size_align</span>(<span class="ident">sz</span>, <span class="ident">sz</span>).<span class="ident">unwrap</span>()
+    }
+
+    <span class="kw">fn</span> <span class="ident">alloc_some</span><span class="op">&lt;</span><span class="ident">A</span>: <span class="ident">GlobalAlloc</span><span class="op">&gt;</span>(<span class="ident">a</span>: <span class="kw-2">&amp;</span><span class="ident">A</span>, <span class="ident">order_rg</span>: <span class="ident">Range</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Vec</span><span class="op">&lt;</span>(<span class="kw-2">*</span><span class="kw-2">mut</span> <span class="ident">u8</span>, <span class="ident">Layout</span>)<span class="op">&gt;</span> {
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">rng</span> <span class="op">=</span> <span class="ident">rand</span>::<span class="ident">thread_rng</span>();
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">result</span> <span class="op">=</span> <span class="ident">Vec</span>::<span class="ident">new</span>();
+        <span class="kw">unsafe</span> {
+            <span class="kw">loop</span> {
+                <span class="kw">let</span> <span class="ident">ly</span> <span class="op">=</span> <span class="ident">to_layout</span>(<span class="ident">rng</span>.<span class="ident">gen_range</span>(<span class="ident">order_rg</span>.<span class="ident">clone</span>()));
+                <span class="kw">let</span> <span class="ident">p</span> <span class="op">=</span> <span class="ident">a</span>.<span class="ident">alloc</span>(<span class="ident">ly</span>.<span class="ident">clone</span>());
+                <span class="kw">if</span> <span class="ident">p</span>.<span class="ident">is_null</span>() {
+                    <span class="kw">break</span>;
+                }
+                <span class="comment">// Blur with random stuff.</span>
+                <span class="ident">ptr</span>::<span class="ident">write_bytes</span>(<span class="ident">p</span>, <span class="ident">rng</span>.<span class="ident">gen_range</span>(<span class="number">0xAC</span>..<span class="number">0xFF</span>), <span class="ident">ly</span>.<span class="ident">size</span>());
+                <span class="ident">result</span>.<span class="ident">push</span>((<span class="ident">p</span>, <span class="ident">ly</span>));
+            }
+        }
+        <span class="ident">result</span>
+    }
+    <span class="kw">fn</span> <span class="ident">free_some</span><span class="op">&lt;</span><span class="ident">A</span>: <span class="ident">GlobalAlloc</span><span class="op">&gt;</span>(<span class="ident">a</span>: <span class="kw-2">&amp;</span><span class="ident">A</span>, <span class="kw-2">mut</span> <span class="ident">pg</span>: <span class="ident">Vec</span><span class="op">&lt;</span>(<span class="kw-2">*</span><span class="kw-2">mut</span> <span class="ident">u8</span>, <span class="ident">Layout</span>)<span class="op">&gt;</span>) {
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">rng</span> <span class="op">=</span> <span class="ident">rand</span>::<span class="ident">thread_rng</span>();
+        <span class="ident">pg</span>.<span class="ident">shuffle</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">rng</span>);
+        <span class="kw">for</span> (<span class="ident">p</span>, <span class="ident">ly</span>) <span class="kw">in</span> <span class="ident">pg</span> {
+            <span class="kw">unsafe</span> {
+                <span class="ident">a</span>.<span class="ident">dealloc</span>(<span class="ident">p</span>, <span class="ident">ly</span>);
+            }
+        }
+    }
+
+    <span class="kw">fn</span> <span class="ident">test_range</span><span class="op">&lt;</span><span class="ident">A</span>: <span class="ident">GlobalAlloc</span><span class="op">&gt;</span>(<span class="ident">a</span>: <span class="kw-2">&amp;</span><span class="ident">A</span>, <span class="ident">order_rg</span>: <span class="ident">Range</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span>) {
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">pg</span> <span class="op">=</span> <span class="ident">alloc_some</span>(<span class="ident">a</span>, <span class="ident">order_rg</span>.<span class="ident">clone</span>());
+        <span class="kw">let</span> <span class="ident">pg1</span> <span class="op">=</span> <span class="ident">pg</span>.<span class="ident">drain</span>(<span class="ident">pg</span>.<span class="ident">len</span>() <span class="op">/</span> <span class="number">2</span>..).<span class="ident">collect</span>();
+        <span class="ident">free_some</span>(<span class="ident">a</span>, <span class="ident">pg1</span>);
+        <span class="ident">pg</span>.<span class="ident">append</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">alloc_some</span>(<span class="ident">a</span>, <span class="ident">order_rg</span>));
+        <span class="ident">free_some</span>(<span class="ident">a</span>, <span class="ident">pg</span>);
+    }
+
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">test1</span><span class="op">&lt;</span><span class="ident">A</span>: <span class="ident">GlobalAlloc</span><span class="op">&gt;</span>(<span class="ident">a</span>: <span class="kw-2">&amp;</span><span class="ident">A</span>) {
+        <span class="ident">test_range</span>(<span class="ident">a</span>, <span class="number">0</span>..<span class="number">2</span>);
+        <span class="ident">test_range</span>(<span class="ident">a</span>, <span class="number">0</span>..<span class="number">10</span>);
+    }
+
+    <span class="attribute">#[<span class="ident">test</span>]</span>
+    <span class="kw">fn</span> <span class="ident">test_allocator</span>() {
+        <span class="kw">let</span> <span class="ident">n</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="ident">PGSIZE</span>::<span class="ident">to_usize</span>() <span class="op">*</span> <span class="number">1000</span>;
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">v</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span> <span class="op">=</span> <span class="ident">Vec</span>::<span class="ident">new</span>();
+        <span class="ident">v</span>.<span class="ident">reserve</span>(<span class="ident">n</span>);
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">rng</span> <span class="op">=</span> <span class="ident">rand</span>::<span class="ident">thread_rng</span>();
+        <span class="kw">for</span> <span class="kw">_</span> <span class="kw">in</span> <span class="number">0</span>..<span class="ident">n</span> {
+            <span class="ident">v</span>.<span class="ident">push</span>(<span class="ident">rng</span>.<span class="ident">gen_range</span>(<span class="number">0</span>..<span class="number">0xFF</span>));
+        }
+        <span class="kw">let</span> <span class="ident">ptr</span> <span class="op">=</span> <span class="ident">v</span>.<span class="ident">as_mut_ptr</span>() <span class="kw">as</span> <span class="ident">usize</span>;
+        <span class="kw">unsafe</span> {
+            <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">a</span>: <span class="ident">Allocator</span><span class="op">&lt;</span><span class="ident">PGSIZE</span><span class="op">&gt;</span> <span class="op">=</span> <span class="ident">Allocator</span>::<span class="ident">new</span>();
+            <span class="ident">a</span>.<span class="ident">add_zone</span>(<span class="ident">ptr</span>, <span class="ident">ptr</span> <span class="op">+</span> <span class="ident">n</span>);
+            <span class="ident">test1</span>(<span class="kw-2">&amp;</span><span class="ident">a</span>);
+        }
+    }
 
     <span class="attribute">#[<span class="ident">test</span>]</span>
     <span class="kw">fn</span> <span class="ident">test_utils</span>() {
