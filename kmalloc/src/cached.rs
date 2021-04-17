@@ -10,11 +10,7 @@
 //! If the system requires strict bound on running time (e.g. real-time system),
 //! use the buddy allocator. Otherwise, use this cached one to achieve faster
 //! performance in most scenarios.
-use core::{
-    alloc::{GlobalAlloc, Layout},
-    ops::Mul,
-    ptr::{self, null, null_mut},
-};
+use core::alloc::{GlobalAlloc, Layout};
 
 use mcs::{Mutex, Slot};
 use typenum::{PowerOfTwo, Unsigned};
@@ -45,38 +41,44 @@ impl<P: Unsigned + PowerOfTwo + 'static> Cached<MultiBuddySystem<P>> {
     /// Due to the cache layer, this operation is amotized O(logN) and maybe O(N)
     /// in worst case. But it's usually O(1) and much faster than O(logN).
     pub unsafe fn alloc(&mut self, layout: core::alloc::Layout) -> *mut u8 {
-        let d = to_order(P::to_usize(), &layout);
-        if let Some(head) = self.freelist.get_mut(d) {
+        let order = to_order(P::to_usize(), &layout);
+        if let Some(head) = self.freelist.get_mut(order) {
             let p = head.next;
-            if p.is_null() {
-                let p = self.inner.alloc(layout);
-                if p.is_null() {
-                    // TODO: Try to free by pages.
-                    p
-                } else {
-                    p
-                }
-            } else {
+            if !p.is_null() {
                 head.next = (*p).next;
-                p as *mut u8
+                return p as *mut u8;
             }
-        } else {
-            // No cached.
-            self.inner.alloc(layout)
         }
+        // Not cached.
+        let p = self.inner.alloc1(order);
+        if !p.is_null() {
+            return p;
+        }
+        // Need to free cached pages.
+        for (d, head) in self.freelist.iter_mut().enumerate().rev() {
+            let mut p = head.next;
+            while !p.is_null() {
+                head.next = (*p).next;
+                if self.inner.free(p as *mut u8, d) >= order {
+                    return self.inner.alloc1(order);
+                }
+                p = head.next;
+            }
+        }
+        p
     }
 
     /// Free the memory pointed by ptr with specified layout.
     ///
     /// This operation is O(1).
     pub unsafe fn dealloc(&mut self, ptr: *mut u8, layout: core::alloc::Layout) {
-        let d = to_order(P::to_usize(), &layout);
-        if let Some(head) = self.freelist.get_mut(d) {
+        let order = to_order(P::to_usize(), &layout);
+        if let Some(head) = self.freelist.get_mut(order) {
             let ptr = ptr as *mut Freelist;
             (*ptr).next = head.next;
             head.next = ptr;
         } else {
-            self.inner.dealloc(ptr, layout);
+            self.inner.free(ptr, order);
         }
     }
 }
@@ -113,6 +115,32 @@ unsafe impl<P: Unsigned + PowerOfTwo + 'static> GlobalAlloc for Allocator<P> {
         let mut slot = Slot::new();
         {
             self.inner.lock(&mut slot).dealloc(ptr, layout);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::buddy::tests::{test1, PGSIZE};
+    use super::*;
+    use rand::Rng;
+    use std::vec::Vec;
+    use typenum::Unsigned;
+
+    #[test]
+    fn test_allocator() {
+        let n: usize = PGSIZE::to_usize() * 1000;
+        let mut v: Vec<u8> = Vec::new();
+        v.reserve(n);
+        let mut rng = rand::thread_rng();
+        for _ in 0..n {
+            v.push(rng.gen_range(0..0xFF));
+        }
+        let ptr = v.as_mut_ptr() as usize;
+        unsafe {
+            let mut a: Allocator<PGSIZE> = Allocator::new();
+            a.add_zone(ptr, ptr + n);
+            test1(&a);
         }
     }
 }

@@ -174,16 +174,20 @@ mod tests {
     where
         P: PriqueTrait<usize>,
     {
-        test_pushpop1(P::new().unwrap());
+        // Small cases.
+        for i in 1..P::max_nice() {
+            test_pushpop1(P::new().unwrap(), i);
+        }
+        // Large case.
+        test_pushpop1(P::new().unwrap(), 10000);
         test_invalid_priority1(P::new().unwrap());
         test_preemption1(P::new().unwrap());
     }
 
-    fn test_pushpop1<P>(mut pq: P)
+    fn test_pushpop1<P>(mut pq: P, n: usize)
     where
         P: PriqueTrait<usize>,
     {
-        let n = 10000;
         let mut items = Vec::new();
         let mut rng = rand::thread_rng();
 

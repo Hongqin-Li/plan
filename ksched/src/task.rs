@@ -3,6 +3,7 @@ use core::alloc::AllocError;
 
 use futures::task::ArcWake;
 
+use super::prique::{Prique64 as Prique, PriqueTrait};
 use kcore::utils::Error;
 use lazy_static::*;
 use {
@@ -14,7 +15,6 @@ use {
     },
     spin::Mutex,
 };
-use super::prique::{Prique64 as Prique, PriqueTrait};
 
 /// Executor holds a list of tasks to be processed
 pub struct Executor {
@@ -73,7 +73,7 @@ impl Executor {
                 } else {
                     self.waitque.push_back(t);
                 }
-            },
+            }
             _ => {}
         }
     }

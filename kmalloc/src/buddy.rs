@@ -10,11 +10,7 @@
 //! Allocation and deallocation are both guaranteed to finish within O(log n),
 //! where n is the size of memory handled by this buddy system.
 //!
-use core::{
-    alloc::GlobalAlloc,
-    cmp::{max, min},
-    mem::size_of,
-};
+use core::{alloc::GlobalAlloc, cmp::min, mem::size_of};
 use core::{alloc::Layout, mem, ptr};
 
 use crate::{list::List, to_order};
@@ -157,9 +153,8 @@ impl<P: Unsigned + PowerOfTwo> BuddySystem<P> {
         Ok(b)
     }
 
-    /// Allocate a range of memory specified by `layout`.
-    pub unsafe fn alloc(&mut self, layout: Layout) -> *mut u8 {
-        let order = to_order(P::to_usize(), &layout);
+    /// Alloccate memory by order.
+    pub unsafe fn alloc1(&mut self, order: usize) -> *mut u8 {
         let mut d = order;
         let mut p = ptr::null_mut();
         while d <= self.max_order {
@@ -188,12 +183,9 @@ impl<P: Unsigned + PowerOfTwo> BuddySystem<P> {
         p
     }
 
-    /// Free the block of memory starting from `ptr` with specific `layout`.
-    pub unsafe fn dealloc(&mut self, ptr: *mut u8, layout: Layout) {
-        debug_assert_eq!(ptr.is_null(), false);
-        debug_assert!(self.page_begin <= (ptr as usize) && (ptr as usize) < self.page_end);
-
-        let mut order = to_order(P::to_usize(), &layout);
+    /// Free the block of memory starting from `ptr` with specific order.
+    /// Return the order of the freed page after merging possible buddy pages.
+    pub unsafe fn free(&mut self, ptr: *mut u8, mut order: usize) -> usize {
         let mut i = self.bitmap_idx(ptr as usize, order);
         let mut p = ptr as usize;
         while i != 1 && self.get_bit(buddy_idx(i)) == false {
@@ -214,6 +206,20 @@ impl<P: Unsigned + PowerOfTwo> BuddySystem<P> {
 
         #[cfg(any(test, debug_assertions))]
         self.check();
+
+        order
+    }
+
+    /// Allocate memory specified by `layout`.
+    pub unsafe fn alloc(&mut self, layout: Layout) -> *mut u8 {
+        self.alloc1(to_order(P::to_usize(), &layout))
+    }
+
+    /// Free the block of memory starting from `ptr` with specific `layout`.
+    pub unsafe fn dealloc(&mut self, ptr: *mut u8, layout: Layout) {
+        debug_assert_eq!(ptr.is_null(), false);
+        debug_assert!(self.page_begin <= (ptr as usize) && (ptr as usize) < self.page_end);
+        self.free(ptr, to_order(P::to_usize(), &layout));
     }
 
     /// Check the properties maintained by buddy system.
@@ -318,34 +324,44 @@ impl<P: Unsigned + PowerOfTwo + 'static> MultiBuddySystem<P> {
         self.check();
     }
 
-    /// Allocate memory according to layout.
+    /// Allocate memory of `2^order` pages.
     ///
     /// Loop through every registered zone and try allocating.
     /// O(logN) per zone.
-    pub unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+    pub unsafe fn alloc1(&self, order: usize) -> *mut u8 {
         let mut b = self.head;
         let mut p: *mut u8 = ptr::null_mut();
         while !b.is_null() && p.is_null() {
-            p = (*b).alloc(layout);
+            p = (*b).alloc1(order);
             b = (*b).next;
         }
         p
     }
 
+    /// Allocate memory according to layout.
+    pub unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        self.alloc1(to_order(P::to_usize(), &layout))
+    }
+
     /// Free memory pointed by ptr with specific layout.
     ///
+    /// Return the order of the freed page after merging possible buddy pages.
     /// Loop through every registered buddy system and try deallocating.
     /// O(logN) per zone.
-    pub unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+    pub unsafe fn free(&self, ptr: *mut u8, order: usize) -> usize {
         let mut b = self.head;
         while !b.is_null() {
             if (*b).page_begin <= ptr as usize && (ptr as usize) < (*b).page_end {
-                (*b).dealloc(ptr, layout);
-                return;
+                return (*b).free(ptr, order);
             }
             b = (*b).next;
         }
         panic!("pointer doesn't fall into any buddy system");
+    }
+
+    /// Free memory of specific layout.
+    pub unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+        self.free(ptr, to_order(P::to_usize(), &layout));
     }
 
     /// Check that buddy systems donot overlap with each other.
@@ -414,13 +430,79 @@ unsafe impl<P: Unsigned + PowerOfTwo + 'static> GlobalAlloc for Allocator<P> {
 }
 
 #[cfg(test)]
-mod tests {
+pub mod tests {
+    use core::ops::Range;
+
+    use rand::{prelude::SliceRandom, Rng};
+    use std::vec::Vec;
     use typenum::U64;
 
     use super::*;
 
     const NBUF: usize = 10 * 4096;
-    type PGSIZE = U64; // Should be large enough to store the List structure.
+    pub type PGSIZE = U64; // Should be large enough to store the List structure.
+
+    fn to_layout(order: usize) -> Layout {
+        let sz = (1 << order) * PGSIZE::to_usize();
+        Layout::from_size_align(sz, sz).unwrap()
+    }
+
+    fn alloc_some<A: GlobalAlloc>(a: &A, order_rg: Range<usize>) -> Vec<(*mut u8, Layout)> {
+        let mut rng = rand::thread_rng();
+        let mut result = Vec::new();
+        unsafe {
+            loop {
+                let ly = to_layout(rng.gen_range(order_rg.clone()));
+                let p = a.alloc(ly.clone());
+                if p.is_null() {
+                    break;
+                }
+                // Blur with random stuff.
+                ptr::write_bytes(p, rng.gen_range(0xAC..0xFF), ly.size());
+                result.push((p, ly));
+            }
+        }
+        result
+    }
+    fn free_some<A: GlobalAlloc>(a: &A, mut pg: Vec<(*mut u8, Layout)>) {
+        let mut rng = rand::thread_rng();
+        pg.shuffle(&mut rng);
+        for (p, ly) in pg {
+            unsafe {
+                a.dealloc(p, ly);
+            }
+        }
+    }
+
+    fn test_range<A: GlobalAlloc>(a: &A, order_rg: Range<usize>) {
+        let mut pg = alloc_some(a, order_rg.clone());
+        let pg1 = pg.drain(pg.len() / 2..).collect();
+        free_some(a, pg1);
+        pg.append(&mut alloc_some(a, order_rg));
+        free_some(a, pg);
+    }
+
+    pub fn test1<A: GlobalAlloc>(a: &A) {
+        test_range(a, 0..2);
+        test_range(a, 0..10);
+    }
+
+    #[test]
+    fn test_allocator() {
+        let n: usize = PGSIZE::to_usize() * 1000;
+        let mut v: Vec<u8> = Vec::new();
+        v.reserve(n);
+        let mut rng = rand::thread_rng();
+        for _ in 0..n {
+            v.push(rng.gen_range(0..0xFF));
+        }
+        let ptr = v.as_mut_ptr() as usize;
+        unsafe {
+            let mut a: Allocator<PGSIZE> = Allocator::new();
+            a.add_zone(ptr, ptr + n);
+            test1(&a);
+        }
+    }
 
     #[test]
     fn test_utils() {
