@@ -1,3 +1,4 @@
+//! Sleep lock or mutex implementation.
 use core::ops::{Deref, DerefMut};
 use core::{alloc::AllocError, fmt};
 use core::{
@@ -10,9 +11,12 @@ use spin::Mutex as Spinlock;
 
 use crate::slpque::SleepQueue;
 
-struct Inner {
-    locked: bool,
-    slpque: SleepQueue,
+/// Inner sleep queue and lock state of Mutex.
+pub struct MutexInner {
+    /// If this mutex has been locked.
+    pub locked: bool,
+    /// The sleep queue of waiting tasks.
+    pub slpque: SleepQueue,
 }
 
 /// An async mutex.
@@ -22,7 +26,7 @@ struct Inner {
 /// # Examples
 ///
 /// ```
-/// # ksched::task::spawn(async {
+/// # ksched::task::spawn(0, async {
 /// use ksched::mutex::Mutex;
 ///
 /// let m: Mutex<usize> = Mutex::new(1);
@@ -38,12 +42,12 @@ struct Inner {
 /// ```
 pub struct Mutex<T: ?Sized> {
     /// Guard towards status and waiting queue.
-    inner: Spinlock<Inner>,
+    pub inner: Spinlock<MutexInner>,
 
     /// The value inside the mutex.
     data: UnsafeCell<T>,
 }
-
+// Note that inner is already send and sync by [spin::Mutex]
 unsafe impl<T: Send + ?Sized> Send for Mutex<T> {}
 unsafe impl<T: Send + ?Sized> Sync for Mutex<T> {}
 
@@ -59,7 +63,7 @@ impl<T> Mutex<T> {
     /// ```
     pub fn new(data: T) -> Mutex<T> {
         Mutex {
-            inner: Spinlock::new(Inner {
+            inner: Spinlock::new(MutexInner {
                 locked: false,
                 slpque: SleepQueue::new(),
             }),
@@ -92,7 +96,7 @@ impl<T: ?Sized> Mutex<T> {
     /// # Examples
     ///
     /// ```
-    /// # ksched::task::spawn(async {
+    /// # ksched::task::spawn(0, async {
     /// use ksched::mutex::Mutex;
     ///
     /// let mutex: Mutex<usize> = Mutex::new(10);
@@ -146,11 +150,12 @@ impl<T: ?Sized> Mutex<T> {
     /// ```
     #[inline]
     pub fn try_lock(&self) -> Option<MutexGuard<'_, T>> {
-        if let Some(mut g) = self.inner.try_lock() {
+        let mut g = self.inner.lock();
+        if g.locked {
+            None
+        } else {
             g.locked = true;
             Some(MutexGuard(self))
-        } else {
-            None
         }
     }
 
@@ -162,7 +167,7 @@ impl<T: ?Sized> Mutex<T> {
     /// # Examples
     ///
     /// ```
-    /// # ksched::task::spawn(async {
+    /// # ksched::task::spawn(0, async {
     /// use ksched::mutex::Mutex;
     ///
     /// let mut mutex: Mutex<usize> = Mutex::new(0);
@@ -216,7 +221,7 @@ impl<'a, T: ?Sized> MutexGuard<'a, T> {
     /// # Examples
     ///
     /// ```
-    /// # ksched::task::spawn(async {
+    /// # ksched::task::spawn(0, async {
     /// use ksched::sync::{Mutex, MutexGuard};
     ///
     /// let mutex = Mutex::new(10i32);
@@ -283,7 +288,7 @@ mod tests {
         let data: Arc<Mutex<usize>> = Arc::new(Mutex::new(0));
         for i in 0..N {
             let data = data.clone();
-            spawn(async move {
+            spawn(0, async move {
                 println!("task {}: start", i);
                 let mut lk = data.lock().await.unwrap();
                 yield_now().await;
@@ -299,7 +304,7 @@ mod tests {
             let data = data.clone();
             handles.push(thread::spawn(|| {
                 run_all();
-                spawn(async move {
+                spawn(0, async move {
                     let g = data.lock().await.unwrap();
                     assert_eq!(*g, N);
                 })

@@ -1,6 +1,9 @@
+//! Async executor and some basic futures.
 use core::alloc::AllocError;
 
 use futures::task::ArcWake;
+
+use kcore::utils::Error;
 use lazy_static::*;
 use {
     alloc::{boxed::Box, collections::vec_deque::VecDeque, sync::Arc},
@@ -11,17 +14,21 @@ use {
     },
     spin::Mutex,
 };
+use super::prique::{Prique64 as Prique, PriqueTrait};
 
 /// Executor holds a list of tasks to be processed
 pub struct Executor {
-    tasks: VecDeque<Arc<Task>>,
+    schedque: Prique<Arc<Task>>,
+    /// Tasks encountering oom when being woken up.
+    waitque: VecDeque<Arc<Task>>,
     ntasks: usize,
 }
 
 impl Default for Executor {
     fn default() -> Self {
         Executor {
-            tasks: VecDeque::new(),
+            schedque: Prique::new().unwrap(),
+            waitque: VecDeque::new(),
             ntasks: 0,
         }
     }
@@ -30,12 +37,13 @@ impl Default for Executor {
 /// Task is our unit of execution and holds a future are waiting on
 struct Task {
     pub future: Mutex<Pin<Box<dyn Future<Output = ()> + Send + 'static>>>,
+    pub nice: usize,
 }
 
 /// Wake by rescheduling.
 impl ArcWake for Task {
     fn wake_by_ref(t: &Arc<Self>) {
-        DEFAULT_EXECUTOR.lock().resched(t.clone());
+        DEFAULT_EXECUTOR.lock().resched(t.clone(), false);
     }
 }
 
@@ -54,11 +62,20 @@ impl Task {
 }
 
 impl Executor {
-    fn resched(&mut self, t: Arc<Task>) {
-        debug_assert!(self.tasks.len() < self.ntasks);
-        debug_assert!(self.tasks.capacity() >= self.ntasks);
-        // Won't panic since we have reserved in spawn.
-        self.tasks.push_back(t);
+    fn resched(&mut self, t: Arc<Task>, from_wait: bool) {
+        debug_assert!(self.schedque.len() + self.waitque.len() < self.ntasks);
+        debug_assert!(self.waitque.capacity() >= self.ntasks);
+        match self.schedque.push(t.nice, t.clone()) {
+            Err(Error::OutOfMemory) => {
+                // Won't panic since we have reserved in spawn.
+                if from_wait {
+                    self.waitque.push_front(t);
+                } else {
+                    self.waitque.push_back(t);
+                }
+            },
+            _ => {}
+        }
     }
 
     /// Create a new task and add to the executor.
@@ -67,28 +84,36 @@ impl Executor {
     /// and is always greater or equal to length of `tasks` queue. The decrement
     /// is done in [run].
     ///
-    /// If allocation failed when pushing back to the tasks queue, it returns [AllocError].
+    /// If allocation failed when pushing back to the tasks queue, it returns [Error].
     fn spawn(
         &mut self,
+        nice: usize,
         future: impl Future<Output = ()> + 'static + Send,
-    ) -> Result<(), AllocError> {
+    ) -> Result<(), Error> {
+        debug_assert!(self.schedque.len() + self.waitque.len() <= self.ntasks);
+
         let t = Arc::try_new(Task {
-            future: Mutex::new(Box::pin(future)),
+            nice,
+            future: Mutex::new(Box::into_pin(Box::try_new(future)?)),
         })?;
-        debug_assert!(self.tasks.len() <= self.ntasks);
         self.ntasks += 1;
-        self.tasks
-            .try_reserve(self.ntasks - self.tasks.len())
-            .map_err(|_| AllocError)?;
-        self.resched(t);
+        self.waitque.try_reserve(self.ntasks - self.waitque.len())?;
+        self.resched(t, false);
         Ok(())
+    }
+
+    /// Called when one task is terminating.
+    fn exit1(&mut self) {
+        self.ntasks -= 1;
+        self.waitque.shrink_to(self.ntasks);
+        // TODO: shrink schedque.
     }
 }
 
 lazy_static! {
     static ref DEFAULT_EXECUTOR: Mutex<Box<Executor>> = {
         let m = Executor::default();
-        Mutex::new(Box::new(m))
+        Mutex::new(Box::try_new(m).unwrap())
     };
 }
 
@@ -97,12 +122,12 @@ lazy_static! {
 /// # Examples
 ///
 /// ```
-/// ksched::task::spawn(async {
+/// ksched::task::spawn(0, async {
 ///    println!("hello, world");
 /// }).expect("oom");
 /// ```
-pub fn spawn(future: impl Future<Output = ()> + 'static + Send) -> Result<(), AllocError> {
-    DEFAULT_EXECUTOR.lock().spawn(future)
+pub fn spawn(nice: usize, future: impl Future<Output = ()> + 'static + Send) -> Result<(), Error> {
+    DEFAULT_EXECUTOR.lock().spawn(nice, future)
 }
 
 /// Run tasks until idle.
@@ -112,17 +137,22 @@ pub fn spawn(future: impl Future<Output = ()> + 'static + Send) -> Result<(), Al
 /// ```
 /// use ksched::task;
 ///
-/// task::spawn(async {
+/// task::spawn(0, async {
 ///     task::yield_now().await;
 /// }).expect("oom");
 /// task::run();
 /// ```
 pub fn run() {
     loop {
-        let t = DEFAULT_EXECUTOR.lock().tasks.pop_front();
-        if let Some(t) = t {
+        let mut e = DEFAULT_EXECUTOR.lock();
+        while let Some(t) = e.waitque.pop_front() {
+            e.resched(t, true);
+        }
+        let t = e.schedque.pop();
+        drop(e);
+        if let Some((nice, t)) = t {
             if t.poll().is_ready() {
-                DEFAULT_EXECUTOR.lock().ntasks -= 1;
+                DEFAULT_EXECUTOR.lock().exit1();
             }
         } else {
             break;
@@ -152,7 +182,7 @@ pub fn run_all() {
 /// # Examples
 ///
 /// ```
-/// # ksched::task::spawn(async {
+/// # ksched::task::spawn(0, async {
 /// #
 /// ksched::task::yield_now().await;
 /// #

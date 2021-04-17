@@ -1,3 +1,4 @@
+//! Condition variable.
 use core::pin::Pin;
 use core::{
     alloc::AllocError,
@@ -21,7 +22,7 @@ use crate::slpque::SleepQueue;
 /// # Examples
 ///
 /// ```
-/// # ksched::task::spawn(async {
+/// # ksched::task::spawn(0, async {
 /// #
 /// use std::sync::Arc;
 ///
@@ -32,7 +33,7 @@ use crate::slpque::SleepQueue;
 /// let pair2 = pair.clone();
 ///
 /// // Inside of our lock, spawn a new thread, and then wait for it to start.
-/// task::spawn(async move {
+/// task::spawn(0, async move {
 ///     let (lock, cvar) = &*pair2;
 ///     let mut started = lock.lock().await.expect("oom");
 ///     *started = true;
@@ -84,7 +85,7 @@ impl Condvar {
     /// # Examples
     ///
     /// ```
-    /// # ksched::task::spawn(async {
+    /// # ksched::task::spawn(0, async {
     /// use std::sync::Arc;
     ///
     /// use ksched::sync::{Mutex, Condvar};
@@ -93,7 +94,7 @@ impl Condvar {
     /// let pair = Arc::new((Mutex::new(false), Condvar::new()));
     /// let pair2 = pair.clone();
     ///
-    /// task::spawn(async move {
+    /// task::spawn(0, async move {
     ///     let (lock, cvar) = &*pair2;
     ///     let mut started = lock.lock().await.expect("oom");
     ///     *started = true;
@@ -134,7 +135,7 @@ impl Condvar {
     /// # Examples
     ///
     /// ```
-    /// # ksched::task::spawn(async {
+    /// # ksched::task::spawn(0, async {
     /// #
     /// use std::sync::Arc;
     ///
@@ -144,7 +145,7 @@ impl Condvar {
     /// let pair = Arc::new((Mutex::new(false), Condvar::new()));
     /// let pair2 = pair.clone();
     ///
-    /// task::spawn(async move {
+    /// task::spawn(0, async move {
     ///     let (lock, cvar) = &*pair2;
     ///     let mut started = lock.lock().await.expect("oom");
     ///     *started = true;
@@ -183,7 +184,7 @@ impl Condvar {
     /// # Examples
     ///
     /// ```
-    /// # ksched::task::spawn(async {
+    /// # ksched::task::spawn(0, async {
     /// use std::sync::Arc;
     ///
     /// use ksched::sync::{Mutex, Condvar};
@@ -192,7 +193,7 @@ impl Condvar {
     /// let pair = Arc::new((Mutex::new(false), Condvar::new()));
     /// let pair2 = pair.clone();
     ///
-    /// task::spawn(async move {
+    /// task::spawn(0, async move {
     ///     let (lock, cvar) = &*pair2;
     ///     let mut started = lock.lock().await.expect("oom");
     ///     *started = true;
@@ -217,7 +218,7 @@ impl Condvar {
     ///
     /// # Examples
     /// ```
-    /// # ksched::task::spawn(async {
+    /// # ksched::task::spawn(0, async {
     /// #
     /// use std::sync::Arc;
     ///
@@ -227,7 +228,7 @@ impl Condvar {
     /// let pair = Arc::new((Mutex::new(false), Condvar::new()));
     /// let pair2 = pair.clone();
     ///
-    /// task::spawn(async move {
+    /// task::spawn(0, async move {
     ///     let (lock, cvar) = &*pair2;
     ///     let mut started = lock.lock().await.expect("oom");
     ///     *started = true;

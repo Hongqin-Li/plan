@@ -5,6 +5,8 @@
 #![feature(allocator_api)]
 #![feature(try_reserve)]
 #![feature(const_fn)]
+#![feature(box_into_pin)]
+#![feature(generators, generator_trait)]
 
 extern crate alloc;
 
@@ -13,5 +15,9 @@ extern crate alloc;
 #[macro_use]
 extern crate std;
 
-mod utils;
+pub mod chan;
+pub mod dev;
+pub mod mnt;
+pub mod utils;
 pub mod vm;
+pub use async_trait::async_trait_try;

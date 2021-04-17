@@ -34,6 +34,11 @@ pub struct Page<P: PageTable> {
     phantom: PhantomData<P>,
 }
 
+// Safe since it doesn't have interior mutability.
+unsafe impl<P: PageTable> core::marker::Sync for Page<P> {}
+// Safe since it doesn't hold reference to something mutable.
+unsafe impl<P: PageTable> core::marker::Send for Page<P> {}
+
 impl<P: PageTable> Page<P> {
     fn new() -> Result<Self, Error> {
         let p = unsafe { alloc::alloc(P::PG_LAYOUT) };
@@ -97,7 +102,7 @@ pub enum Segment<P: PageTable> {
 #[derive(Debug)]
 pub struct AddressSpace<P: PageTable> {
     /// Page table that contains mapping information.
-    pgdir: P,
+    pub pgdir: P,
     /// Physical memory segments.
     ///
     /// We don't use B-tree to guarantee O(logN) searching since the number of segments
