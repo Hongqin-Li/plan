@@ -295,7 +295,9 @@
 <span id="292">292</span>
 <span id="293">293</span>
 <span id="294">294</span>
+<span id="295">295</span>
 </pre><div class="example-wrap"><pre class="rust ">
+<span class="doccomment">//! Condition variable.</span>
 <span class="kw">use</span> <span class="ident">core</span>::<span class="ident">pin</span>::<span class="ident">Pin</span>;
 <span class="kw">use</span> <span class="ident">core</span>::{
     <span class="ident">alloc</span>::<span class="ident">AllocError</span>,
@@ -319,7 +321,7 @@
 <span class="doccomment">/// # Examples</span>
 <span class="doccomment">///</span>
 <span class="doccomment">/// ```</span>
-<span class="doccomment">/// # ksched::task::spawn(async {</span>
+<span class="doccomment">/// # ksched::task::spawn(0, async {</span>
 <span class="doccomment">/// #</span>
 <span class="doccomment">/// use std::sync::Arc;</span>
 <span class="doccomment">///</span>
@@ -330,7 +332,7 @@
 <span class="doccomment">/// let pair2 = pair.clone();</span>
 <span class="doccomment">///</span>
 <span class="doccomment">/// // Inside of our lock, spawn a new thread, and then wait for it to start.</span>
-<span class="doccomment">/// task::spawn(async move {</span>
+<span class="doccomment">/// task::spawn(0, async move {</span>
 <span class="doccomment">///     let (lock, cvar) = &amp;*pair2;</span>
 <span class="doccomment">///     let mut started = lock.lock().await.expect(&quot;oom&quot;);</span>
 <span class="doccomment">///     *started = true;</span>
@@ -382,7 +384,7 @@
     <span class="doccomment">/// # Examples</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// ```</span>
-    <span class="doccomment">/// # ksched::task::spawn(async {</span>
+    <span class="doccomment">/// # ksched::task::spawn(0, async {</span>
     <span class="doccomment">/// use std::sync::Arc;</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// use ksched::sync::{Mutex, Condvar};</span>
@@ -391,7 +393,7 @@
     <span class="doccomment">/// let pair = Arc::new((Mutex::new(false), Condvar::new()));</span>
     <span class="doccomment">/// let pair2 = pair.clone();</span>
     <span class="doccomment">///</span>
-    <span class="doccomment">/// task::spawn(async move {</span>
+    <span class="doccomment">/// task::spawn(0, async move {</span>
     <span class="doccomment">///     let (lock, cvar) = &amp;*pair2;</span>
     <span class="doccomment">///     let mut started = lock.lock().await.expect(&quot;oom&quot;);</span>
     <span class="doccomment">///     *started = true;</span>
@@ -432,7 +434,7 @@
     <span class="doccomment">/// # Examples</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// ```</span>
-    <span class="doccomment">/// # ksched::task::spawn(async {</span>
+    <span class="doccomment">/// # ksched::task::spawn(0, async {</span>
     <span class="doccomment">/// #</span>
     <span class="doccomment">/// use std::sync::Arc;</span>
     <span class="doccomment">///</span>
@@ -442,7 +444,7 @@
     <span class="doccomment">/// let pair = Arc::new((Mutex::new(false), Condvar::new()));</span>
     <span class="doccomment">/// let pair2 = pair.clone();</span>
     <span class="doccomment">///</span>
-    <span class="doccomment">/// task::spawn(async move {</span>
+    <span class="doccomment">/// task::spawn(0, async move {</span>
     <span class="doccomment">///     let (lock, cvar) = &amp;*pair2;</span>
     <span class="doccomment">///     let mut started = lock.lock().await.expect(&quot;oom&quot;);</span>
     <span class="doccomment">///     *started = true;</span>
@@ -481,7 +483,7 @@
     <span class="doccomment">/// # Examples</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// ```</span>
-    <span class="doccomment">/// # ksched::task::spawn(async {</span>
+    <span class="doccomment">/// # ksched::task::spawn(0, async {</span>
     <span class="doccomment">/// use std::sync::Arc;</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// use ksched::sync::{Mutex, Condvar};</span>
@@ -490,7 +492,7 @@
     <span class="doccomment">/// let pair = Arc::new((Mutex::new(false), Condvar::new()));</span>
     <span class="doccomment">/// let pair2 = pair.clone();</span>
     <span class="doccomment">///</span>
-    <span class="doccomment">/// task::spawn(async move {</span>
+    <span class="doccomment">/// task::spawn(0, async move {</span>
     <span class="doccomment">///     let (lock, cvar) = &amp;*pair2;</span>
     <span class="doccomment">///     let mut started = lock.lock().await.expect(&quot;oom&quot;);</span>
     <span class="doccomment">///     *started = true;</span>
@@ -515,7 +517,7 @@
     <span class="doccomment">///</span>
     <span class="doccomment">/// # Examples</span>
     <span class="doccomment">/// ```</span>
-    <span class="doccomment">/// # ksched::task::spawn(async {</span>
+    <span class="doccomment">/// # ksched::task::spawn(0, async {</span>
     <span class="doccomment">/// #</span>
     <span class="doccomment">/// use std::sync::Arc;</span>
     <span class="doccomment">///</span>
@@ -525,7 +527,7 @@
     <span class="doccomment">/// let pair = Arc::new((Mutex::new(false), Condvar::new()));</span>
     <span class="doccomment">/// let pair2 = pair.clone();</span>
     <span class="doccomment">///</span>
-    <span class="doccomment">/// task::spawn(async move {</span>
+    <span class="doccomment">/// task::spawn(0, async move {</span>
     <span class="doccomment">///     let (lock, cvar) = &amp;*pair2;</span>
     <span class="doccomment">///     let mut started = lock.lock().await.expect(&quot;oom&quot;);</span>
     <span class="doccomment">///     *started = true;</span>

@@ -1,1 +1,1 @@
-initSidebarItems({"struct":[["Mutex","An async mutex."],["MutexGuard","A guard that releases the mutex when dropped."]]});
+initSidebarItems({"struct":[["Mutex","An async mutex."],["MutexGuard","A guard that releases the mutex when dropped."],["MutexInner","Inner sleep queue and lock state of Mutex."]]});

@@ -1,0 +1,1 @@
+initSidebarItems({"enum":[["QType","Type of a file."]],"struct":[["Chan","Channel represents a virtual file from kernel's perspective."],["Qid","Qid identifies the file within a device, analogous to the i-number."]]});

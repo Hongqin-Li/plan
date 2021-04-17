@@ -1,1 +1,1 @@
-initSidebarItems({"struct":[["SleepQueue",""]]});
+initSidebarItems({"struct":[["SleepQueue","Sleep queue is simply a deque of waker."]]});

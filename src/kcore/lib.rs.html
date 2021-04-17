@@ -18,6 +18,12 @@
 <span id="15">15</span>
 <span id="16">16</span>
 <span id="17">17</span>
+<span id="18">18</span>
+<span id="19">19</span>
+<span id="20">20</span>
+<span id="21">21</span>
+<span id="22">22</span>
+<span id="23">23</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="doccomment">//! Kernel building blocks.</span>
 
@@ -26,6 +32,8 @@
 <span class="attribute">#![<span class="ident">feature</span>(<span class="ident">allocator_api</span>)]</span>
 <span class="attribute">#![<span class="ident">feature</span>(<span class="ident">try_reserve</span>)]</span>
 <span class="attribute">#![<span class="ident">feature</span>(<span class="ident">const_fn</span>)]</span>
+<span class="attribute">#![<span class="ident">feature</span>(<span class="ident">box_into_pin</span>)]</span>
+<span class="attribute">#![<span class="ident">feature</span>(<span class="ident">generators</span>, <span class="ident">generator_trait</span>)]</span>
 
 <span class="kw">extern</span> <span class="kw">crate</span> <span class="ident">alloc</span>;
 
@@ -34,8 +42,12 @@
 <span class="attribute">#[<span class="ident">macro_use</span>]</span>
 <span class="kw">extern</span> <span class="kw">crate</span> <span class="ident">std</span>;
 
-<span class="kw">mod</span> <span class="ident">utils</span>;
+<span class="kw">pub</span> <span class="kw">mod</span> <span class="ident">chan</span>;
+<span class="kw">pub</span> <span class="kw">mod</span> <span class="ident">dev</span>;
+<span class="kw">pub</span> <span class="kw">mod</span> <span class="ident">mnt</span>;
+<span class="kw">pub</span> <span class="kw">mod</span> <span class="ident">utils</span>;
 <span class="kw">pub</span> <span class="kw">mod</span> <span class="ident">vm</span>;
+<span class="kw">pub</span> <span class="kw">use</span> <span class="ident">async_trait</span>::<span class="ident">async_trait_try</span>;
 </pre></div>
 </section><section id="search" class="content hidden"></section><section class="footer"></section><div id="rustdoc-vars" data-root-path="../../" data-current-crate="kcore"></div>
     <script src="../../main.js"></script><script src="../../source-script.js"></script><script src="../../source-files.js"></script><script defer src="../../search-index.js"></script></body></html>

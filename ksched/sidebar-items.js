@@ -1,1 +1,1 @@
-initSidebarItems({"mod":[["condvar",""],["mutex",""],["slpque",""],["sync",""],["task",""]]});
+initSidebarItems({"mod":[["condvar","Condition variable."],["mutex","Sleep lock or mutex implementation."],["prique","Bitmap-based priority queue implementation."],["slpque","Sleep queue implementation that used to build up synchronization primitives."],["sync","Synchronization primitives."],["task","Async executor and some basic futures."]]});
