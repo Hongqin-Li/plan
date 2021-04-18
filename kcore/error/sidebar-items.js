@@ -1,0 +1,1 @@
+initSidebarItems({"enum":[["Error","Kernel errors."]],"type":[["Result","Sugar of error."]]});

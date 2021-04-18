@@ -227,15 +227,13 @@
 <span id="224">224</span>
 <span id="225">225</span>
 <span id="226">226</span>
-<span id="227">227</span>
-<span id="228">228</span>
-<span id="229">229</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="doccomment">//! Mount space.</span>
 
 <span class="kw">use</span> <span class="kw">crate</span>::{
     <span class="ident">chan</span>::<span class="ident">Chan</span>,
-    <span class="ident">utils</span>::{<span class="ident">arc_new</span>, <span class="ident">deque_push_back</span>, <span class="ident">deque_push_front</span>, <span class="ident">map_insert</span>, <span class="ident">vec_push</span>, <span class="ident">Error</span>},
+    <span class="ident">error</span>::{<span class="ident">Error</span>, <span class="prelude-ty">Result</span>},
+    <span class="ident">utils</span>::{<span class="ident">arc_new</span>, <span class="ident">deque_push_back</span>, <span class="ident">deque_push_front</span>, <span class="ident">map_insert</span>, <span class="ident">vec_push</span>},
 };
 <span class="kw">use</span> <span class="ident">alloc</span>::<span class="ident">sync</span>::<span class="ident">Weak</span>;
 <span class="kw">use</span> <span class="ident">alloc</span>::<span class="ident">vec</span>::<span class="ident">Vec</span>;
@@ -285,7 +283,7 @@
     <span class="doccomment">/// Generate new current directory.</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// The first element of `cwd` must be root, which implies that `cwd` should be non-empty.</span>
-    <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">chdir</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">cwd</span>: <span class="kw-2">&amp;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Chan</span><span class="op">&gt;</span><span class="op">&gt;</span>, <span class="ident">path</span>: <span class="kw-2">&amp;</span><span class="ident">Path</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Chan</span><span class="op">&gt;</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">chdir</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">cwd</span>: <span class="kw-2">&amp;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Chan</span><span class="op">&gt;</span><span class="op">&gt;</span>, <span class="ident">path</span>: <span class="kw-2">&amp;</span><span class="ident">Path</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Chan</span><span class="op">&gt;</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="kw">let</span> (<span class="ident">begin</span>, <span class="ident">names</span>) <span class="op">=</span> <span class="ident">path</span>.<span class="ident">resolve</span>(<span class="ident">cwd</span>);
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">new_cwd</span> <span class="op">=</span> <span class="ident">Vec</span>::<span class="ident">new</span>();
         <span class="kw">for</span> <span class="ident">c</span> <span class="kw">in</span> <span class="ident">cwd</span>[..<span class="op">=</span><span class="ident">begin</span>].<span class="ident">iter</span>() {
@@ -296,11 +294,7 @@
     }
 
     <span class="doccomment">/// Tune a path to channel.</span>
-    <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">namec</span>(
-        <span class="kw-2">&amp;</span><span class="self">self</span>,
-        <span class="ident">cwd</span>: <span class="kw-2">&amp;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Chan</span><span class="op">&gt;</span><span class="op">&gt;</span>,
-        <span class="ident">path</span>: <span class="kw-2">&amp;</span><span class="ident">Path</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Chan</span><span class="op">&gt;</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">namec</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">cwd</span>: <span class="kw-2">&amp;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Chan</span><span class="op">&gt;</span><span class="op">&gt;</span>, <span class="ident">path</span>: <span class="kw-2">&amp;</span><span class="ident">Path</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Chan</span><span class="op">&gt;</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="kw">let</span> (<span class="ident">begin</span>, <span class="ident">names</span>) <span class="op">=</span> <span class="ident">path</span>.<span class="ident">resolve</span>(<span class="ident">cwd</span>);
         <span class="self">self</span>.<span class="ident">namex</span>(<span class="kw-2">&amp;</span><span class="ident">cwd</span>[<span class="ident">begin</span>], <span class="ident">names</span>, <span class="prelude-val">None</span>).<span class="kw">await</span>
     }
@@ -310,7 +304,7 @@
     <span class="comment">//     &amp;&#39;a self,</span>
     <span class="comment">//     cwd: &amp;Vec&lt;Arc&lt;Chan&gt;&gt;,</span>
     <span class="comment">//     path: &amp;&#39;a Path,</span>
-    <span class="comment">// ) -&gt; Result&lt;Option&lt;(Arc&lt;Chan&gt;, &amp;[u8])&gt;, Error&gt; {</span>
+    <span class="comment">// ) -&gt; Result&lt;Option&lt;(Arc&lt;Chan&gt;, &amp;[u8])&gt;&gt; {</span>
     <span class="comment">//     let (begin, names) = path.resolve(cwd);</span>
     <span class="comment">//     let n = names.len();</span>
     <span class="comment">//     debug_assert_ne!(n, 0);</span>
@@ -330,7 +324,7 @@
         <span class="ident">begin</span>: <span class="kw-2">&amp;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Chan</span><span class="op">&gt;</span>,
         <span class="ident">names</span>: <span class="kw-2">&amp;</span>[<span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>],
         <span class="ident">output</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Chan</span><span class="op">&gt;</span><span class="op">&gt;</span><span class="op">&gt;</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Chan</span><span class="op">&gt;</span><span class="op">&gt;</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Chan</span><span class="op">&gt;</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="macro">todo</span><span class="macro">!</span>();
 
         <span class="comment">// if names.is_empty() {</span>
@@ -355,7 +349,7 @@
         <span class="comment">//                cur: &amp;Arc&lt;Chan&gt;,</span>
         <span class="comment">//                dep: usize,</span>
         <span class="comment">//                parent: Option&lt;Arc&lt;Node&gt;&gt;|</span>
-        <span class="comment">//  -&gt; Result&lt;(), Error&gt; {</span>
+        <span class="comment">//  -&gt; Result&lt;()&gt; {</span>
         <span class="comment">//     if let Some(mu) = self.mnt_table.get(cur) {</span>
         <span class="comment">//         for mc in mu.chans.iter() {</span>
         <span class="comment">//             deque_push_back(</span>
@@ -413,7 +407,7 @@
     <span class="doccomment">/// `to` will be pushed to the front of the union directory. Otherwise, it will be pushed back.</span>
     <span class="doccomment">/// `create` is such a flag that allows creation of new files inside `to` according to the</span>
     <span class="doccomment">/// creation rules(see [MountUnion]).</span>
-    <span class="kw">fn</span> <span class="ident">mount</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">from</span>: <span class="ident">Chan</span>, <span class="ident">to</span>: <span class="ident">Chan</span>, <span class="ident">create</span>: <span class="ident">bool</span>, <span class="ident">front</span>: <span class="ident">bool</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">bool</span>, <span class="ident">Error</span><span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">mount</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">from</span>: <span class="ident">Chan</span>, <span class="ident">to</span>: <span class="ident">Chan</span>, <span class="ident">create</span>: <span class="ident">bool</span>, <span class="ident">front</span>: <span class="ident">bool</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">bool</span><span class="op">&gt;</span> {
         <span class="kw">match</span> <span class="self">self</span>.<span class="ident">mnt_table</span>.<span class="ident">get_mut</span>(<span class="kw-2">&amp;</span><span class="ident">from</span>) {
             <span class="prelude-val">Some</span>(<span class="ident">m</span>) <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="kw">if</span> <span class="ident">m</span>.<span class="ident">find</span>(<span class="kw-2">&amp;</span><span class="ident">to</span>).<span class="ident">is_some</span>() {

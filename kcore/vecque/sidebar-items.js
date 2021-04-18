@@ -1,0 +1,1 @@
+initSidebarItems({"struct":[["Vecque","A double-ended queue implemented with two vector."]]});

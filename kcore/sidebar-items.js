@@ -1,1 +1,1 @@
-initSidebarItems({"attr":[["async_trait_try",""]],"mod":[["chan","Channel."],["dev","Device driver."],["mnt","Mount space."],["utils","Simple util funtions."],["vm","Virtual memory tools."]]});
+initSidebarItems({"attr":[["async_trait_try",""]],"mod":[["chan","Channel."],["dev","Device driver."],["error","Common error types for kernel development."],["mnt","Mount space."],["utils","Simple util funtions."],["vecque","A double-ended queue implemented with two vector."],["vm","Virtual memory tools."]]});

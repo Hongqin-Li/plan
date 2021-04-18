@@ -384,7 +384,7 @@
     <span class="doccomment">///</span>
     <span class="doccomment">/// let mutex: Mutex&lt;usize&gt; = Mutex::new(0);</span>
     <span class="doccomment">/// ```</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">data</span>: <span class="ident">T</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Mutex</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">const</span> <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">data</span>: <span class="ident">T</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Mutex</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span> {
         <span class="ident">Mutex</span> {
             <span class="ident">inner</span>: <span class="ident">Spinlock</span>::<span class="ident">new</span>(<span class="ident">MutexInner</span> {
                 <span class="ident">locked</span>: <span class="bool-val">false</span>,
