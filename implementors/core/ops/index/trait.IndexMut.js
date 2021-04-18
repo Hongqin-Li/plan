@@ -1,0 +1,3 @@
+(function() {var implementors = {};
+implementors["kcore"] = [{"text":"impl&lt;T&gt; <a class=\"trait\" href=\"https://doc.rust-lang.org/nightly/core/ops/index/trait.IndexMut.html\" title=\"trait core::ops::index::IndexMut\">IndexMut</a>&lt;<a class=\"primitive\" href=\"https://doc.rust-lang.org/nightly/std/primitive.usize.html\">usize</a>&gt; for <a class=\"struct\" href=\"kcore/vecque/struct.Vecque.html\" title=\"struct kcore::vecque::Vecque\">Vecque</a>&lt;T&gt;","synthetic":false,"types":["kcore::vecque::Vecque"]}];
+if (window.register_implementors) {window.register_implementors(implementors);} else {window.pending_implementors = implementors;}})()

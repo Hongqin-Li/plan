@@ -336,6 +336,51 @@
 <span id="333">333</span>
 <span id="334">334</span>
 <span id="335">335</span>
+<span id="336">336</span>
+<span id="337">337</span>
+<span id="338">338</span>
+<span id="339">339</span>
+<span id="340">340</span>
+<span id="341">341</span>
+<span id="342">342</span>
+<span id="343">343</span>
+<span id="344">344</span>
+<span id="345">345</span>
+<span id="346">346</span>
+<span id="347">347</span>
+<span id="348">348</span>
+<span id="349">349</span>
+<span id="350">350</span>
+<span id="351">351</span>
+<span id="352">352</span>
+<span id="353">353</span>
+<span id="354">354</span>
+<span id="355">355</span>
+<span id="356">356</span>
+<span id="357">357</span>
+<span id="358">358</span>
+<span id="359">359</span>
+<span id="360">360</span>
+<span id="361">361</span>
+<span id="362">362</span>
+<span id="363">363</span>
+<span id="364">364</span>
+<span id="365">365</span>
+<span id="366">366</span>
+<span id="367">367</span>
+<span id="368">368</span>
+<span id="369">369</span>
+<span id="370">370</span>
+<span id="371">371</span>
+<span id="372">372</span>
+<span id="373">373</span>
+<span id="374">374</span>
+<span id="375">375</span>
+<span id="376">376</span>
+<span id="377">377</span>
+<span id="378">378</span>
+<span id="379">379</span>
+<span id="380">380</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="doccomment">//! A double-ended queue implemented with two vector.</span>
 <span class="doccomment">//!</span>
@@ -348,7 +393,11 @@
 <span class="kw">use</span> <span class="kw">crate</span>::<span class="ident">error</span>::<span class="prelude-ty">Result</span>;
 <span class="kw">use</span> <span class="kw">crate</span>::<span class="ident">utils</span>::{<span class="ident">vec_push</span>, <span class="ident">vec_shrink_to_fit</span>};
 <span class="kw">use</span> <span class="ident">alloc</span>::<span class="ident">vec</span>::<span class="ident">Vec</span>;
-<span class="kw">use</span> <span class="ident">core</span>::<span class="ident">mem</span>::<span class="ident">swap</span>;
+<span class="kw">use</span> <span class="ident">core</span>::{
+    <span class="ident">cmp</span>::<span class="ident">min</span>,
+    <span class="ident">mem</span>::<span class="ident">swap</span>,
+    <span class="ident">ops</span>::{<span class="ident">Index</span>, <span class="ident">IndexMut</span>},
+};
 
 <span class="doccomment">/// A double-ended queue implemented with two vector.</span>
 <span class="doccomment">///</span>
@@ -374,7 +423,7 @@
     <span class="doccomment">/// # Examples</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// ```</span>
-    <span class="doccomment">/// use kcore::Vecque;</span>
+    <span class="doccomment">/// use kcore::vecque::Vecque;</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// let vector: Vecque&lt;u32&gt; = Vecque::new();</span>
     <span class="doccomment">/// ```</span>
@@ -390,9 +439,9 @@
     <span class="doccomment">/// # Examples</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// ```</span>
-    <span class="doccomment">/// use kcore::Vecque;</span>
+    <span class="doccomment">/// use kcore::vecque::Vecque;</span>
     <span class="doccomment">///</span>
-    <span class="doccomment">/// let vector: Vecque&lt;u32&gt; = Vecque::with_capacity(10).expect(&quot;oom&quot;);</span>
+    <span class="doccomment">/// let vector: Vecque&lt;u32&gt; = Vecque::with_capacity(10).unwrap();</span>
     <span class="doccomment">/// ```</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">with_capacity</span>(<span class="ident">capacity</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span> {
         <span class="comment">// +1 since the ringbuffer always leaves one space empty</span>
@@ -412,7 +461,7 @@
     <span class="doccomment">/// # Examples</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// ```</span>
-    <span class="doccomment">/// use kcore::Vecque;</span>
+    <span class="doccomment">/// use kcore::vecque::Vecque;</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// let mut buf = Vecque::new();</span>
     <span class="doccomment">/// buf.push_back(3);</span>
@@ -436,12 +485,12 @@
     <span class="doccomment">/// # Examples</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// ```</span>
-    <span class="doccomment">/// use kcore::Vecque;</span>
+    <span class="doccomment">/// use kcore::vecque::Vecque;</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// let mut buf = Vecque::new();</span>
-    <span class="doccomment">/// buf.push_back(3);</span>
-    <span class="doccomment">/// buf.push_back(4);</span>
-    <span class="doccomment">/// buf.push_back(5);</span>
+    <span class="doccomment">/// buf.push_back(3).unwrap();</span>
+    <span class="doccomment">/// buf.push_back(4).unwrap();</span>
+    <span class="doccomment">/// buf.push_back(5).unwrap();</span>
     <span class="doccomment">/// if let Some(elem) = buf.get_mut(1) {</span>
     <span class="doccomment">///     *elem = 7;</span>
     <span class="doccomment">/// }</span>
@@ -463,7 +512,7 @@
     <span class="doccomment">/// # Examples</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// ```</span>
-    <span class="doccomment">/// use kcore::Vecque;</span>
+    <span class="doccomment">/// use kcore::vecque::Vecque;</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// let mut d = Vecque::new();</span>
     <span class="doccomment">/// assert_eq!(d.front(), None);</span>
@@ -482,7 +531,7 @@
     <span class="doccomment">/// # Examples</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// ```</span>
-    <span class="doccomment">/// use kcore::Vecque;</span>
+    <span class="doccomment">/// use kcore::vecque::Vecque;</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// let mut d = Vecque::new();</span>
     <span class="doccomment">/// assert_eq!(d.front_mut(), None);</span>
@@ -505,7 +554,7 @@
     <span class="doccomment">/// # Examples</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// ```</span>
-    <span class="doccomment">/// use kcore::Vecque;</span>
+    <span class="doccomment">/// use kcore::vecque::Vecque;</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// let mut d = Vecque::new();</span>
     <span class="doccomment">/// assert_eq!(d.back(), None);</span>
@@ -524,7 +573,7 @@
     <span class="doccomment">/// # Examples</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// ```</span>
-    <span class="doccomment">/// use kcore::Vecque;</span>
+    <span class="doccomment">/// use kcore::vecque::Vecque;</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// let mut d = Vecque::new();</span>
     <span class="doccomment">/// assert_eq!(d.back(), None);</span>
@@ -547,7 +596,7 @@
     <span class="doccomment">/// # Examples</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// ```</span>
-    <span class="doccomment">/// use kcore::Vecque;</span>
+    <span class="doccomment">/// use kcore::vecque::Vecque;</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// let mut d = Vecque::new();</span>
     <span class="doccomment">/// d.push_back(1);</span>
@@ -571,7 +620,7 @@
     <span class="doccomment">/// # Examples</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// ```</span>
-    <span class="doccomment">/// use kcore::Vecque;</span>
+    <span class="doccomment">/// use kcore::vecque::Vecque;</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// let mut buf = Vecque::new();</span>
     <span class="doccomment">/// assert_eq!(buf.pop_back(), None);</span>
@@ -592,11 +641,11 @@
     <span class="doccomment">/// # Examples</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// ```</span>
-    <span class="doccomment">/// use kcore::Vecque;</span>
+    <span class="doccomment">/// use kcore::vecque::Vecque;</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// let mut d = Vecque::new();</span>
-    <span class="doccomment">/// d.push_front(1).expect(&quot;oom&quot;);</span>
-    <span class="doccomment">/// d.push_front(2).expect(&quot;oom&quot;);</span>
+    <span class="doccomment">/// d.push_front(1).unwrap();</span>
+    <span class="doccomment">/// d.push_front(2).unwrap();</span>
     <span class="doccomment">/// assert_eq!(d.front(), Some(&amp;2));</span>
     <span class="doccomment">/// ```</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">push_front</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">value</span>: <span class="ident">T</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>()<span class="op">&gt;</span> {
@@ -608,11 +657,11 @@
     <span class="doccomment">/// # Examples</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// ```</span>
-    <span class="doccomment">/// use kcore::Vecque;</span>
+    <span class="doccomment">/// use kcore::vecque::Vecque;</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// let mut buf = Vecque::new();</span>
-    <span class="doccomment">/// buf.push_back(1).expect(&quot;oom&quot;);</span>
-    <span class="doccomment">/// buf.push_back(3).expect(&quot;oom&quot;);</span>
+    <span class="doccomment">/// buf.push_back(1).unwrap();</span>
+    <span class="doccomment">/// buf.push_back(3).unwrap();</span>
     <span class="doccomment">/// assert_eq!(3, *buf.back().unwrap());</span>
     <span class="doccomment">/// ```</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">push_back</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">value</span>: <span class="ident">T</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>()<span class="op">&gt;</span> {
@@ -624,7 +673,7 @@
     <span class="doccomment">/// # Examples</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// ```</span>
-    <span class="doccomment">/// use kcore::Vecque;</span>
+    <span class="doccomment">/// use kcore::vecque::Vecque;</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// let mut v = Vecque::new();</span>
     <span class="doccomment">/// assert_eq!(v.len(), 0);</span>
@@ -640,7 +689,7 @@
     <span class="doccomment">/// # Examples</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// ```</span>
-    <span class="doccomment">/// use kcore::Vecque;</span>
+    <span class="doccomment">/// use kcore::vecque::Vecque;</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// let mut v = Vecque::new();</span>
     <span class="doccomment">/// assert!(v.is_empty());</span>
@@ -659,17 +708,58 @@
     <span class="doccomment">/// # Examples</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// ```</span>
-    <span class="doccomment">/// use kcore::Vecque;</span>
+    <span class="doccomment">/// use kcore::vecque::Vecque;</span>
     <span class="doccomment">///</span>
-    <span class="doccomment">/// let mut buf = Vecque::with_capacity(15);</span>
-    <span class="doccomment">/// buf.push_front(1);</span>
+    <span class="doccomment">/// let mut buf = Vecque::with_capacity(15).unwrap();</span>
+    <span class="doccomment">/// buf.push_front(1).unwrap();</span>
     <span class="doccomment">/// assert_eq!(buf.capacity(), 15);</span>
-    <span class="doccomment">/// buf.shrink_to_fit().expect(&quot;oom&quot;);</span>
+    <span class="doccomment">/// buf.shrink_to_fit().unwrap();</span>
     <span class="doccomment">/// assert!(buf.capacity() &gt;= 1);</span>
     <span class="doccomment">/// ```</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">shrink_to_fit</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>()<span class="op">&gt;</span> {
         <span class="ident">vec_shrink_to_fit</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>.<span class="ident">back</span>)<span class="question-mark">?</span>;
         <span class="ident">vec_shrink_to_fit</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>.<span class="ident">front</span>)
+    }
+
+    <span class="doccomment">/// Returns the number of elements the `VecDeque` can hold without</span>
+    <span class="doccomment">/// reallocating.</span>
+    <span class="doccomment">///</span>
+    <span class="doccomment">/// # Examples</span>
+    <span class="doccomment">///</span>
+    <span class="doccomment">/// ```</span>
+    <span class="doccomment">/// use kcore::vecque::Vecque;</span>
+    <span class="doccomment">///</span>
+    <span class="doccomment">/// let buf: Vecque&lt;i32&gt; = Vecque::with_capacity(10).unwrap();</span>
+    <span class="doccomment">/// assert!(buf.capacity() &gt;= 10);</span>
+    <span class="doccomment">/// ```</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">capacity</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">usize</span> {
+        <span class="kw">let</span> <span class="ident">d1</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">front</span>.<span class="ident">capacity</span>() <span class="op">-</span> <span class="self">self</span>.<span class="ident">front</span>.<span class="ident">len</span>();
+        <span class="kw">let</span> <span class="ident">d2</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">back</span>.<span class="ident">capacity</span>() <span class="op">-</span> <span class="self">self</span>.<span class="ident">back</span>.<span class="ident">len</span>();
+        <span class="self">self</span>.<span class="ident">len</span>() <span class="op">+</span> <span class="ident">min</span>(<span class="ident">d1</span>, <span class="ident">d2</span>)
+    }
+}
+
+<span class="kw">impl</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span> <span class="ident">Default</span> <span class="kw">for</span> <span class="ident">Vecque</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span> {
+    <span class="doccomment">/// Creates an empty `VecDeque&lt;T&gt;`.</span>
+    <span class="attribute">#[<span class="ident">inline</span>]</span>
+    <span class="kw">fn</span> <span class="ident">default</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Vecque</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span> {
+        <span class="ident">Vecque</span>::<span class="ident">new</span>()
+    }
+}
+
+<span class="kw">impl</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span> <span class="ident">Index</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span> <span class="kw">for</span> <span class="ident">Vecque</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span> {
+    <span class="kw">type</span> <span class="ident">Output</span> <span class="op">=</span> <span class="ident">T</span>;
+
+    <span class="attribute">#[<span class="ident">inline</span>]</span>
+    <span class="kw">fn</span> <span class="ident">index</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">index</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw-2">&amp;</span><span class="ident">T</span> {
+        <span class="self">self</span>.<span class="ident">get</span>(<span class="ident">index</span>).<span class="ident">expect</span>(<span class="string">&quot;Out of bounds access&quot;</span>)
+    }
+}
+
+<span class="kw">impl</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span> <span class="ident">IndexMut</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span> <span class="kw">for</span> <span class="ident">Vecque</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span> {
+    <span class="attribute">#[<span class="ident">inline</span>]</span>
+    <span class="kw">fn</span> <span class="ident">index_mut</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">index</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">T</span> {
+        <span class="self">self</span>.<span class="ident">get_mut</span>(<span class="ident">index</span>).<span class="ident">expect</span>(<span class="string">&quot;Out of bounds access&quot;</span>)
     }
 }
 </pre></div>
