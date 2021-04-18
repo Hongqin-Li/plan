@@ -61,7 +61,7 @@ impl<T> Mutex<T> {
     ///
     /// let mutex: Mutex<usize> = Mutex::new(0);
     /// ```
-    pub fn new(data: T) -> Mutex<T> {
+    pub const fn new(data: T) -> Mutex<T> {
         Mutex {
             inner: Spinlock::new(MutexInner {
                 locked: false,

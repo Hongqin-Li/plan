@@ -2,7 +2,8 @@
 
 use crate::{
     chan::Chan,
-    utils::{arc_new, deque_push_back, deque_push_front, map_insert, vec_push, Error},
+    error::{Error, Result},
+    utils::{arc_new, deque_push_back, deque_push_front, map_insert, vec_push},
 };
 use alloc::sync::Weak;
 use alloc::vec::Vec;
@@ -52,7 +53,7 @@ impl MountSpace {
     /// Generate new current directory.
     ///
     /// The first element of `cwd` must be root, which implies that `cwd` should be non-empty.
-    pub async fn chdir(&self, cwd: &Vec<Arc<Chan>>, path: &Path) -> Result<Vec<Arc<Chan>>, Error> {
+    pub async fn chdir(&self, cwd: &Vec<Arc<Chan>>, path: &Path) -> Result<Vec<Arc<Chan>>> {
         let (begin, names) = path.resolve(cwd);
         let mut new_cwd = Vec::new();
         for c in cwd[..=begin].iter() {
@@ -63,11 +64,7 @@ impl MountSpace {
     }
 
     /// Tune a path to channel.
-    pub async fn namec(
-        &self,
-        cwd: &Vec<Arc<Chan>>,
-        path: &Path,
-    ) -> Result<Option<Arc<Chan>>, Error> {
+    pub async fn namec(&self, cwd: &Vec<Arc<Chan>>, path: &Path) -> Result<Option<Arc<Chan>>> {
         let (begin, names) = path.resolve(cwd);
         self.namex(&cwd[begin], names, None).await
     }
@@ -77,7 +74,7 @@ impl MountSpace {
     //     &'a self,
     //     cwd: &Vec<Arc<Chan>>,
     //     path: &'a Path,
-    // ) -> Result<Option<(Arc<Chan>, &[u8])>, Error> {
+    // ) -> Result<Option<(Arc<Chan>, &[u8])>> {
     //     let (begin, names) = path.resolve(cwd);
     //     let n = names.len();
     //     debug_assert_ne!(n, 0);
@@ -97,7 +94,7 @@ impl MountSpace {
         begin: &Arc<Chan>,
         names: &[Vec<u8>],
         output: Option<&mut Vec<Arc<Chan>>>,
-    ) -> Result<Option<Arc<Chan>>, Error> {
+    ) -> Result<Option<Arc<Chan>>> {
         todo!();
 
         // if names.is_empty() {
@@ -122,7 +119,7 @@ impl MountSpace {
         //                cur: &Arc<Chan>,
         //                dep: usize,
         //                parent: Option<Arc<Node>>|
-        //  -> Result<(), Error> {
+        //  -> Result<()> {
         //     if let Some(mu) = self.mnt_table.get(cur) {
         //         for mc in mu.chans.iter() {
         //             deque_push_back(
@@ -180,7 +177,7 @@ impl MountSpace {
     /// `to` will be pushed to the front of the union directory. Otherwise, it will be pushed back.
     /// `create` is such a flag that allows creation of new files inside `to` according to the
     /// creation rules(see [MountUnion]).
-    fn mount(&mut self, from: Chan, to: Chan, create: bool, front: bool) -> Result<bool, Error> {
+    fn mount(&mut self, from: Chan, to: Chan, create: bool, front: bool) -> Result<bool> {
         match self.mnt_table.get_mut(&from) {
             Some(m) => {
                 if m.find(&to).is_some() {

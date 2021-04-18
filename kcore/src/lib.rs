@@ -17,7 +17,9 @@ extern crate std;
 
 pub mod chan;
 pub mod dev;
+pub mod error;
 pub mod mnt;
 pub mod utils;
+pub mod vecque;
 pub mod vm;
 pub use async_trait::async_trait_try;

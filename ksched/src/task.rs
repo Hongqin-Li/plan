@@ -4,7 +4,7 @@ use core::alloc::AllocError;
 use futures::task::ArcWake;
 
 use super::prique::{Prique64 as Prique, PriqueTrait};
-use kcore::utils::Error;
+use kcore::error::Error;
 use lazy_static::*;
 use {
     alloc::{boxed::Box, collections::vec_deque::VecDeque, sync::Arc},

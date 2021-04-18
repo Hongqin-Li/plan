@@ -3,7 +3,8 @@
 use alloc::collections::VecDeque;
 use alloc::vec::Vec;
 use core::{alloc::AllocError, marker::PhantomData};
-use kcore::utils::{deque_push_back, vec_push, Error};
+use kcore::error::Error;
+use kcore::utils::{deque_push_back, vec_push};
 
 /// For example, `PRI[0b01110100] = 2`
 const PRI: &'static [u8; 256] = &{

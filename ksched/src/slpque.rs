@@ -1,18 +1,27 @@
 //! Sleep queue implementation that used to build up synchronization primitives.
-use core::{alloc::AllocError, task::Waker};
-
 use alloc::collections::VecDeque;
+use core::{alloc::AllocError, mem::swap, task::Waker};
+use kcore::error::Error;
+use kcore::vecque::Vecque;
 
 /// Sleep queue is simply a deque of waker.
 pub struct SleepQueue {
-    slpque: VecDeque<Waker>,
+    slpque: Vecque<Waker>,
 }
 
 impl SleepQueue {
     /// Create a new sleep queue.
-    pub fn new() -> Self {
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ksched::slpque::SleepQueue;
+    ///
+    /// let que = SleepQueue.new();
+    /// ```
+    pub const fn new() -> Self {
         Self {
-            slpque: VecDeque::new(),
+            slpque: Vecque::new(),
         }
     }
 
@@ -31,9 +40,14 @@ impl SleepQueue {
     }
 
     /// Sleep a task on this queue.
-    pub fn sleep(&mut self, w: Waker) -> Result<(), AllocError> {
-        self.slpque.try_reserve(1).map_err(|_| AllocError)?;
-        self.slpque.push_back(w);
+    pub fn sleep(&mut self, w: Waker) -> Result<(), Error> {
+        self.slpque.push_back(w)?;
+        Ok(())
+    }
+
+    /// Sleep a task on the front of this queue.
+    pub fn sleep_front(&mut self, w: Waker) -> Result<(), Error> {
+        self.slpque.push_front(w)?;
         Ok(())
     }
 }

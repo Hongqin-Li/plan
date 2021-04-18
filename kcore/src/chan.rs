@@ -12,7 +12,7 @@ use core::{
 use alloc::sync::Arc;
 use bitflags::bitflags;
 
-use crate::{dev::Device, utils::Error};
+use crate::{dev::Device, error::Error};
 
 // bitflags! {
 //     struct QType: u8 {

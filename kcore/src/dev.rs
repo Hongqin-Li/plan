@@ -10,7 +10,7 @@ use alloc::boxed::Box;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
-use crate::{chan::Chan, utils::Error};
+use crate::{chan::Chan, error::Error};
 
 use crate::chan::Qid;
 

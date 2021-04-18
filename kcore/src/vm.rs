@@ -5,7 +5,8 @@ use core::ptr;
 use core::ptr::NonNull;
 use core::{alloc::Layout, marker::PhantomData, ops::Range};
 
-use crate::utils::{arc_new, intersect, vec_push, Error};
+use crate::error::Error;
+use crate::utils::{arc_new, intersect, vec_push};
 
 /// Page table.
 pub trait PageTable: Sized {
@@ -403,7 +404,7 @@ mod tests {
     impl PageTable for MyPageTable {
         const PG_LAYOUT: Layout = unsafe { Layout::from_size_align_unchecked(PGSIZE, PGSIZE) };
 
-        fn new() -> Result<Self, crate::utils::Error> {
+        fn new() -> Result<Self, Error> {
             Ok(Self { map: Vec::new() })
         }
 

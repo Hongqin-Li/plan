@@ -20,6 +20,7 @@ extern crate alloc;
 pub mod condvar;
 pub mod mutex;
 pub mod prique;
+pub mod rwlock;
 pub mod slpque;
 pub mod task;
 
@@ -27,4 +28,5 @@ pub mod task;
 pub mod sync {
     pub use super::condvar::Condvar;
     pub use super::mutex::{Mutex, MutexGuard};
+    pub use super::rwlock::{RwLock, RwLockReadGuard, RwLockUpgradableReadGuard, RwLockWriteGuard};
 }
