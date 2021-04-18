@@ -17,7 +17,7 @@ impl SleepQueue {
     /// ```
     /// use ksched::slpque::SleepQueue;
     ///
-    /// let que = SleepQueue.new();
+    /// let que = SleepQueue::new();
     /// ```
     pub const fn new() -> Self {
         Self {

@@ -9,7 +9,11 @@
 use crate::error::Result;
 use crate::utils::{vec_push, vec_shrink_to_fit};
 use alloc::vec::Vec;
-use core::mem::swap;
+use core::{
+    cmp::min,
+    mem::swap,
+    ops::{Index, IndexMut},
+};
 
 /// A double-ended queue implemented with two vector.
 ///
@@ -35,7 +39,7 @@ impl<T> Vecque<T> {
     /// # Examples
     ///
     /// ```
-    /// use kcore::Vecque;
+    /// use kcore::vecque::Vecque;
     ///
     /// let vector: Vecque<u32> = Vecque::new();
     /// ```
@@ -51,9 +55,9 @@ impl<T> Vecque<T> {
     /// # Examples
     ///
     /// ```
-    /// use kcore::Vecque;
+    /// use kcore::vecque::Vecque;
     ///
-    /// let vector: Vecque<u32> = Vecque::with_capacity(10).expect("oom");
+    /// let vector: Vecque<u32> = Vecque::with_capacity(10).unwrap();
     /// ```
     pub fn with_capacity(capacity: usize) -> Result<Self> {
         // +1 since the ringbuffer always leaves one space empty
@@ -73,7 +77,7 @@ impl<T> Vecque<T> {
     /// # Examples
     ///
     /// ```
-    /// use kcore::Vecque;
+    /// use kcore::vecque::Vecque;
     ///
     /// let mut buf = Vecque::new();
     /// buf.push_back(3);
@@ -97,12 +101,12 @@ impl<T> Vecque<T> {
     /// # Examples
     ///
     /// ```
-    /// use kcore::Vecque;
+    /// use kcore::vecque::Vecque;
     ///
     /// let mut buf = Vecque::new();
-    /// buf.push_back(3);
-    /// buf.push_back(4);
-    /// buf.push_back(5);
+    /// buf.push_back(3).unwrap();
+    /// buf.push_back(4).unwrap();
+    /// buf.push_back(5).unwrap();
     /// if let Some(elem) = buf.get_mut(1) {
     ///     *elem = 7;
     /// }
@@ -124,7 +128,7 @@ impl<T> Vecque<T> {
     /// # Examples
     ///
     /// ```
-    /// use kcore::Vecque;
+    /// use kcore::vecque::Vecque;
     ///
     /// let mut d = Vecque::new();
     /// assert_eq!(d.front(), None);
@@ -143,7 +147,7 @@ impl<T> Vecque<T> {
     /// # Examples
     ///
     /// ```
-    /// use kcore::Vecque;
+    /// use kcore::vecque::Vecque;
     ///
     /// let mut d = Vecque::new();
     /// assert_eq!(d.front_mut(), None);
@@ -166,7 +170,7 @@ impl<T> Vecque<T> {
     /// # Examples
     ///
     /// ```
-    /// use kcore::Vecque;
+    /// use kcore::vecque::Vecque;
     ///
     /// let mut d = Vecque::new();
     /// assert_eq!(d.back(), None);
@@ -185,7 +189,7 @@ impl<T> Vecque<T> {
     /// # Examples
     ///
     /// ```
-    /// use kcore::Vecque;
+    /// use kcore::vecque::Vecque;
     ///
     /// let mut d = Vecque::new();
     /// assert_eq!(d.back(), None);
@@ -208,7 +212,7 @@ impl<T> Vecque<T> {
     /// # Examples
     ///
     /// ```
-    /// use kcore::Vecque;
+    /// use kcore::vecque::Vecque;
     ///
     /// let mut d = Vecque::new();
     /// d.push_back(1);
@@ -232,7 +236,7 @@ impl<T> Vecque<T> {
     /// # Examples
     ///
     /// ```
-    /// use kcore::Vecque;
+    /// use kcore::vecque::Vecque;
     ///
     /// let mut buf = Vecque::new();
     /// assert_eq!(buf.pop_back(), None);
@@ -253,11 +257,11 @@ impl<T> Vecque<T> {
     /// # Examples
     ///
     /// ```
-    /// use kcore::Vecque;
+    /// use kcore::vecque::Vecque;
     ///
     /// let mut d = Vecque::new();
-    /// d.push_front(1).expect("oom");
-    /// d.push_front(2).expect("oom");
+    /// d.push_front(1).unwrap();
+    /// d.push_front(2).unwrap();
     /// assert_eq!(d.front(), Some(&2));
     /// ```
     pub fn push_front(&mut self, value: T) -> Result<()> {
@@ -269,11 +273,11 @@ impl<T> Vecque<T> {
     /// # Examples
     ///
     /// ```
-    /// use kcore::Vecque;
+    /// use kcore::vecque::Vecque;
     ///
     /// let mut buf = Vecque::new();
-    /// buf.push_back(1).expect("oom");
-    /// buf.push_back(3).expect("oom");
+    /// buf.push_back(1).unwrap();
+    /// buf.push_back(3).unwrap();
     /// assert_eq!(3, *buf.back().unwrap());
     /// ```
     pub fn push_back(&mut self, value: T) -> Result<()> {
@@ -285,7 +289,7 @@ impl<T> Vecque<T> {
     /// # Examples
     ///
     /// ```
-    /// use kcore::Vecque;
+    /// use kcore::vecque::Vecque;
     ///
     /// let mut v = Vecque::new();
     /// assert_eq!(v.len(), 0);
@@ -301,7 +305,7 @@ impl<T> Vecque<T> {
     /// # Examples
     ///
     /// ```
-    /// use kcore::Vecque;
+    /// use kcore::vecque::Vecque;
     ///
     /// let mut v = Vecque::new();
     /// assert!(v.is_empty());
@@ -320,16 +324,57 @@ impl<T> Vecque<T> {
     /// # Examples
     ///
     /// ```
-    /// use kcore::Vecque;
+    /// use kcore::vecque::Vecque;
     ///
-    /// let mut buf = Vecque::with_capacity(15);
-    /// buf.push_front(1);
+    /// let mut buf = Vecque::with_capacity(15).unwrap();
+    /// buf.push_front(1).unwrap();
     /// assert_eq!(buf.capacity(), 15);
-    /// buf.shrink_to_fit().expect("oom");
+    /// buf.shrink_to_fit().unwrap();
     /// assert!(buf.capacity() >= 1);
     /// ```
     pub fn shrink_to_fit(&mut self) -> Result<()> {
         vec_shrink_to_fit(&mut self.back)?;
         vec_shrink_to_fit(&mut self.front)
+    }
+
+    /// Returns the number of elements the `VecDeque` can hold without
+    /// reallocating.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use kcore::vecque::Vecque;
+    ///
+    /// let buf: Vecque<i32> = Vecque::with_capacity(10).unwrap();
+    /// assert!(buf.capacity() >= 10);
+    /// ```
+    pub fn capacity(&self) -> usize {
+        let d1 = self.front.capacity() - self.front.len();
+        let d2 = self.back.capacity() - self.back.len();
+        self.len() + min(d1, d2)
+    }
+}
+
+impl<T> Default for Vecque<T> {
+    /// Creates an empty `VecDeque<T>`.
+    #[inline]
+    fn default() -> Vecque<T> {
+        Vecque::new()
+    }
+}
+
+impl<T> Index<usize> for Vecque<T> {
+    type Output = T;
+
+    #[inline]
+    fn index(&self, index: usize) -> &T {
+        self.get(index).expect("Out of bounds access")
+    }
+}
+
+impl<T> IndexMut<usize> for Vecque<T> {
+    #[inline]
+    fn index_mut(&mut self, index: usize) -> &mut T {
+        self.get_mut(index).expect("Out of bounds access")
     }
 }
