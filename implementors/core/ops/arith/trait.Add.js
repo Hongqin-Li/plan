@@ -1,0 +1,3 @@
+(function() {var implementors = {};
+implementors["ksched"] = [{"text":"impl <a class=\"trait\" href=\"https://doc.rust-lang.org/nightly/core/ops/arith/trait.Add.html\" title=\"trait core::ops::arith::Add\">Add</a>&lt;<a class=\"struct\" href=\"ksched/time/struct.Duration.html\" title=\"struct ksched::time::Duration\">Duration</a>&gt; for <a class=\"struct\" href=\"ksched/time/struct.Instant.html\" title=\"struct ksched::time::Instant\">Instant</a>","synthetic":false,"types":["ksched::time::Instant"]}];
+if (window.register_implementors) {window.register_implementors(implementors);} else {window.pending_implementors = implementors;}})()

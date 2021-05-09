@@ -227,19 +227,21 @@
 <span id="224">224</span>
 <span id="225">225</span>
 <span id="226">226</span>
+<span id="227">227</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="doccomment">//! Mount space.</span>
+<span class="doccomment">//!</span>
+<span class="doccomment">//! Only works in evaluation of path name to avoid mount loops.</span>
 
 <span class="kw">use</span> <span class="kw">crate</span>::{
     <span class="ident">chan</span>::<span class="ident">Chan</span>,
     <span class="ident">error</span>::{<span class="ident">Error</span>, <span class="prelude-ty">Result</span>},
-    <span class="ident">utils</span>::{<span class="ident">arc_new</span>, <span class="ident">deque_push_back</span>, <span class="ident">deque_push_front</span>, <span class="ident">map_insert</span>, <span class="ident">vec_push</span>},
 };
 <span class="kw">use</span> <span class="ident">alloc</span>::<span class="ident">sync</span>::<span class="ident">Weak</span>;
 <span class="kw">use</span> <span class="ident">alloc</span>::<span class="ident">vec</span>::<span class="ident">Vec</span>;
 <span class="kw">use</span> <span class="ident">alloc</span>::{<span class="ident">collections</span>::<span class="ident">VecDeque</span>, <span class="ident">sync</span>::<span class="ident">Arc</span>};
 <span class="kw">use</span> <span class="ident">core</span>::<span class="ident">cmp</span>::<span class="ident">min</span>;
-<span class="kw">use</span> <span class="ident">hashbrown</span>::<span class="ident">HashMap</span>;
+<span class="kw">use</span> <span class="ident">kalloc</span>::<span class="ident">wrapper</span>::{<span class="ident">deque_push_back</span>, <span class="ident">deque_push_front</span>, <span class="ident">map_insert</span>, <span class="ident">vec_push</span>, <span class="ident">HashMap</span>};
 
 <span class="doccomment">///</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">MountChan</span> {

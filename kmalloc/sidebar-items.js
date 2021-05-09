@@ -1,1 +1,0 @@
-initSidebarItems({"mod":[["buddy","Buddy system allocator"],["cached","Cached multi buddy system"],["consts","Type aliases for many constants."]]});

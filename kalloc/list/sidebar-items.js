@@ -1,0 +1,1 @@
+initSidebarItems({"struct":[["Cursor","A cursor over a `List`."],["CursorMut","A cursor over a `List` with editing operations."],["IntoIter","An owning iterator over the elements of a `List`."],["Iter","An iterator over the elements of a `List`."],["IterMut","A mutable iterator over the elements of a `List`."],["List","A doubly-linked list with owned nodes."]]});

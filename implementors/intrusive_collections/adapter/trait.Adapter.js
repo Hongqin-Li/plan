@@ -1,0 +1,3 @@
+(function() {var implementors = {};
+implementors["ksched"] = [{"text":"impl Adapter for <a class=\"struct\" href=\"ksched/task/struct.TaskAdapter.html\" title=\"struct ksched::task::TaskAdapter\">TaskAdapter</a>","synthetic":false,"types":["ksched::task::TaskAdapter"]}];
+if (window.register_implementors) {window.register_implementors(implementors);} else {window.pending_implementors = implementors;}})()

@@ -1,1 +1,1 @@
-initSidebarItems({"struct":[["Dirent","Machine-independent directory entry."]],"trait":[["Device","Common trait of a device driver."]]});
+initSidebarItems({"trait":[["Device","Common trait of a device driver."]]});
