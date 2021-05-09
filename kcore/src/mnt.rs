@@ -1,15 +1,16 @@
 //! Mount space.
+//!
+//! Only works in evaluation of path name to avoid mount loops.
 
 use crate::{
     chan::Chan,
     error::{Error, Result},
-    utils::{arc_new, deque_push_back, deque_push_front, map_insert, vec_push},
 };
 use alloc::sync::Weak;
 use alloc::vec::Vec;
 use alloc::{collections::VecDeque, sync::Arc};
 use core::cmp::min;
-use hashbrown::HashMap;
+use kalloc::wrapper::{deque_push_back, deque_push_front, map_insert, vec_push, HashMap};
 
 ///
 pub struct MountChan {

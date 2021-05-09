@@ -6,7 +6,8 @@ use core::ptr::NonNull;
 use core::{alloc::Layout, marker::PhantomData, ops::Range};
 
 use crate::error::Error;
-use crate::utils::{arc_new, intersect, vec_push};
+use crate::utils::intersect;
+use kalloc::wrapper::vec_push;
 
 /// Page table.
 pub trait PageTable: Sized {
@@ -195,7 +196,7 @@ impl<P: PageTable> AddressSpace<P> {
                 let pg = Page::new()?;
                 self.pgdir.map(va, &pg)?;
                 map_len += pg.size();
-                vec_push(&mut pages, arc_new(pg)?)?;
+                vec_push(&mut pages, Arc::try_new(pg)?)?;
             }
 
             let inner = SegmentInner {
@@ -203,7 +204,7 @@ impl<P: PageTable> AddressSpace<P> {
                 pages,
             };
             let new_seg = if shared {
-                Segment::Shared(arc_new(inner)?)
+                Segment::Shared(Arc::try_new(inner)?)
             } else {
                 Segment::Local(inner)
             };
@@ -260,7 +261,7 @@ impl<P: PageTable> AddressSpace<P> {
                     None
                 }
             } {
-                self.seg[i] = Segment::Shared(arc_new(inner)?);
+                self.seg[i] = Segment::Shared(Arc::try_new(inner)?);
             }
             Ok(true)
         } else {
@@ -307,7 +308,7 @@ impl<P: PageTable> AddressSpace<P> {
                         let pg = Page::new()?;
                         pgdir.map(va, &pg)?;
                         map_len += pg.size();
-                        vec_push(&mut inner.pages, arc_new(pg)?)?;
+                        vec_push(&mut inner.pages, Arc::try_new(pg)?)?;
                     }
                     inner.range.end = addr;
                     Ok(true)
@@ -358,7 +359,7 @@ impl<P: PageTable> AddressSpace<P> {
                     unsafe { ptr::copy(p.ptr.as_ptr() as *const u8, pg_va, pg.size()) };
 
                     new_pgdir.map(va, &pg)?;
-                    arc_new(pg)?
+                    Arc::try_new(pg)?
                 };
 
                 va += pg.size();
@@ -371,7 +372,7 @@ impl<P: PageTable> AddressSpace<P> {
             vec_push(
                 &mut new_segs,
                 if shared {
-                    Segment::Shared(arc_new(inner)?)
+                    Segment::Shared(Arc::try_new(inner)?)
                 } else {
                     Segment::Local(inner)
                 },

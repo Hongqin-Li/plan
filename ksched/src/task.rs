@@ -1,49 +1,57 @@
 //! Async executor and some basic futures.
-use core::alloc::AllocError;
-
+#![allow(missing_docs)]
+use core::{alloc::AllocError, cell::UnsafeCell};
 use futures::task::ArcWake;
 
-use super::prique::{Prique64 as Prique, PriqueTrait};
-use kcore::error::Error;
+use intrusive_collections::intrusive_adapter;
+use intrusive_collections::{LinkedList, LinkedListLink};
+
+use super::prique::{PriqueTrait, Pritask64 as Prique};
+use crate::sync::Spinlock;
 use lazy_static::*;
 use {
-    alloc::{boxed::Box, collections::vec_deque::VecDeque, sync::Arc},
+    alloc::{boxed::Box, sync::Arc},
     core::{
         future::Future,
         pin::Pin,
         task::{Context, Poll},
     },
-    spin::Mutex,
 };
 
 /// Executor holds a list of tasks to be processed
 pub struct Executor {
-    schedque: Prique<Arc<Task>>,
-    /// Tasks encountering oom when being woken up.
-    waitque: VecDeque<Arc<Task>>,
+    schedque: Prique,
     ntasks: usize,
 }
 
 impl Default for Executor {
     fn default() -> Self {
         Executor {
-            schedque: Prique::new().unwrap(),
-            waitque: VecDeque::new(),
+            schedque: Prique::new(),
             ntasks: 0,
         }
     }
 }
 
 /// Task is our unit of execution and holds a future are waiting on
-struct Task {
-    pub future: Mutex<Pin<Box<dyn Future<Output = ()> + Send + 'static>>>,
+pub struct Task {
+    /// SAFETY: We won't poll a future until its reference count is one.
+    pub future: UnsafeCell<Pin<Box<dyn Future<Output = ()> + Send + 'static>>>,
+    /// SAFETY: It's a constant.
     pub nice: usize,
+    /// SAFETY: You must guarantee that only one waker exist outside the context.
+    link: LinkedListLink,
 }
+
+/// SAFETY: see [Task].
+unsafe impl Sync for Task {}
+
+intrusive_adapter!(pub TaskAdapter = Arc<Task>: Task { link: LinkedListLink });
 
 /// Wake by rescheduling.
 impl ArcWake for Task {
     fn wake_by_ref(t: &Arc<Self>) {
-        DEFAULT_EXECUTOR.lock().resched(t.clone(), false);
+        DEFAULT_EXECUTOR.lock().sched(t.clone());
     }
 }
 
@@ -52,9 +60,10 @@ impl Task {
         // Task may be in poll.
         while alloc::sync::Arc::<Task>::strong_count(self) != 1 {}
 
-        let mut future = self.future.lock();
+        // Safe since the reference count is 1.
+        let future = unsafe { self.future.get().as_mut().unwrap() };
 
-        // Poll our future and give it a waker
+        // Poll our future and give it a waker.
         let w = futures::task::waker(self.clone());
         let context = &mut Context::from_waker(&w);
         future.as_mut().poll(context)
@@ -62,20 +71,9 @@ impl Task {
 }
 
 impl Executor {
-    fn resched(&mut self, t: Arc<Task>, from_wait: bool) {
-        debug_assert!(self.schedque.len() + self.waitque.len() < self.ntasks);
-        debug_assert!(self.waitque.capacity() >= self.ntasks);
-        match self.schedque.push(t.nice, t.clone()) {
-            Err(Error::OutOfMemory) => {
-                // Won't panic since we have reserved in spawn.
-                if from_wait {
-                    self.waitque.push_front(t);
-                } else {
-                    self.waitque.push_back(t);
-                }
-            }
-            _ => {}
-        }
+    /// Add a task to the scheduler queue.
+    fn sched(&mut self, t: Arc<Task>) {
+        self.schedque.push(t.nice, t);
     }
 
     /// Create a new task and add to the executor.
@@ -89,31 +87,27 @@ impl Executor {
         &mut self,
         nice: usize,
         future: impl Future<Output = ()> + 'static + Send,
-    ) -> Result<(), Error> {
-        debug_assert!(self.schedque.len() + self.waitque.len() <= self.ntasks);
-
+    ) -> Result<(), AllocError> {
         let t = Arc::try_new(Task {
             nice,
-            future: Mutex::new(Box::into_pin(Box::try_new(future)?)),
+            future: UnsafeCell::new(Box::into_pin(Box::try_new(future)?)),
+            link: LinkedListLink::new(),
         })?;
         self.ntasks += 1;
-        self.waitque.try_reserve(self.ntasks - self.waitque.len())?;
-        self.resched(t, false);
+        self.sched(t);
         Ok(())
     }
 
     /// Called when one task is terminating.
     fn exit1(&mut self) {
         self.ntasks -= 1;
-        self.waitque.shrink_to(self.ntasks);
-        // TODO: shrink schedque.
     }
 }
 
 lazy_static! {
-    static ref DEFAULT_EXECUTOR: Mutex<Box<Executor>> = {
+    static ref DEFAULT_EXECUTOR: Spinlock<Box<Executor>> = {
         let m = Executor::default();
-        Mutex::new(Box::try_new(m).unwrap())
+        Spinlock::new(Box::try_new(m).unwrap())
     };
 }
 
@@ -126,7 +120,10 @@ lazy_static! {
 ///    println!("hello, world");
 /// }).expect("oom");
 /// ```
-pub fn spawn(nice: usize, future: impl Future<Output = ()> + 'static + Send) -> Result<(), Error> {
+pub fn spawn(
+    nice: usize,
+    future: impl Future<Output = ()> + 'static + Send,
+) -> Result<(), AllocError> {
     DEFAULT_EXECUTOR.lock().spawn(nice, future)
 }
 
@@ -145,12 +142,9 @@ pub fn spawn(nice: usize, future: impl Future<Output = ()> + 'static + Send) -> 
 pub fn run() {
     loop {
         let mut e = DEFAULT_EXECUTOR.lock();
-        while let Some(t) = e.waitque.pop_front() {
-            e.resched(t, true);
-        }
         let t = e.schedque.pop();
         drop(e);
-        if let Some((nice, t)) = t {
+        if let Some((_, t)) = t {
             if t.poll().is_ready() {
                 DEFAULT_EXECUTOR.lock().exit1();
             }

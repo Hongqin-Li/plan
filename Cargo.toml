@@ -1,2 +1,3 @@
 [workspace]
-members = ["kmalloc", "ksched", "kcore"]
+members = ["kalloc", "ksched", "kdevice", "kcore", "ktest"]
+

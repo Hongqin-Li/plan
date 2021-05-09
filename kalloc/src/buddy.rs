@@ -13,7 +13,7 @@
 use core::{alloc::GlobalAlloc, cmp::min, mem::size_of};
 use core::{alloc::Layout, mem, ptr};
 
-use crate::{list::List, to_order};
+use crate::{rawlist::Rawlist, to_order};
 use mcs::{Mutex, Slot};
 use typenum::{marker_traits::PowerOfTwo, Unsigned};
 
@@ -75,7 +75,7 @@ pub struct BuddySystem<P> {
 
     /// freelist[i] is a list of free blocks of size 2^i.
     /// Maximum order is 31, only support area of 2^31 pages.
-    freelist: [List; 32],
+    freelist: [Rawlist; 32],
 
     /// Pointer to next buddy system, used by MultiBuddySystem.
     next: *mut BuddySystem<P>,
@@ -118,7 +118,7 @@ impl<P: Unsigned + PowerOfTwo> BuddySystem<P> {
     /// Notice that it guarantees safety only if the access to [begin, end) is safe
     /// and `self` is a static variable.
     pub unsafe fn build(mut begin: usize, end: usize) -> Result<&'static mut Self, ()> {
-        assert!(P::to_usize() >= mem::size_of::<List>());
+        assert!(P::to_usize() >= mem::size_of::<Rawlist>());
         let b = &mut (*(begin as *mut Self));
         begin += size_of::<Self>();
         if begin >= end {
@@ -146,9 +146,9 @@ impl<P: Unsigned + PowerOfTwo> BuddySystem<P> {
             return Err(());
         }
         for head in b.freelist.iter_mut() {
-            List::init(head);
+            Rawlist::init(head);
         }
-        List::push_front(&mut b.freelist[b.max_order], b.page_begin as *mut List);
+        Rawlist::push_front(&mut b.freelist[b.max_order], b.page_begin as *mut Rawlist);
         ptr::write_bytes(begin as *mut u8, 0, round_up(2 * b.npages, 8) / 8);
         Ok(b)
     }
@@ -158,16 +158,16 @@ impl<P: Unsigned + PowerOfTwo> BuddySystem<P> {
         let mut d = order;
         let mut p = ptr::null_mut();
         while d <= self.max_order {
-            let head = &mut self.freelist[d] as *mut List;
-            if !List::is_empty(head) {
-                p = List::pop_front(head) as *mut u8;
+            let head = &mut self.freelist[d] as *mut Rawlist;
+            if !Rawlist::is_empty(head) {
+                p = Rawlist::pop_front(head) as *mut u8;
                 let mut i = self.bitmap_idx(p as usize, d);
                 self.set_bit(i);
                 while d > order {
                     d -= 1;
-                    List::push_front(
+                    Rawlist::push_front(
                         &mut self.freelist[d],
-                        (p as usize + (1 << d) * P::to_usize()) as *mut List,
+                        (p as usize + (1 << d) * P::to_usize()) as *mut Rawlist,
                     );
                     i = left(i);
                     self.set_bit(i);
@@ -194,7 +194,7 @@ impl<P: Unsigned + PowerOfTwo> BuddySystem<P> {
             } else {
                 p - (1 << order) * P::to_usize()
             };
-            List::drop(bp as *mut List);
+            Rawlist::drop(bp as *mut Rawlist);
             self.unset_bit(i);
 
             order += 1;
@@ -202,7 +202,7 @@ impl<P: Unsigned + PowerOfTwo> BuddySystem<P> {
             p = min(p, bp);
         }
         self.unset_bit(i);
-        List::push_front(&mut self.freelist[order], p as *mut List);
+        Rawlist::push_front(&mut self.freelist[order], p as *mut Rawlist);
 
         #[cfg(any(test, debug_assertions))]
         self.check();
@@ -253,8 +253,8 @@ impl<P: Unsigned + PowerOfTwo> BuddySystem<P> {
                     || (self.get_bit(father(u)) == true) && self.get_bit(buddy_idx(u)) == true)
             {
                 let mut found = false;
-                let head = &self.freelist[d] as *const List;
-                let mut p = self.freelist[d].next as *const List;
+                let head = &self.freelist[d] as *const Rawlist;
+                let mut p = self.freelist[d].next as *const Rawlist;
                 while p != head {
                     if p as usize == addr {
                         found = true;
@@ -275,8 +275,8 @@ impl<P: Unsigned + PowerOfTwo> BuddySystem<P> {
 
         let mut nfreelist = 0;
         for i in 0..=self.max_order {
-            let head = &self.freelist[i] as *const List;
-            let mut p = self.freelist[i].next as *const List;
+            let head = &self.freelist[i] as *const Rawlist;
+            let mut p = self.freelist[i].next as *const Rawlist;
             // let mut free_ptrs = vec![];
             while p != head {
                 nfreelist += 1 << i;
@@ -440,7 +440,7 @@ pub mod tests {
     use super::*;
 
     const NBUF: usize = 10 * 4096;
-    pub type PGSIZE = U64; // Should be large enough to store the List structure.
+    pub type PGSIZE = U64; // Should be large enough to store the Rawlist structure.
 
     fn to_layout(order: usize) -> Layout {
         let sz = (1 << order) * PGSIZE::to_usize();

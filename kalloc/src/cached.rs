@@ -15,7 +15,19 @@ use core::alloc::{GlobalAlloc, Layout};
 use mcs::{Mutex, Slot};
 use typenum::{PowerOfTwo, Unsigned};
 
-use crate::{buddy::MultiBuddySystem, list::Freelist, to_order};
+use crate::{buddy::MultiBuddySystem, to_order};
+
+use core::ptr::null_mut;
+
+struct Freelist {
+    next: *mut Freelist,
+}
+
+impl Freelist {
+    pub const fn new() -> Self {
+        Self { next: null_mut() }
+    }
+}
 
 /// Allocator with cached pages.
 pub struct Cached<T> {

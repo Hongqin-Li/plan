@@ -15,28 +15,35 @@ Platform-agnostic operating system building blocks in Rust, inspired by <a href=
 
 <br/><br/>
 
-
-- [ ] Memory management
+- [] Data structures
+  - [ ] Concurrent hash map: port [DashMap](https://github.com/xacrimon/dashmap)
+- [x] Memory management
   - [x] Multi buddy system
-  - [ ] Cached allocator(like slab)
-  - [ ] Testing
-  - [ ] Benchmark
-- [ ] Async scheduler: port [async-std](https://github.com/async-rs/async-std)
-  - [x] Basic scheduler and yield
-  - [x] Mutex/Condvar
+  - [x] Cached allocator(like slab)
+  - [ ] Control with memory limit
+- [ ] Task management
+  - [x] Basic async scheduler and yield
+  - [ ] Timer and sleep
+  - [x] O(1) priority scheduler: in fact, it's O(logP), where P is the maximum priority level. Inspired by [RT-Thread](https://github.com/RT-Thread/rt-thread)
+  - [x] Mutex/Condvar/Rwlock: doc-test ported from [async-std](https://github.com/async-rs/async-std)
+  - [x] IPC: mpsc, can be used to eliminate recusive await
+  - [ ] Test Mutex/Condvar/RwLock/mpsc
   - [ ] RT-Mutex
-  - [ ] Benchmark
-- [x] Address space: used for mmap
-- [ ] Namespace: port [plan9](https://github.com/0intro/plan9)
-- [ ] Device model
-- [ ] IPC
-- [ ] Timer and clock
+  - [ ] Online deadlock detection by wait-for graph: inspired by [parking-lot](https://github.com/Amanieu/parking_lot)
+- [x] Address space: inspired by [plan9](https://github.com/0intro/plan9)
+- [ ] Namespace: inspired by [plan9](https://github.com/0intro/plan9)
+- [ ] File system
+  - [x] O(1) generic LRU cache.
+  - [x] Log with read-committed isolation level.
+  - [ ] Transaction-safe FAT32.
 
 ## Project structure
 
 ```
 .
-├── kmalloc: Buddy system allocator
+├── kalloc: Buddy system allocator and basic data structures
 ├── ksched: Async scheduler and synchronization primitives
-└── kcore: Address space, namespace and device model
+├── kcore: Address space, namespace and device model
+├── kdevice: Device driver such as file system
+└── ktest: Common test utils and cases
 ```

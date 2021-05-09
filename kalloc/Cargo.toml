@@ -1,5 +1,5 @@
 [package]
-name = "kmalloc"
+name = "kalloc"
 version = "0.1.0"
 authors = ["Hongqin-Li <ihongqinli@gmail.com>"]
 edition = "2018"
@@ -9,6 +9,7 @@ edition = "2018"
 [dependencies]
 mcs = { git = "https://github.com/Hongqin-Li/mcs-rs" }
 typenum = "1.13.0"
+hashbrown = "0.11"
 
 [dev-dependencies]
 rand = "0.8.3"

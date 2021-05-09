@@ -1,10 +1,15 @@
 //! Bitmap-based priority queue implementation.
 
-use alloc::collections::VecDeque;
-use alloc::vec::Vec;
-use core::{alloc::AllocError, marker::PhantomData};
-use kcore::error::Error;
-use kcore::utils::{deque_push_back, vec_push};
+use crate::task::Task;
+
+use super::task::TaskAdapter;
+use alloc::sync::Arc;
+use core::marker::PhantomData;
+use kalloc::list::List;
+
+use intrusive_collections::LinkedList;
+
+use kalloc::wrapper::Vec;
 
 /// For example, `PRI[0b01110100] = 2`
 const PRI: &'static [u8; 256] = &{
@@ -26,6 +31,13 @@ pub type Prique64<T> = Prique<Prique8<T>, T>;
 /// Priority queue with 512 priority levels.
 pub type Prique512<T> = Prique<Prique64<T>, T>;
 
+/// Priority queue of task with 8 priority levels.
+pub type Pritask8 = Prique<Pritask0, Arc<Task>>;
+/// Priority queue of task with 64 priority levels.
+pub type Pritask64 = Prique<Pritask8, Arc<Task>>;
+/// Priority queue of task with 512 priority levels.
+pub type Pritask512 = Prique<Pritask64, Arc<Task>>;
+
 /// Priority queue with eight priority levels.
 pub trait PriqueTrait<T> {
     /// Max nice value.
@@ -35,13 +47,15 @@ pub trait PriqueTrait<T> {
         Self::P
     }
     /// Create a new priority queue.
-    fn new() -> Result<Self, Error>
+    /// Panic if oom.
+    fn new() -> Self
     where
         Self: Sized;
+
     /// Push back a item with specific priority.
     ///
-    /// Nice value should be less than `P`. Nice 0 is of highest priority.
-    fn push(&mut self, nice: usize, t: T) -> Result<(), Error>;
+    /// Panic if nice value is greater or equal to `P`. Nice 0 is of highest priority.
+    fn push(&mut self, nice: usize, t: T);
     /// Pop out the item of largest priority(lowest nice value).
     ///
     /// Items of same priority will be poped in order of FIFO.
@@ -55,23 +69,20 @@ pub trait PriqueTrait<T> {
 }
 
 /// Naive priority queue with single priority level.
-pub struct Prique0<T>(VecDeque<T>);
+pub struct Prique0<T>(List<T>);
 
 impl<T> PriqueTrait<T> for Prique0<T> {
     const P: usize = 1;
-    fn new() -> Result<Self, Error>
+    fn new() -> Self
     where
         Self: Sized,
     {
-        Ok(Self(VecDeque::new()))
+        Self(List::new())
     }
 
-    fn push(&mut self, nice: usize, t: T) -> Result<(), Error> {
-        if nice != 0 {
-            return Err(Error::BadRequest);
-        }
-        deque_push_back(&mut self.0, t)?;
-        Ok(())
+    fn push(&mut self, nice: usize, t: T) {
+        debug_assert!(nice < Self::P);
+        self.0.push_back(t).unwrap();
     }
 
     fn pop(&mut self) -> Option<(usize, T)> {
@@ -80,6 +91,39 @@ impl<T> PriqueTrait<T> for Prique0<T> {
 
     fn len(&self) -> usize {
         self.0.len()
+    }
+
+    #[cfg(any(test, debug_assertions))]
+    fn check(&self) {}
+}
+
+/// Priority queue of task that won't oom.
+pub struct Pritask0(LinkedList<TaskAdapter>, usize);
+impl PriqueTrait<Arc<Task>> for Pritask0 {
+    const P: usize = 1;
+    fn new() -> Self
+    where
+        Self: Sized,
+    {
+        Self(LinkedList::new(TaskAdapter::new()), 0)
+    }
+
+    fn push(&mut self, nice: usize, t: Arc<Task>) {
+        debug_assert!(nice < Self::P);
+        self.1 += 1;
+        self.0.push_back(t)
+    }
+
+    fn pop(&mut self) -> Option<(usize, Arc<Task>)> {
+        let ret = self.0.pop_front().map(|t| (0, t));
+        if ret.is_some() {
+            self.1 -= 1;
+        }
+        ret
+    }
+
+    fn len(&self) -> usize {
+        self.1
     }
 
     #[cfg(any(test, debug_assertions))]
@@ -97,38 +141,35 @@ pub struct Prique<P: PriqueTrait<T>, T> {
 impl<T, S: PriqueTrait<T>> PriqueTrait<T> for Prique<S, T> {
     const P: usize = S::P * 8;
     /// Create a new priority queue.
-    fn new() -> Result<Self, Error> {
+    /// Panic if oom.
+    fn new() -> Self {
         let mut que = Vec::new();
         for _ in 0..8 {
-            vec_push(&mut que, S::new()?)?;
+            que.push(S::new());
         }
-        Ok(Self {
+        Self {
             que,
             bitmap: 0,
             n: 0,
             phantom: PhantomData,
-        })
+        }
     }
 
     /// Push back a item with specific priority.
     ///
     /// Nice value should be less than 8. Nice 0 is of highest priority.
-    fn push(&mut self, nice: usize, t: T) -> Result<(), Error> {
+    fn push(&mut self, nice: usize, t: T) {
+        debug_assert!(nice < Self::P);
         let i = nice / S::P;
-        if let Some(q) = self.que.get_mut(i) {
-            q.push(nice % S::P, t)?;
-            if q.len() == 1 {
-                self.bitmap |= 1 << i;
-            }
-            self.n += 1;
-
-            #[cfg(any(test, debug_assertions))]
-            self.check();
-
-            Ok(())
-        } else {
-            Err(Error::BadRequest)
+        let q = &mut self.que[i];
+        q.push(nice % S::P, t);
+        if q.len() == 1 {
+            self.bitmap |= 1 << i;
         }
+        self.n += 1;
+
+        #[cfg(any(test, debug_assertions))]
+        self.check();
     }
 
     /// Pop out the item of largest priority(lowest nice value).
@@ -177,12 +218,12 @@ mod tests {
     {
         // Small cases.
         for i in 1..P::max_nice() {
-            test_pushpop1(P::new().unwrap(), i);
+            test_pushpop1(P::new(), i);
         }
         // Large case.
-        test_pushpop1(P::new().unwrap(), 10000);
-        test_invalid_priority1(P::new().unwrap());
-        test_preemption1(P::new().unwrap());
+        test_pushpop1(P::new(), 10000);
+        test_valid_priority1(P::new());
+        test_preemption1(P::new());
     }
 
     fn test_pushpop1<P>(mut pq: P, n: usize)
@@ -194,7 +235,7 @@ mod tests {
 
         for i in 0..n {
             let item = (rng.gen_range(0..P::max_nice()), i);
-            pq.push(item.0, item.1).unwrap();
+            pq.push(item.0, item.1);
             assert_eq!(pq.len(), i + 1);
             items.push(item);
         }
@@ -209,16 +250,23 @@ mod tests {
         assert_eq!(items, pgitems);
     }
 
-    fn test_invalid_priority1<P>(mut pq: P)
+    fn test_valid_priority1<P>(mut pq: P)
     where
         P: PriqueTrait<usize>,
     {
         let m = P::max_nice();
         for i in 0..m {
-            assert_eq!(pq.push(i, 1).is_ok(), true);
+            pq.push(i, 1);
         }
+    }
+
+    fn test_invalid_priority1<P>(mut pq: P)
+    where
+        P: PriqueTrait<usize>,
+    {
+        let m = P::max_nice();
         for i in 0..10 {
-            assert_eq!(pq.push(m + i, 1).is_err(), true);
+            pq.push(m + i, 1);
         }
     }
 
@@ -231,13 +279,13 @@ mod tests {
         }
         let n = 10;
         for i in 0..n {
-            pq.push(1, i).unwrap();
+            pq.push(1, i);
         }
         assert_eq!(pq.pop().unwrap(), (1, 0));
-        pq.push(1, n).unwrap();
+        pq.push(1, n);
 
         for i in 1..=n {
-            pq.push(0, 2 * i).unwrap();
+            pq.push(0, 2 * i);
             assert_eq!(pq.pop().unwrap(), (0, 2 * i));
             assert_eq!(pq.pop().unwrap(), (1, i));
         }
@@ -254,5 +302,21 @@ mod tests {
     #[test]
     fn test_prique512() {
         test1::<Prique512<usize>>();
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_prique8_panic() {
+        test_invalid_priority1(Prique8::<usize>::new());
+    }
+    #[test]
+    #[should_panic]
+    fn test_prique64_panic() {
+        test_invalid_priority1(Prique64::<usize>::new());
+    }
+    #[test]
+    #[should_panic]
+    fn test_prique512_panic() {
+        test_invalid_priority1(Prique512::<usize>::new());
     }
 }

@@ -6,10 +6,10 @@
 //! a vector. The contained elements are not required to be copyable, and the
 //! queue will be sendable if the contained type is sendable.
 
-use crate::error::Result;
-use crate::utils::{vec_push, vec_shrink_to_fit};
+use crate::wrapper::{r2a, vec_push, vec_shrink_to_fit};
 use alloc::vec::Vec;
 use core::{
+    alloc::AllocError,
     cmp::min,
     mem::swap,
     ops::{Index, IndexMut},
@@ -39,7 +39,7 @@ impl<T> Vecque<T> {
     /// # Examples
     ///
     /// ```
-    /// use kcore::vecque::Vecque;
+    /// use kalloc::vecque::Vecque;
     ///
     /// let vector: Vecque<u32> = Vecque::new();
     /// ```
@@ -50,23 +50,45 @@ impl<T> Vecque<T> {
         }
     }
 
+    /// Reserves capacity for at least `additional` more elements to be inserted in the given
+    /// `Vecque`. The collection may reserve more space to avoid frequent reallocations.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the new capacity overflows `usize`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use kalloc::vecque::Vecque;
+    ///
+    /// let mut buf = Vecque::new();
+    /// buf.push_back(1);
+    /// buf.reserve(10);
+    /// assert!(buf.capacity() >= 11);
+    /// ```
+    pub fn reserve(&mut self, additional: usize) -> Result<(), AllocError> {
+        r2a(self.front.try_reserve(additional))?;
+        r2a(self.back.try_reserve(additional))?;
+        Ok(())
+    }
+
     /// Creates an empty `Vecque` with space for at least `capacity` elements.
     ///
     /// # Examples
     ///
     /// ```
-    /// use kcore::vecque::Vecque;
+    /// use kalloc::vecque::Vecque;
     ///
     /// let vector: Vecque<u32> = Vecque::with_capacity(10).unwrap();
     /// ```
-    pub fn with_capacity(capacity: usize) -> Result<Self> {
+    pub fn with_capacity(capacity: usize) -> Result<Self, AllocError> {
         // +1 since the ringbuffer always leaves one space empty
         let mut ret = Self {
             back: Vec::new(),
             front: Vec::new(),
         };
-        ret.back.try_reserve(capacity)?;
-        ret.front.try_reserve(capacity)?;
+        ret.reserve(capacity)?;
         Ok(ret)
     }
 
@@ -77,7 +99,7 @@ impl<T> Vecque<T> {
     /// # Examples
     ///
     /// ```
-    /// use kcore::vecque::Vecque;
+    /// use kalloc::vecque::Vecque;
     ///
     /// let mut buf = Vecque::new();
     /// buf.push_back(3);
@@ -101,7 +123,7 @@ impl<T> Vecque<T> {
     /// # Examples
     ///
     /// ```
-    /// use kcore::vecque::Vecque;
+    /// use kalloc::vecque::Vecque;
     ///
     /// let mut buf = Vecque::new();
     /// buf.push_back(3).unwrap();
@@ -128,7 +150,7 @@ impl<T> Vecque<T> {
     /// # Examples
     ///
     /// ```
-    /// use kcore::vecque::Vecque;
+    /// use kalloc::vecque::Vecque;
     ///
     /// let mut d = Vecque::new();
     /// assert_eq!(d.front(), None);
@@ -147,7 +169,7 @@ impl<T> Vecque<T> {
     /// # Examples
     ///
     /// ```
-    /// use kcore::vecque::Vecque;
+    /// use kalloc::vecque::Vecque;
     ///
     /// let mut d = Vecque::new();
     /// assert_eq!(d.front_mut(), None);
@@ -170,7 +192,7 @@ impl<T> Vecque<T> {
     /// # Examples
     ///
     /// ```
-    /// use kcore::vecque::Vecque;
+    /// use kalloc::vecque::Vecque;
     ///
     /// let mut d = Vecque::new();
     /// assert_eq!(d.back(), None);
@@ -189,7 +211,7 @@ impl<T> Vecque<T> {
     /// # Examples
     ///
     /// ```
-    /// use kcore::vecque::Vecque;
+    /// use kalloc::vecque::Vecque;
     ///
     /// let mut d = Vecque::new();
     /// assert_eq!(d.back(), None);
@@ -212,7 +234,7 @@ impl<T> Vecque<T> {
     /// # Examples
     ///
     /// ```
-    /// use kcore::vecque::Vecque;
+    /// use kalloc::vecque::Vecque;
     ///
     /// let mut d = Vecque::new();
     /// d.push_back(1);
@@ -236,7 +258,7 @@ impl<T> Vecque<T> {
     /// # Examples
     ///
     /// ```
-    /// use kcore::vecque::Vecque;
+    /// use kalloc::vecque::Vecque;
     ///
     /// let mut buf = Vecque::new();
     /// assert_eq!(buf.pop_back(), None);
@@ -257,14 +279,14 @@ impl<T> Vecque<T> {
     /// # Examples
     ///
     /// ```
-    /// use kcore::vecque::Vecque;
+    /// use kalloc::vecque::Vecque;
     ///
     /// let mut d = Vecque::new();
     /// d.push_front(1).unwrap();
     /// d.push_front(2).unwrap();
     /// assert_eq!(d.front(), Some(&2));
     /// ```
-    pub fn push_front(&mut self, value: T) -> Result<()> {
+    pub fn push_front(&mut self, value: T) -> Result<(), AllocError> {
         vec_push(&mut self.front, value)
     }
 
@@ -273,14 +295,14 @@ impl<T> Vecque<T> {
     /// # Examples
     ///
     /// ```
-    /// use kcore::vecque::Vecque;
+    /// use kalloc::vecque::Vecque;
     ///
     /// let mut buf = Vecque::new();
     /// buf.push_back(1).unwrap();
     /// buf.push_back(3).unwrap();
     /// assert_eq!(3, *buf.back().unwrap());
     /// ```
-    pub fn push_back(&mut self, value: T) -> Result<()> {
+    pub fn push_back(&mut self, value: T) -> Result<(), AllocError> {
         vec_push(&mut self.back, value)
     }
 
@@ -289,7 +311,7 @@ impl<T> Vecque<T> {
     /// # Examples
     ///
     /// ```
-    /// use kcore::vecque::Vecque;
+    /// use kalloc::vecque::Vecque;
     ///
     /// let mut v = Vecque::new();
     /// assert_eq!(v.len(), 0);
@@ -305,7 +327,7 @@ impl<T> Vecque<T> {
     /// # Examples
     ///
     /// ```
-    /// use kcore::vecque::Vecque;
+    /// use kalloc::vecque::Vecque;
     ///
     /// let mut v = Vecque::new();
     /// assert!(v.is_empty());
@@ -324,7 +346,7 @@ impl<T> Vecque<T> {
     /// # Examples
     ///
     /// ```
-    /// use kcore::vecque::Vecque;
+    /// use kalloc::vecque::Vecque;
     ///
     /// let mut buf = Vecque::with_capacity(15).unwrap();
     /// buf.push_front(1).unwrap();
@@ -332,7 +354,7 @@ impl<T> Vecque<T> {
     /// buf.shrink_to_fit().unwrap();
     /// assert!(buf.capacity() >= 1);
     /// ```
-    pub fn shrink_to_fit(&mut self) -> Result<()> {
+    pub fn shrink_to_fit(&mut self) -> Result<(), AllocError> {
         vec_shrink_to_fit(&mut self.back)?;
         vec_shrink_to_fit(&mut self.front)
     }
@@ -343,7 +365,7 @@ impl<T> Vecque<T> {
     /// # Examples
     ///
     /// ```
-    /// use kcore::vecque::Vecque;
+    /// use kalloc::vecque::Vecque;
     ///
     /// let buf: Vecque<i32> = Vecque::with_capacity(10).unwrap();
     /// assert!(buf.capacity() >= 10);

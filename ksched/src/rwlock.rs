@@ -1,22 +1,25 @@
 //! Read-write lock.
 
+use crate::slpque::SleepQueue;
+use crate::sync::Spinlock;
+use core::fmt;
 use core::mem;
 use core::ops::{Deref, DerefMut};
-use core::{alloc::AllocError, fmt};
 use core::{
     cell::UnsafeCell,
     future::Future,
     pin::Pin,
     task::{Context, Poll},
 };
-// use std::process;
-use core::sync::atomic::{AtomicUsize, Ordering};
-
-use crate::slpque::SleepQueue;
-use kcore::error::Result;
-use spin::{Mutex as Spinlock, MutexGuard as SpinlockGuard};
 
 const ONE_READER: usize = 4;
+
+#[derive(Clone, Copy, Debug)]
+enum RwType {
+    Reader,
+    Writer,
+    UpgradableReader,
+}
 
 struct RwLockInner {
     /// Bit 0 indicates if there is an active writer. If this is true, the other bits must be zero.
@@ -25,7 +28,7 @@ struct RwLockInner {
     state: usize,
     /// Since it is write-preferring, we need to know whether some writers are sleeping.
     waiting_writer: usize,
-    slpque: SleepQueue,
+    slpque: SleepQueue<RwType>,
 }
 
 /// An async reader-writer lock.
@@ -44,14 +47,14 @@ struct RwLockInner {
 /// let lock = RwLock::new(5);
 ///
 /// // Multiple read locks can be held at a time.
-/// let r1 = lock.read().await.unwrap();
-/// let r2 = lock.read().await.unwrap();
+/// let r1 = lock.read().await;
+/// let r2 = lock.read().await;
 /// assert_eq!(*r1, 5);
 /// assert_eq!(*r2, 5);
 /// drop((r1, r2));
 ///
 /// // Only one write lock can be held at a time.
-/// let mut w = lock.write().await.unwrap();
+/// let mut w = lock.write().await;
 /// *w += 1;
 /// assert_eq!(*w, 6);
 /// # });
@@ -104,7 +107,7 @@ impl<T> RwLock<T> {
     }
 }
 
-fn try_read(g: &mut SpinlockGuard<RwLockInner>) -> bool {
+fn try_read(g: &mut RwLockInner) -> bool {
     if g.state & 1 == 0 && g.waiting_writer == 0 {
         g.state += ONE_READER;
         true
@@ -112,7 +115,7 @@ fn try_read(g: &mut SpinlockGuard<RwLockInner>) -> bool {
         false
     }
 }
-fn try_upread(g: &mut SpinlockGuard<RwLockInner>) -> bool {
+fn try_upread(g: &mut RwLockInner) -> bool {
     if g.state & 3 == 0 && g.waiting_writer == 0 {
         g.state |= 2;
         true
@@ -120,7 +123,7 @@ fn try_upread(g: &mut SpinlockGuard<RwLockInner>) -> bool {
         false
     }
 }
-fn try_write(g: &mut SpinlockGuard<RwLockInner>) -> bool {
+fn try_write(g: &mut RwLockInner) -> bool {
     if g.waiting_writer == 0 && g.state == 0 {
         g.state |= 1;
         true
@@ -160,36 +163,43 @@ impl<T: ?Sized> RwLock<T> {
     ///
     /// let lock = RwLock::new(1);
     ///
-    /// let reader = lock.read().await.unwrap();
+    /// let reader = lock.read().await;
     /// assert_eq!(*reader, 1);
     ///
     /// assert!(lock.try_read().is_some());
     /// # });
     /// # ksched::task::run_all();
     /// ```
-    pub async fn read(&self) -> Result<RwLockReadGuard<'_, T>> {
+    pub async fn read(&self) -> RwLockReadGuard<'_, T> {
         struct Lock<'a, T: ?Sized> {
             lk: &'a RwLock<T>,
+            first: bool,
         }
 
         impl<'a, T: ?Sized> Future for Lock<'a, T> {
-            type Output = Result<RwLockReadGuard<'a, T>>;
+            type Output = RwLockReadGuard<'a, T>;
 
-            fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+            fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
                 let mut g = self.lk.inner.lock();
-                let result = if try_read(&mut g) {
-                    Poll::Ready(Ok(RwLockReadGuard(self.lk)))
-                } else {
-                    match g.slpque.sleep(cx.waker().clone()) {
-                        Ok(_) => Poll::Pending,
-                        Err(e) => Poll::Ready(Err(e)),
+                if self.first {
+                    self.first = false;
+                    if try_read(&mut g) {
+                        Poll::Ready(RwLockReadGuard(self.lk))
+                    } else {
+                        g.slpque.sleep(RwType::Reader, cx.waker().clone());
+                        Poll::Pending
                     }
-                };
-                result
+                } else {
+                    Poll::Ready(RwLockReadGuard(self.lk))
+                }
             }
         }
 
-        Lock { lk: self }.await
+        Lock {
+            lk: self,
+            first: true,
+        }
+        .await
     }
 
     /// Attempts to acquire a read lock with the possiblity to upgrade to a write lock.
@@ -228,38 +238,45 @@ impl<T: ?Sized> RwLock<T> {
     ///
     /// let lock = RwLock::new(1);
     ///
-    /// let reader = lock.upgradable_read().await.unwrap();
+    /// let reader = lock.upgradable_read().await;
     /// assert_eq!(*reader, 1);
     /// assert_eq!(*lock.try_read().unwrap(), 1);
     ///
-    /// let mut writer = RwLockUpgradableReadGuard::upgrade(reader).await.unwrap();
+    /// let mut writer = RwLockUpgradableReadGuard::upgrade(reader).await;
     /// *writer = 2;
     /// # });
     /// # ksched::task::run_all();
     /// ```
-    pub async fn upgradable_read(&self) -> Result<RwLockUpgradableReadGuard<'_, T>> {
+    pub async fn upgradable_read(&self) -> RwLockUpgradableReadGuard<'_, T> {
         struct Lock<'a, T: ?Sized> {
             lk: &'a RwLock<T>,
+            first: bool,
         }
 
         impl<'a, T: ?Sized> Future for Lock<'a, T> {
-            type Output = Result<RwLockUpgradableReadGuard<'a, T>>;
+            type Output = RwLockUpgradableReadGuard<'a, T>;
 
-            fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+            fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
                 let mut g = self.lk.inner.lock();
-                let result = if try_upread(&mut g) {
-                    Poll::Ready(Ok(RwLockUpgradableReadGuard(self.lk)))
-                } else {
-                    match g.slpque.sleep(cx.waker().clone()) {
-                        Ok(_) => Poll::Pending,
-                        Err(e) => Poll::Ready(Err(e)),
+                if self.first {
+                    self.first = false;
+                    if try_upread(&mut g) {
+                        Poll::Ready(RwLockUpgradableReadGuard(self.lk))
+                    } else {
+                        g.slpque.sleep(RwType::UpgradableReader, cx.waker().clone());
+                        Poll::Pending
                     }
-                };
-                result
+                } else {
+                    Poll::Ready(RwLockUpgradableReadGuard(self.lk))
+                }
             }
         }
 
-        Lock { lk: self }.await
+        Lock {
+            lk: self,
+            first: true,
+        }
+        .await
     }
 
     /// Attempts to acquire a write lock.
@@ -289,39 +306,34 @@ impl<T: ?Sized> RwLock<T> {
     ///
     /// let lock = RwLock::new(1);
     ///
-    /// let writer = lock.write().await.unwrap();
+    /// let writer = lock.write().await;
     /// assert!(lock.try_read().is_none());
     /// # });
     /// # ksched::task::run_all();
     /// ```
-    pub async fn write(&self) -> Result<RwLockWriteGuard<'_, T>> {
+    pub async fn write(&self) -> RwLockWriteGuard<'_, T> {
         struct Lock<'a, T: ?Sized> {
             first: bool,
             lk: &'a RwLock<T>,
         }
 
         impl<'a, T: ?Sized> Future for Lock<'a, T> {
-            type Output = Result<RwLockWriteGuard<'a, T>>;
+            type Output = RwLockWriteGuard<'a, T>;
 
             fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
                 let mut g = self.lk.inner.lock();
                 if self.first {
                     self.first = false;
-                } else {
-                    g.waiting_writer -= 1;
-                }
-                let result = if try_write(&mut g) {
-                    Poll::Ready(Ok(RwLockWriteGuard(self.lk)))
-                } else {
-                    match g.slpque.sleep(cx.waker().clone()) {
-                        Ok(_) => {
-                            g.waiting_writer += 1;
-                            Poll::Pending
-                        }
-                        Err(e) => Poll::Ready(Err(e)),
+                    if try_write(&mut g) {
+                        Poll::Ready(RwLockWriteGuard(self.lk))
+                    } else {
+                        g.slpque.sleep(RwType::Writer, cx.waker().clone());
+                        g.waiting_writer += 1;
+                        Poll::Pending
                     }
-                };
-                result
+                } else {
+                    Poll::Ready(RwLockWriteGuard(self.lk))
+                }
             }
         }
 
@@ -346,7 +358,7 @@ impl<T: ?Sized> RwLock<T> {
     /// let mut lock = RwLock::new(1);
     ///
     /// *lock.get_mut() = 2;
-    /// assert_eq!(*lock.read().await.unwrap(), 2);
+    /// assert_eq!(*lock.read().await, 2);
     /// # });
     /// # ksched::task::run_all();
     /// ```
@@ -389,6 +401,28 @@ pub struct RwLockReadGuard<'a, T: ?Sized>(&'a RwLock<T>);
 unsafe impl<T: Sync + ?Sized> Send for RwLockReadGuard<'_, T> {}
 unsafe impl<T: Sync + ?Sized> Sync for RwLockReadGuard<'_, T> {}
 
+/// Try to wake up waiters.
+fn extend_wake(g: &mut RwLockInner) {
+    while let Some((t, w)) = g.slpque.que.pop_front() {
+        let try_wake = match t {
+            RwType::Reader => try_read(g),
+            RwType::Writer => try_write(g)
+                .then(|| {
+                    g.waiting_writer -= 1;
+                    true
+                })
+                .is_some(),
+            RwType::UpgradableReader => try_upread(g),
+        };
+        if try_wake {
+            w.wake()
+        } else {
+            g.slpque.sleep_front(t, w);
+            break;
+        }
+    }
+}
+
 impl<T: ?Sized> Drop for RwLockReadGuard<'_, T> {
     fn drop(&mut self) {
         let mut g = self.0.inner.lock();
@@ -396,9 +430,9 @@ impl<T: ?Sized> Drop for RwLockReadGuard<'_, T> {
         debug_assert_ne!(g.state, 0);
         // Decrement the number of readers.
         g.state -= ONE_READER;
-        // If this was the last reader
+        // If this was the last reader.
         if g.state == 0 {
-            g.slpque.wakeup_one();
+            extend_wake(&mut g);
         }
     }
 }
@@ -447,7 +481,7 @@ impl<'a, T: ?Sized> RwLockUpgradableReadGuard<'a, T> {
     ///
     /// let lock = RwLock::new(1);
     ///
-    /// let reader = lock.upgradable_read().await.unwrap();
+    /// let reader = lock.upgradable_read().await;
     /// assert_eq!(*reader, 1);
     ///
     /// assert!(lock.try_upgradable_read().is_none());
@@ -458,12 +492,15 @@ impl<'a, T: ?Sized> RwLockUpgradableReadGuard<'a, T> {
     /// # });
     /// # ksched::task::run_all();
     /// ```
-    pub fn downgrade(guard: Self) -> RwLockReadGuard<'a, T> {
-        let mut g = guard.0.inner.lock();
+    pub fn downgrade(self) -> RwLockReadGuard<'a, T> {
+        let mut g = self.0.inner.lock();
         debug_assert_eq!(g.state & 3, 2);
         g.state += ONE_READER - 2;
-        let g = RwLockReadGuard(guard.0);
-        mem::forget(guard);
+        extend_wake(&mut g);
+        drop(g);
+
+        let g = RwLockReadGuard(self.0);
+        mem::forget(self);
         g
     }
 
@@ -482,10 +519,10 @@ impl<'a, T: ?Sized> RwLockUpgradableReadGuard<'a, T> {
     ///
     /// let lock = RwLock::new(1);
     ///
-    /// let reader = lock.upgradable_read().await.unwrap();
+    /// let reader = lock.upgradable_read().await;
     /// assert_eq!(*reader, 1);
     ///
-    /// let reader2 = lock.read().await.unwrap();
+    /// let reader2 = lock.read().await;
     /// let reader = RwLockUpgradableReadGuard::try_upgrade(reader).unwrap_err();
     ///
     /// drop(reader2);
@@ -493,15 +530,16 @@ impl<'a, T: ?Sized> RwLockUpgradableReadGuard<'a, T> {
     /// # });
     /// # ksched::task::run_all();
     /// ```
-    pub fn try_upgrade(guard: Self) -> core::result::Result<RwLockWriteGuard<'a, T>, Self> {
+    pub fn try_upgrade(self) -> Result<RwLockWriteGuard<'a, T>, Self> {
         // If there are no readers, grab the write lock.
-        let mut g = guard.0.inner.lock();
+        let mut g = self.0.inner.lock();
         debug_assert_eq!(g.state & 3, 2);
+        // If it is the last one.
         if g.state == 2 {
             g.state = 1;
-            Ok(guard.into_writer())
+            Ok(self.into_writer())
         } else {
-            Err(guard)
+            Err(self)
         }
     }
 
@@ -515,54 +553,61 @@ impl<'a, T: ?Sized> RwLockUpgradableReadGuard<'a, T> {
     ///
     /// let lock = RwLock::new(1);
     ///
-    /// let reader = lock.upgradable_read().await.unwrap();
+    /// let reader = lock.upgradable_read().await;
     /// assert_eq!(*reader, 1);
     ///
-    /// let mut writer = RwLockUpgradableReadGuard::upgrade(reader).await.unwrap();
+    /// let mut writer = RwLockUpgradableReadGuard::upgrade(reader).await;
     /// *writer = 2;
     /// # });
     /// # ksched::task::run_all();
     /// ```
-    pub async fn upgrade(guard: Self) -> Result<RwLockWriteGuard<'a, T>> {
+    pub async fn upgrade(self) -> RwLockWriteGuard<'a, T> {
         struct Lock<'a, T: ?Sized> {
             first: bool,
             lk: &'a RwLock<T>,
         }
 
         impl<'a, T: ?Sized> Future for Lock<'a, T> {
-            type Output = Result<RwLockWriteGuard<'a, T>>;
+            type Output = RwLockWriteGuard<'a, T>;
 
             fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
                 let mut g = self.lk.inner.lock();
                 if self.first {
-                    debug_assert_eq!(g.state, 2);
-                    g.state -= 2;
                     self.first = false;
-                } else {
-                    g.waiting_writer -= 1;
-                }
-                let result = if try_write(&mut g) {
-                    Poll::Ready(Ok(RwLockWriteGuard(self.lk)))
-                } else {
-                    match g.slpque.sleep_front(cx.waker().clone()) {
-                        Ok(_) => {
-                            g.waiting_writer += 1;
-                            Poll::Pending
-                        }
-                        Err(e) => Poll::Ready(Err(e)),
+
+                    debug_assert_eq!(g.state & 1, 0);
+                    debug_assert_eq!(g.state & 2, 2);
+                    g.state -= 2;
+                    if try_write(&mut g) {
+                        Poll::Ready(RwLockWriteGuard(self.lk))
+                    } else {
+                        g.slpque.sleep_front(RwType::Writer, cx.waker().clone());
+                        g.waiting_writer += 1;
+                        Poll::Pending
                     }
-                };
-                result
+                } else {
+                    Poll::Ready(RwLockWriteGuard(self.lk))
+                }
             }
         }
 
         let ret = Lock {
-            lk: guard.0,
+            lk: self.0,
             first: true,
         }
         .await;
-        mem::forget(guard);
+        mem::forget(self);
         ret
+    }
+}
+
+impl<T: ?Sized> Drop for RwLockUpgradableReadGuard<'_, T> {
+    fn drop(&mut self) {
+        let mut g = self.0.inner.lock();
+        debug_assert_eq!(g.state & 1, 0);
+        debug_assert_eq!(g.state & 2, 2);
+        g.state -= 2;
+        extend_wake(&mut g);
     }
 }
 
@@ -593,7 +638,7 @@ impl<T: ?Sized> Drop for RwLockWriteGuardInner<'_, T> {
         let mut g = self.0.inner.lock();
         debug_assert_eq!(g.state, 1);
         g.state = 0;
-        g.slpque.wakeup_one();
+        extend_wake(&mut g);
     }
 }
 
@@ -614,7 +659,7 @@ impl<'a, T: ?Sized> RwLockWriteGuard<'a, T> {
     ///
     /// let lock = RwLock::new(1);
     ///
-    /// let mut writer = lock.write().await.unwrap();
+    /// let mut writer = lock.write().await;
     /// *writer += 1;
     ///
     /// assert!(lock.try_read().is_none());
@@ -626,12 +671,16 @@ impl<'a, T: ?Sized> RwLockWriteGuard<'a, T> {
     /// # });
     /// # ksched::task::run_all();
     /// ```
-    pub fn downgrade(guard: Self) -> RwLockReadGuard<'a, T> {
-        let mut g = guard.0.inner.lock();
+    pub fn downgrade(self) -> RwLockReadGuard<'a, T> {
+        let mut g = self.0.inner.lock();
         debug_assert_eq!(g.state, 1);
         g.state = ONE_READER;
+        extend_wake(&mut g);
         drop(g);
-        RwLockReadGuard(guard.0)
+
+        let ng = RwLockReadGuard(self.0);
+        mem::forget(self);
+        ng
     }
 
     /// Downgrades into an upgradable reader guard.
@@ -644,7 +693,7 @@ impl<'a, T: ?Sized> RwLockWriteGuard<'a, T> {
     ///
     /// let lock = RwLock::new(1);
     ///
-    /// let mut writer = lock.write().await.unwrap();
+    /// let mut writer = lock.write().await;
     /// *writer += 1;
     ///
     /// assert!(lock.try_read().is_none());
@@ -659,12 +708,16 @@ impl<'a, T: ?Sized> RwLockWriteGuard<'a, T> {
     /// # });
     /// # ksched::task::run_all();
     /// ```
-    pub fn downgrade_to_upgradable(guard: Self) -> RwLockUpgradableReadGuard<'a, T> {
-        let mut g = guard.0.inner.lock();
+    pub fn downgrade_to_upgradable(self) -> RwLockUpgradableReadGuard<'a, T> {
+        let mut g = self.0.inner.lock();
         debug_assert_eq!(g.state, 1);
         g.state = 2;
+        extend_wake(&mut g);
         drop(g);
-        RwLockUpgradableReadGuard(guard.0)
+
+        let ng = RwLockUpgradableReadGuard(self.0);
+        mem::forget(self);
+        ng
     }
 }
 

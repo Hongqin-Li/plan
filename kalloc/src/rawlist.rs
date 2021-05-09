@@ -1,21 +1,10 @@
-use core::ptr::null_mut;
-
-pub struct Freelist {
-    pub next: *mut Freelist,
-}
-impl Freelist {
-    pub const fn new() -> Self {
-        Self { next: null_mut() }
-    }
-}
-
 #[derive(Copy, Clone, Debug)]
-pub struct List {
-    pub prev: *mut List,
-    pub next: *mut List,
+pub struct Rawlist {
+    pub prev: *mut Rawlist,
+    pub next: *mut Rawlist,
 }
 
-impl List {
+impl Rawlist {
     pub unsafe fn init(p: *mut Self) {
         (*p).prev = p;
         (*p).next = p;
@@ -73,66 +62,72 @@ mod tests {
     #[test]
     fn test_push_pop_back() {
         const N: usize = 10;
-        let mut item: [List; N] = [List {
+        let mut item: [Rawlist; N] = [Rawlist {
             prev: ptr::null_mut(),
             next: ptr::null_mut(),
         }; N];
-        let mut head = List {
+        let mut head = Rawlist {
             prev: ptr::null_mut(),
             next: ptr::null_mut(),
         };
         unsafe {
-            List::init(&mut head);
-            assert_eq!(List::is_empty(&mut head), true);
+            Rawlist::init(&mut head);
+            assert_eq!(Rawlist::is_empty(&mut head), true);
             for i in 0..N {
-                List::push_back(&mut head, &mut item[i]);
-                assert_eq!(List::is_empty(&mut head), false);
-                assert_eq!(List::back(&mut head), &mut item[i] as *mut List);
-                assert_eq!(List::front(&mut head), &mut item[0] as *mut List);
+                Rawlist::push_back(&mut head, &mut item[i]);
+                assert_eq!(Rawlist::is_empty(&mut head), false);
+                assert_eq!(Rawlist::back(&mut head), &mut item[i] as *mut Rawlist);
+                assert_eq!(Rawlist::front(&mut head), &mut item[0] as *mut Rawlist);
             }
 
             for i in 0..N {
-                assert_eq!(List::is_empty(&mut head), false);
-                assert_eq!(List::back(&mut head), &mut item[N - 1 - i] as *mut List);
-                assert_eq!(List::front(&mut head), &mut item[0] as *mut List);
+                assert_eq!(Rawlist::is_empty(&mut head), false);
+                assert_eq!(
+                    Rawlist::back(&mut head),
+                    &mut item[N - 1 - i] as *mut Rawlist
+                );
+                assert_eq!(Rawlist::front(&mut head), &mut item[0] as *mut Rawlist);
 
-                let p = List::pop_back(&mut head);
-                assert_eq!(p, &mut item[N - 1 - i] as *mut List);
+                let p = Rawlist::pop_back(&mut head);
+                assert_eq!(p, &mut item[N - 1 - i] as *mut Rawlist);
             }
-            assert_eq!(List::is_empty(&mut head), true);
+            assert_eq!(Rawlist::is_empty(&mut head), true);
         }
     }
 
     #[test]
     fn test_push_pop_front() {
         const N: usize = 10;
-        let mut item: [List; N] = [List {
+        let mut item: [Rawlist; N] = [Rawlist {
             prev: ptr::null_mut(),
             next: ptr::null_mut(),
         }; N];
-        let mut head = List {
+        let mut head = Rawlist {
             prev: ptr::null_mut(),
             next: ptr::null_mut(),
         };
         unsafe {
-            List::init(&mut head);
-            assert_eq!(List::is_empty(&mut head), true);
+            Rawlist::init(&mut head);
+            assert_eq!(Rawlist::is_empty(&mut head), true);
             for i in 0..N {
-                List::push_front(&mut head, &mut item[i]);
-                assert_eq!(List::is_empty(&mut head), false);
-                assert_eq!(List::front(&mut head), &mut item[i] as *mut List);
-                assert_eq!(List::back(&mut head), &mut item[0] as *mut List);
+                Rawlist::push_front(&mut head, &mut item[i]);
+                assert_eq!(Rawlist::is_empty(&mut head), false);
+                assert_eq!(Rawlist::front(&mut head), &mut item[i] as *mut Rawlist);
+                assert_eq!(Rawlist::back(&mut head), &mut item[0] as *mut Rawlist);
             }
 
             for i in 0..N {
-                assert_eq!(List::is_empty(&mut head), false);
-                assert_eq!(List::front(&mut head), &mut item[N - 1 - i] as *mut List);
-                assert_eq!(List::back(&mut head), &mut item[0] as *mut List);
+                assert_eq!(Rawlist::is_empty(&mut head), false);
+                assert_eq!(
+                    Rawlist::front(&mut head),
+                    &mut item[N - 1 - i] as *mut Rawlist
+                );
+                assert_eq!(Rawlist::back(&mut head), &mut item[0] as *mut Rawlist);
 
-                let p = List::pop_front(&mut head);
-                assert_eq!(p, &mut item[N - 1 - i] as *mut List);
+                let p = Rawlist::pop_front(&mut head);
+                assert_eq!(p, &mut item[N - 1 - i] as *mut Rawlist);
             }
-            assert_eq!(List::is_empty(&mut head), true);
+            assert_eq!(Rawlist::is_empty(&mut head), true);
         }
     }
 }

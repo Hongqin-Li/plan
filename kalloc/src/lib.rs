@@ -3,20 +3,29 @@
 #![no_std]
 #![feature(const_fn)]
 #![feature(associated_type_defaults)]
+#![feature(allocator_api)]
+#![feature(dropck_eyepatch)]
+#![feature(try_reserve)]
 
 // So that we can use std when testing.
 #[cfg(test)]
 #[macro_use]
 extern crate std;
 
+extern crate alloc;
+
+mod rawlist;
+
 pub mod buddy;
 pub mod cached;
-mod list;
+pub mod list;
+pub mod vecque;
+pub mod wrapper;
+
+pub use cached::Allocator;
+pub use typenum::consts;
 
 use core::{alloc::Layout, cmp::max};
-
-pub use buddy::Allocator;
-pub use typenum::consts;
 
 #[inline]
 fn to_order(pgsize: usize, layout: &Layout) -> usize {

@@ -17,16 +17,22 @@ extern crate std;
 
 extern crate alloc;
 
-pub mod condvar;
-pub mod mutex;
+pub mod mpsc;
 pub mod prique;
-pub mod rwlock;
-pub mod slpque;
 pub mod task;
+pub mod time;
+
+mod condvar;
+mod mutex;
+mod rwlock;
+mod slpque;
+mod spinlock;
 
 /// Synchronization primitives.
 pub mod sync {
     pub use super::condvar::Condvar;
+    pub use super::mpsc;
     pub use super::mutex::{Mutex, MutexGuard};
     pub use super::rwlock::{RwLock, RwLockReadGuard, RwLockUpgradableReadGuard, RwLockWriteGuard};
+    pub use super::spinlock::{Spinlock, SpinlockGuard};
 }

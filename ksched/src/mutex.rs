@@ -1,22 +1,21 @@
 //! Sleep lock or mutex implementation.
+use crate::slpque::SleepQueue;
+use crate::sync::Spinlock;
+use core::fmt;
 use core::ops::{Deref, DerefMut};
-use core::{alloc::AllocError, fmt};
 use core::{
     cell::UnsafeCell,
     future::Future,
     pin::Pin,
     task::{Context, Poll},
 };
-use spin::Mutex as Spinlock;
-
-use crate::slpque::SleepQueue;
 
 /// Inner sleep queue and lock state of Mutex.
 pub struct MutexInner {
     /// If this mutex has been locked.
     pub locked: bool,
     /// The sleep queue of waiting tasks.
-    pub slpque: SleepQueue,
+    pub slpque: SleepQueue<()>,
 }
 
 /// An async mutex.
@@ -27,15 +26,15 @@ pub struct MutexInner {
 ///
 /// ```
 /// # ksched::task::spawn(0, async {
-/// use ksched::mutex::Mutex;
+/// use ksched::sync::Mutex;
 ///
 /// let m: Mutex<usize> = Mutex::new(1);
 ///
-/// let mut guard = m.lock().await.expect("oom");
+/// let mut guard = m.lock().await;
 /// *guard = 2;
 /// drop(guard);
 ///
-/// let guard = m.lock().await.expect("oom");
+/// let guard = m.lock().await;
 /// assert_eq!(*guard, 2);
 /// # });
 /// # ksched::task::run_all();
@@ -57,7 +56,7 @@ impl<T> Mutex<T> {
     /// # Examples
     ///
     /// ```
-    /// use ksched::mutex::Mutex;
+    /// use ksched::sync::Mutex;
     ///
     /// let mutex: Mutex<usize> = Mutex::new(0);
     /// ```
@@ -76,7 +75,7 @@ impl<T> Mutex<T> {
     /// # Examples
     ///
     /// ```
-    /// use ksched::mutex::Mutex;
+    /// use ksched::sync::Mutex;
     ///
     /// let mutex: Mutex<usize> = Mutex::new(10);
     /// assert_eq!(mutex.into_inner(), 10);
@@ -87,6 +86,37 @@ impl<T> Mutex<T> {
 }
 
 impl<T: ?Sized> Mutex<T> {
+    /// Acquire the mutex, which must be release manually by [`Self::release`]
+    pub async fn acquire(&self) {
+        struct Lock<'a, T: ?Sized>(&'a Mutex<T>);
+
+        impl<'a, T: ?Sized> Future for Lock<'a, T> {
+            type Output = ();
+
+            fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+                let mut g = self.0.inner.lock();
+                let result = if g.locked {
+                    g.slpque.sleep((), cx.waker().clone());
+                    Poll::Pending
+                } else {
+                    g.locked = true;
+                    Poll::Ready(())
+                };
+                result
+            }
+        }
+        Lock(self).await
+    }
+
+    /// unlock
+    pub fn release(&self) {
+        // Notify waiters.
+        let mut g = self.inner.lock();
+        assert_eq!(g.locked, true);
+        g.slpque.wakeup_one();
+        g.locked = false;
+    }
+
     /// Acquires the mutex.
     ///
     /// Since inserting current task to the wait queue requires memory
@@ -97,39 +127,18 @@ impl<T: ?Sized> Mutex<T> {
     ///
     /// ```
     /// # ksched::task::spawn(0, async {
-    /// use ksched::mutex::Mutex;
+    /// use ksched::sync::Mutex;
     ///
     /// let mutex: Mutex<usize> = Mutex::new(10);
-    /// let guard = mutex.lock().await.expect("oom");
+    /// let guard = mutex.lock().await;
     /// assert_eq!(*guard, 10);
     /// # });
     /// # ksched::task::run_all();
     /// ```
     #[inline]
-    pub async fn lock(&self) -> Result<MutexGuard<'_, T>, AllocError> {
-        struct Lock<'a, T: ?Sized> {
-            mutex: &'a Mutex<T>,
-        }
-
-        impl<'a, T: ?Sized> Future for Lock<'a, T> {
-            type Output = Result<MutexGuard<'a, T>, AllocError>;
-
-            fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-                let mut g = self.mutex.inner.lock();
-                let result = if g.locked {
-                    match g.slpque.sleep(cx.waker().clone()) {
-                        Ok(_) => Poll::Pending,
-                        Err(_) => Poll::Ready(Err(AllocError)),
-                    }
-                } else {
-                    g.locked = true;
-                    Poll::Ready(Ok(MutexGuard(self.mutex)))
-                };
-                result
-            }
-        }
-
-        Lock { mutex: self }.await
+    pub async fn lock(&self) -> MutexGuard<'_, T> {
+        self.acquire().await;
+        MutexGuard(self)
     }
 
     /// Attempts to acquire the mutex.
@@ -168,11 +177,11 @@ impl<T: ?Sized> Mutex<T> {
     ///
     /// ```
     /// # ksched::task::spawn(0, async {
-    /// use ksched::mutex::Mutex;
+    /// use ksched::sync::Mutex;
     ///
     /// let mut mutex: Mutex<usize> = Mutex::new(0);
     /// *mutex.get_mut() = 10;
-    /// assert_eq!(*mutex.lock().await.expect("oom"), 10);
+    /// assert_eq!(*mutex.lock().await, 10);
     /// # });
     /// # ksched::task::run_all();
     /// ```
@@ -225,9 +234,9 @@ impl<'a, T: ?Sized> MutexGuard<'a, T> {
     /// use ksched::sync::{Mutex, MutexGuard};
     ///
     /// let mutex = Mutex::new(10i32);
-    /// let guard = mutex.lock().await.expect("oom");
+    /// let guard = mutex.lock().await;
     /// dbg!(MutexGuard::source(&guard));
-    /// # }).expect("oom");
+    /// # }).unwrap();
     /// # ksched::task::run_all();
     /// ```
     pub fn source(guard: &MutexGuard<'a, T>) -> &'a Mutex<T> {
@@ -237,13 +246,7 @@ impl<'a, T: ?Sized> MutexGuard<'a, T> {
 
 impl<T: ?Sized> Drop for MutexGuard<'_, T> {
     fn drop(&mut self) {
-        // Notify waiters.
-        let mut g = self.0.inner.lock();
-        g.slpque.wakeup_one();
-        g.locked = false;
-
-        #[cfg(test)]
-        println!("mutex guard drop");
+        self.0.release();
     }
 }
 
@@ -290,7 +293,7 @@ mod tests {
             let data = data.clone();
             spawn(0, async move {
                 println!("task {}: start", i);
-                let mut lk = data.lock().await.unwrap();
+                let mut lk = data.lock().await;
                 yield_now().await;
                 *lk += 1;
                 yield_now().await;
@@ -305,7 +308,7 @@ mod tests {
             handles.push(thread::spawn(|| {
                 run_all();
                 spawn(0, async move {
-                    let g = data.lock().await.unwrap();
+                    let g = data.lock().await;
                     assert_eq!(*g, N);
                 })
                 .unwrap();

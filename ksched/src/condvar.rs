@@ -1,17 +1,16 @@
 //! Condition variable.
 use core::pin::Pin;
 use core::{
-    alloc::AllocError,
     fmt,
     task::{Context, Poll},
 };
 
 use futures::Future;
 
-use super::mutex::MutexGuard;
-use spin::Mutex as Spinlock;
-
-use crate::slpque::SleepQueue;
+use crate::{
+    slpque::SleepQueue,
+    sync::{MutexGuard, Spinlock, SpinlockGuard},
+};
 
 /// A Condition Variable
 ///
@@ -35,24 +34,24 @@ use crate::slpque::SleepQueue;
 /// // Inside of our lock, spawn a new thread, and then wait for it to start.
 /// task::spawn(0, async move {
 ///     let (lock, cvar) = &*pair2;
-///     let mut started = lock.lock().await.expect("oom");
+///     let mut started = lock.lock().await;
 ///     *started = true;
 ///     // We notify the condvar that the value has changed.
-///     cvar.wakeup_one();
-/// }).expect("oom");
+///     cvar.notify_one();
+/// }).unwrap();
 ///
 /// // Wait for the thread to start up.
 /// let (lock, cvar) = &*pair;
-/// let mut started = lock.lock().await.expect("oom");
+/// let mut started = lock.lock().await;
 /// while !*started {
-///     started = cvar.wait(started).await.expect("oom");
+///     started = cvar.wait(started).await;
 /// }
 ///
-/// # }).expect("oom");
+/// # }).unwrap();
 /// # ksched::task::run_all();
 /// ```
 pub struct Condvar {
-    slpque: Spinlock<SleepQueue>,
+    slpque: Spinlock<SleepQueue<()>>,
 }
 
 impl Default for Condvar {
@@ -96,36 +95,87 @@ impl Condvar {
     ///
     /// task::spawn(0, async move {
     ///     let (lock, cvar) = &*pair2;
-    ///     let mut started = lock.lock().await.expect("oom");
+    ///     let mut started = lock.lock().await;
     ///     *started = true;
     ///     // We notify the condvar that the value has changed.
-    ///     cvar.wakeup_one();
+    ///     cvar.notify_one();
     /// });
     ///
     /// // Wait for the thread to start up.
     /// let (lock, cvar) = &*pair;
-    /// let mut started = lock.lock().await.expect("oom");
+    /// let mut started = lock.lock().await;
     /// while !*started {
-    ///     started = cvar.wait(started).await.expect("oom");
+    ///     started = cvar.wait(started).await;
     /// }
-    /// # }).expect("oom");
+    /// # }).unwrap();
     /// # ksched::task::run_all();
     /// ```
     #[allow(clippy::needless_lifetimes)]
-    pub async fn wait<'a, T>(
-        &self,
-        guard: MutexGuard<'a, T>,
-    ) -> Result<MutexGuard<'a, T>, AllocError> {
-        let mutex = MutexGuard::source(&guard);
-        self.await_notify(guard).await?;
-        mutex.lock().await
+    pub async fn wait<'a, T>(&self, guard: MutexGuard<'a, T>) -> MutexGuard<'a, T> {
+        let lk = MutexGuard::source(&guard);
+        self.await_notify(guard).await;
+        lk.lock().await
     }
 
-    fn await_notify<'a, T>(&self, guard: MutexGuard<'a, T>) -> AwaitNotify<'_, 'a, T> {
+    /// Wait for a notification and release the lock.
+    pub async fn await_notify<'a, T>(&self, guard: MutexGuard<'a, T>) {
         AwaitNotify {
             cond: self,
             guard: Some(guard),
         }
+        .await;
+    }
+
+    /// Blocks the current task until this condition variable receives a notification.
+    ///
+    /// If failed, return the guard. It is guaranteed that the lock is still held.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # ksched::task::spawn(0, async {
+    /// use std::sync::Arc;
+    ///
+    /// use ksched::sync::{Spinlock, Condvar};
+    /// use ksched::task;
+    ///
+    /// let pair = Arc::new((Spinlock::new(false), Condvar::new()));
+    /// let pair2 = pair.clone();
+    ///
+    /// task::spawn(0, async move {
+    ///     let (lock, cvar) = &*pair2;
+    ///     let mut started = lock.lock();
+    ///     *started = true;
+    ///     // We notify the condvar that the value has changed.
+    ///     cvar.notify_one();
+    /// }).unwrap();
+    ///
+    /// // Wait for the thread to start up.
+    /// let (lock, cvar) = &*pair;
+    /// let mut started = lock.lock();
+    /// while !*started {
+    ///     started = cvar.spin_wait(started).await;
+    /// }
+    /// # }).unwrap();
+    /// # ksched::task::run_all();
+    /// ```
+    #[allow(clippy::needless_lifetimes)]
+    pub async fn spin_wait<'a, 'b, T>(
+        &'a self,
+        guard: SpinlockGuard<'b, T>,
+    ) -> SpinlockGuard<'b, T> {
+        let lk = SpinlockGuard::source(&guard);
+        self.spin_await_notify(guard).await;
+        lk.lock()
+    }
+
+    /// Wait for a notification and release the lock.
+    pub async fn spin_await_notify<'a, 'b, T>(&'a self, guard: SpinlockGuard<'b, T>) {
+        AwaitNotify {
+            cond: self,
+            guard: Some(guard),
+        }
+        .await;
     }
 
     /// Blocks the current taks until this condition variable receives a notification and the
@@ -147,21 +197,21 @@ impl Condvar {
     ///
     /// task::spawn(0, async move {
     ///     let (lock, cvar) = &*pair2;
-    ///     let mut started = lock.lock().await.expect("oom");
+    ///     let mut started = lock.lock().await;
     ///     *started = true;
     ///     // We notify the condvar that the value has changed.
-    ///     cvar.wakeup_one();
-    /// }).expect("oom");
+    ///     cvar.notify_one();
+    /// }).unwrap();
     ///
     /// // Wait for the thread to start up.
     /// let (lock, cvar) = &*pair;
     /// // As long as the value inside the `Mutex<bool>` is `false`, we wait.
     /// let _guard = cvar.wait_until(
-    ///     lock.lock().await.expect("oom"),
+    ///     lock.lock().await,
     ///     |started| { *started }
-    /// ).await.expect("oom");
+    /// ).await;
     /// #
-    /// # }).expect("oom");
+    /// # }).unwrap();
     /// # ksched::task::run_all();
     /// ```
     #[allow(clippy::needless_lifetimes)]
@@ -169,16 +219,66 @@ impl Condvar {
         &self,
         mut guard: MutexGuard<'a, T>,
         mut condition: F,
-    ) -> Result<MutexGuard<'a, T>, AllocError>
+    ) -> MutexGuard<'a, T>
     where
         F: FnMut(&mut T) -> bool,
     {
         while !condition(&mut *guard) {
-            guard = self.wait(guard).await?;
+            guard = self.wait(guard).await;
         }
-        Ok(guard)
+        guard
     }
 
+    /// Blocks the current taks until this condition variable receives a notification and the
+    /// required condition is met. Spurious wakeups are ignored and this function will only
+    /// return once the condition has been met.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # ksched::task::spawn(0, async {
+    /// #
+    /// use std::sync::Arc;
+    ///
+    /// use ksched::sync::{Spinlock, Condvar};
+    /// use ksched::task;
+    ///
+    /// let pair = Arc::new((Spinlock::new(false), Condvar::new()));
+    /// let pair2 = pair.clone();
+    ///
+    /// task::spawn(0, async move {
+    ///     let (lock, cvar) = &*pair2;
+    ///     let mut started = lock.lock();
+    ///     *started = true;
+    ///     // We notify the condvar that the value has changed.
+    ///     cvar.notify_one();
+    /// }).unwrap();
+    ///
+    /// // Wait for the thread to start up.
+    /// let (lock, cvar) = &*pair;
+    /// // As long as the value inside the `Mutex<bool>` is `false`, we wait.
+    /// let _guard = cvar.spin_wait_until(
+    ///     lock.lock(),
+    ///     |started| { *started }
+    /// ).await;
+    /// #
+    /// # }).unwrap();
+    /// # ksched::task::run_all();
+    /// ```
+    #[allow(clippy::needless_lifetimes)]
+    pub async fn spin_wait_until<'a, 'b, T, F>(
+        &'a self,
+        mut guard: SpinlockGuard<'b, T>,
+        mut condition: F,
+    ) -> SpinlockGuard<'b, T>
+    where
+        F: FnMut(&mut T) -> bool,
+    {
+        while !condition(&mut *guard) {
+            guard = self.spin_wait(guard).await;
+        }
+        guard
+    }
     /// Wakes up one blocked task on this condvar.
     ///
     /// # Examples
@@ -195,22 +295,22 @@ impl Condvar {
     ///
     /// task::spawn(0, async move {
     ///     let (lock, cvar) = &*pair2;
-    ///     let mut started = lock.lock().await.expect("oom");
+    ///     let mut started = lock.lock().await;
     ///     *started = true;
     ///     // We notify the condvar that the value has changed.
-    ///     cvar.wakeup_one();
-    /// }).expect("oom");
+    ///     cvar.notify_one();
+    /// }).unwrap();
     ///
     /// // Wait for the thread to start up.
     /// let (lock, cvar) = &*pair;
-    /// let mut started = lock.lock().await.expect("oom");
+    /// let mut started = lock.lock().await;
     /// while !*started {
-    ///     started = cvar.wait(started).await.expect("oom");
+    ///     started = cvar.wait(started).await;
     /// }
-    /// # }).expect("oom");
+    /// # }).unwrap();
     /// # ksched::task::run_all();
     /// ```
-    pub fn wakeup_one(&self) {
+    pub fn notify_one(&self) {
         self.slpque.lock().wakeup_one();
     }
 
@@ -230,24 +330,24 @@ impl Condvar {
     ///
     /// task::spawn(0, async move {
     ///     let (lock, cvar) = &*pair2;
-    ///     let mut started = lock.lock().await.expect("oom");
+    ///     let mut started = lock.lock().await;
     ///     *started = true;
     ///     // We notify the condvar that the value has changed.
-    ///     cvar.wakeup_all();
+    ///     cvar.notify_all();
     /// });
     ///
     /// // Wait for the thread to start up.
     /// let (lock, cvar) = &*pair;
-    /// let mut started = lock.lock().await.expect("oom");
+    /// let mut started = lock.lock().await;
     /// // As long as the value inside the `Mutex<bool>` is `false`, we wait.
     /// while !*started {
-    ///     started = cvar.wait(started).await.expect("oom");
+    ///     started = cvar.wait(started).await;
     /// }
     /// #
-    /// # }).expect("oom");
+    /// # }).unwrap();
     /// # ksched::task::run_all();
     /// ```
-    pub fn wakeup_all(&self) {
+    pub fn notify_all(&self) {
         self.slpque.lock().wakeup_all();
     }
 }
@@ -261,35 +361,32 @@ impl fmt::Debug for Condvar {
 /// A future that waits for another task to notify the condition variable.
 ///
 /// This is an internal future that `wait` and `wait_until` await on.
-struct AwaitNotify<'a, 'b, T> {
+struct AwaitNotify<'a, T> {
     /// The condition variable that we are waiting on
     cond: &'a Condvar,
     /// The lock used with `cond`.
     /// This will be released the first time the future is polled,
     /// after registering the context to be notified.
-    guard: Option<MutexGuard<'b, T>>,
+    guard: Option<T>,
 }
 
-impl<'a, 'b, T> Future for AwaitNotify<'a, 'b, T> {
-    type Output = Result<(), AllocError>;
+impl<'a, T> Future for AwaitNotify<'a, T>
+where
+    T: Unpin,
+{
+    type Output = ();
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         match self.guard.take() {
-            Some(_) => {
-                // The guard is dropped when we return, which frees the lock.
-                match self.cond.slpque.lock().sleep(cx.waker().clone()) {
-                    Ok(()) => Poll::Pending,
-                    Err(_) => Poll::Ready(Err(AllocError)),
-                }
+            Some(g) => {
+                self.cond.slpque.lock().sleep((), cx.waker().clone());
+                drop(g);
+                Poll::Pending
             }
             None => {
                 // Only happen if it is polled twice after receiving a notification.
-                Poll::Ready(Ok(()))
+                Poll::Ready(())
             }
         }
     }
-}
-
-impl<'a, 'b, T> Drop for AwaitNotify<'a, 'b, T> {
-    fn drop(&mut self) {}
 }
