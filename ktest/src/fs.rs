@@ -313,9 +313,10 @@ pub async fn create_dir<T: Device + fmt::Debug + Send + Sync + 'static>(
             // Cannot write to directory
             assert!(dir.write(data.as_bytes(), off).await.is_err());
 
-            // . and .. cannot be created
-            assert!(dir.open(b".", Some(false)).await.unwrap().is_none());
-            assert!(dir.open(b"..", Some(false)).await.unwrap().is_none());
+            // . and .. cannot be created, but this will dup itself since the processed
+            // path is empty.
+            assert!(dir.open(b".", Some(false)).await.unwrap().is_some());
+            assert!(dir.open(b"..", Some(false)).await.unwrap().is_some());
 
             // Cannot remove non-empty directory;
             let file = dir.open(b"tmp", Some(false)).await.unwrap().unwrap();
