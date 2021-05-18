@@ -346,6 +346,7 @@
 <span id="343">343</span>
 <span id="344">344</span>
 <span id="345">345</span>
+<span id="346">346</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="kw">use</span> <span class="kw">crate</span>::{<span class="ident">rand_int</span>, <span class="ident">rand_str</span>, <span class="ident">run_multi</span>};
 <span class="kw">use</span> <span class="ident">alloc</span>::{<span class="ident">sync</span>::<span class="ident">Arc</span>, <span class="ident">vec</span>::<span class="ident">Vec</span>};
@@ -662,9 +663,10 @@
             <span class="comment">// Cannot write to directory</span>
             <span class="macro">assert</span><span class="macro">!</span>(<span class="ident">dir</span>.<span class="ident">write</span>(<span class="ident">data</span>.<span class="ident">as_bytes</span>(), <span class="ident">off</span>).<span class="kw">await</span>.<span class="ident">is_err</span>());
 
-            <span class="comment">// . and .. cannot be created</span>
-            <span class="macro">assert</span><span class="macro">!</span>(<span class="ident">dir</span>.<span class="ident">open</span>(<span class="string">b&quot;.&quot;</span>, <span class="prelude-val">Some</span>(<span class="bool-val">false</span>)).<span class="kw">await</span>.<span class="ident">unwrap</span>().<span class="ident">is_none</span>());
-            <span class="macro">assert</span><span class="macro">!</span>(<span class="ident">dir</span>.<span class="ident">open</span>(<span class="string">b&quot;..&quot;</span>, <span class="prelude-val">Some</span>(<span class="bool-val">false</span>)).<span class="kw">await</span>.<span class="ident">unwrap</span>().<span class="ident">is_none</span>());
+            <span class="comment">// . and .. cannot be created, but this will dup itself since the processed</span>
+            <span class="comment">// path is empty.</span>
+            <span class="macro">assert</span><span class="macro">!</span>(<span class="ident">dir</span>.<span class="ident">open</span>(<span class="string">b&quot;.&quot;</span>, <span class="prelude-val">Some</span>(<span class="bool-val">false</span>)).<span class="kw">await</span>.<span class="ident">unwrap</span>().<span class="ident">is_some</span>());
+            <span class="macro">assert</span><span class="macro">!</span>(<span class="ident">dir</span>.<span class="ident">open</span>(<span class="string">b&quot;..&quot;</span>, <span class="prelude-val">Some</span>(<span class="bool-val">false</span>)).<span class="kw">await</span>.<span class="ident">unwrap</span>().<span class="ident">is_some</span>());
 
             <span class="comment">// Cannot remove non-empty directory;</span>
             <span class="kw">let</span> <span class="ident">file</span> <span class="op">=</span> <span class="ident">dir</span>.<span class="ident">open</span>(<span class="string">b&quot;tmp&quot;</span>, <span class="prelude-val">Some</span>(<span class="bool-val">false</span>)).<span class="kw">await</span>.<span class="ident">unwrap</span>().<span class="ident">unwrap</span>();
