@@ -10,7 +10,7 @@ use core::{
 };
 use std::sync::Arc;
 
-use kcore::dev::Device;
+use kcore::chan::Chan;
 use kdevice::fat::FAT;
 use ksched::task;
 use ktest::*;
@@ -36,7 +36,7 @@ fn prepare_crud(
 
     task::spawn(0, async move {
         let disk = Arc::new(fs::FileDisk::new(img_path));
-        let fs = FAT::new(ntask + 10, 100, disk.attach(b"").unwrap().await.unwrap())
+        let fs = FAT::new(ntask + 10, 100, Chan::attach(disk, b"").await.unwrap())
             .await
             .unwrap();
 

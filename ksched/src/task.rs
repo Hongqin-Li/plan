@@ -88,9 +88,17 @@ impl Executor {
         nice: usize,
         future: impl Future<Output = ()> + 'static + Send,
     ) -> Result<(), AllocError> {
+        self.spawn_boxed(nice, Box::try_new(future)?)
+    }
+
+    fn spawn_boxed(
+        &mut self,
+        nice: usize,
+        boxed_future: Box<dyn Future<Output = ()> + 'static + Send>,
+    ) -> Result<(), AllocError> {
         let t = Arc::try_new(Task {
             nice,
-            future: UnsafeCell::new(Box::into_pin(Box::try_new(future)?)),
+            future: UnsafeCell::new(Box::into_pin(boxed_future)),
             link: LinkedListLink::new(),
         })?;
         self.ntasks += 1;
@@ -125,6 +133,22 @@ pub fn spawn(
     future: impl Future<Output = ()> + 'static + Send,
 ) -> Result<(), AllocError> {
     DEFAULT_EXECUTOR.lock().spawn(nice, future)
+}
+
+/// Spawn a new boxed task to be run.
+///
+/// # Examples
+///
+/// ```
+/// ksched::task::spawn_boxed(0, Box::new(async {
+///    println!("hello, world");
+/// })).expect("oom");
+/// ```
+pub fn spawn_boxed(
+    nice: usize,
+    boxed_future: Box<dyn Future<Output = ()> + 'static + Send>,
+) -> Result<(), AllocError> {
+    DEFAULT_EXECUTOR.lock().spawn_boxed(nice, boxed_future)
 }
 
 /// Run tasks until idle.

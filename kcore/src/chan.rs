@@ -1,102 +1,25 @@
-//! Channel.
+//! Channel and mount space.
 
-use alloc::boxed::Box;
+use alloc::sync::Weak;
 use alloc::vec::Vec;
-use core::pin::Pin;
-use core::{
-    alloc::AllocError,
-    convert::TryFrom,
-    hash::{Hash, Hasher},
-};
-use core::{
-    mem,
-    ops::{Generator, GeneratorState},
-};
-use ksched::task::yield_now;
+use core::{cmp::min, convert::TryFrom, fmt::Debug, iter, mem::MaybeUninit, str};
+use kalloc::wrapper::vec_push;
+use ksched::{sync::Mutex, task::yield_now};
 
 use alloc::sync::Arc;
-use bitflags::bitflags;
 
 use crate::{
     dev::Device,
     error::{Error, Result},
 };
 
-bitflags! {
-    /// Bits for type of a file.
-    #[derive(Default)]
-    pub struct QType: u8 {
-        /// Directories.
-        const DIR = 0x80;
-        /// Append-only files.
-        const APPEND = 0x40;
-        /// Exclusive use files.
-        const EXCL = 0x20;
-        /// Mounted channel.
-        const MOUNT = 0x10;
-        /// Authentication file.
-        const AUTH = 0x08;
-        /// Plain file.
-        const FILE = 0x00;
-    }
-}
-
-bitflags! {
-    /// Channel flags.
-    pub struct CFlag: u32 {
-        /// For I/O.
-        const OPEN = 0x0001;
-        /// The message channel for a mount.
-        const MSG = 0x0002;
-        /// Close on exec.
-        const CEXEC = 0x0008;
-        /// Not in use.
-        const FREE = 0x0010;
-        /// Remove on close.
-        const RCLOSE = 0x0020;
-        /// Client cache.
-        const CACHE = 0x0080;
-    }
-}
-
-/// Access types in namec.
-pub enum AMode {
-    /// As in stat, wstat.
-    Access,
-    /// For left-hand-side of bind.
-    Bind,
-    /// As in chdir.
-    Todir,
-    /// For I/O.
-    Open,
-    /// To be mounted or mounted upon.
-    Mount,
-    /// Is to be created
-    Create,
-    /// Will be removed by caller.
-    Remove,
-}
-
-bitflags! {
-    /// Bits for open mode.
-    pub struct OMode: u16 {
-        /// Open for read.
-        const READ = 0x0000;
-        /// Open for write.
-        const WRITE = 0x0001;
-        /// Open for read and write.
-        const RDWR = 0x0002;
-        /// Execute, == read but check execute permission.
-        const EXEC = 0x0003;
-        /// Or'ed in (except for exec), truncate file first.
-        const TRUNC = 0x0010;
-        /// Or'ed in, close on exec.
-        const CEXEC = 0x0020;
-        /// Or'ed in, remove on close.
-        const RCLOSE = 0x0040;
-        /// Or'ed in, exclusive create.
-        const EXCL = 0x1000;
-    }
+/// File type.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ChanType {
+    /// Directory.
+    Dir,
+    /// Plain file.
+    File,
 }
 
 /// Permission control on a file.
@@ -116,26 +39,6 @@ pub enum Perm {
 /// A directory entry represents information of a file(or directory file).
 /// Timestamps are measured in seconds since the epoch(Jan 1 00:00 1970 GMT).
 pub struct Dirent {
-    /// File name, must be "/" if the file is the root directory of the server.
-    ///
-    /// It an be changed by anyone with write permission in the parent directory.
-    /// It is an error to change the name to that of an existing file.
-    pub name: Vec<u8>,
-    /// Owner name. Cannot changed by a wstat.
-    pub uid: Vec<u8>,
-    /// Group name.
-    ///
-    /// The gid can be changed: by the owner if also a member of the new group; or by the
-    /// group leader of the file's current group if also leader of the new group.
-    pub gid: Vec<u8>,
-    /// Unique id from server. Cannot changed by a wstat.
-    pub qid: Qid,
-    /// Permission flags.
-    ///
-    /// The mode can be changed by the owner of the file or the group leader of the file's current
-    /// group. The directory bit cannot be changed by a wstat; the other defined permission and mode
-    /// bits can.
-    pub mode: u32,
     /// Length of file in bytes. Cannot changed by a wstat.
     pub len: u64,
     /// Timestamp of last change of the content.
@@ -154,129 +57,405 @@ pub struct Dirent {
 }
 
 #[derive(Copy, Clone, Debug)]
-/// Qid identifies the file within a device, analogous to the i-number.
-pub struct Qid {
+/// File identification within a device, analogous to the i-number.
+pub struct ChanId {
     /// The path is a unique file number assigned by a device driver or file server when
     /// a file is created.
+    /// This can also used to determine whether a PnP device has been removed.
     pub path: u64,
     /// The version number is updated whenever the file is modified, which can be used­ ­
     /// to maintain cache coherency between clients and servers.
     pub version: u32,
     /// Type of the file.
-    pub qtype: QType,
+    pub ctype: ChanType,
 }
 
-/// Channel represents a virtual file from kernel's perspective.
-/// TODO: dev, devid, qid::path, qid::qtype are immutable.
-pub struct Chan {
-    /// Type determine which driver to used for this channel, analogous to UNIX's major number.
-    pub dev: Arc<dyn Device + Send + Sync>,
-    /// Device id indicates which instance of the driver it is, analogous to UNIX's minor number.
-    pub devid: usize,
-    /// Qid is the file server's unique identification of the file, similar to UNIX's inode number.
-    pub qid: Qid,
+/// A key representing one client handle of the file.
+/// Basically, it's used to check if we have forgotten to close a file.
+pub struct ChanKey {
+    /// Which driver to used for this channel, analogous to UNIX's major number.
+    dev: Arc<dyn Device + Send + Sync>,
+    id: ChanId,
+
     /// To check if we have close the channel.
-    pub dropped: bool,
-
-    /// Flags indicating previous settings of this file by client.
-    /// Reserved for user of this library.
-    pub flag: CFlag,
-    /// File name.
-    /// Reserved for user of this library.
-    pub name: Vec<u8>,
+    /// FIXME: Once we have async drop in Rust, it can be removed.
+    dropped: bool,
 }
 
-impl core::fmt::Debug for Chan {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.debug_struct("Chan")
-            .field("devid", &self.devid)
-            .field("qid", &self.qid)
-            .field("dropped", &self.dropped)
-            .field("flag", &self.flag)
-            .field("name", &self.name)
-            .finish()
+impl ChanKey {
+    /// Create a new chan key.
+    pub fn new(dev: Arc<dyn Device + Send + Sync>, devid: usize, id: ChanId) -> Self {
+        Self {
+            dev,
+            id,
+            dropped: false,
+        }
     }
-}
 
-impl Chan {
-    /// Close a file. Async version of [`drop`].
-    pub async fn close(mut self) {
+    /// FIXME: pre-allocate the future on creation.
+    async fn close(mut self) {
+        self.dropped = true;
         loop {
-            if let Ok(f) = self.dev.clone().close(&self) {
+            if let Ok(f) = self.dev.close(self.id) {
                 f.await;
                 break;
             }
             yield_now().await;
         }
-        self.dropped = true;
-        drop(self);
+    }
+}
+
+impl Debug for ChanKey {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("ChanKey")
+            .field("id", &self.id)
+            .field("dropped", &self.dropped)
+            .finish()
+    }
+}
+
+impl Drop for ChanKey {
+    /// Use [`Self::close`] instead, since Rust doesn't support async drop.
+    ///
+    /// FIXME: How to statically assert some function is unreachable?
+    fn drop(&mut self) {
+        assert!(self.dropped, "forgot to close: {:?}", self);
+    }
+}
+
+/// Mutable part of [Chan].
+#[derive(Debug, Default)]
+pub struct ChanInner {
+    /// Union mount point that derives Chan.
+    /// Use qid instead of Chan to avoid cycle in the graph.
+    umnt: Vec<ChanKey>,
+    /// The weak pointer must be able to upgrade.
+    child: Vec<Weak<Chan>>,
+}
+
+/// Channel represents a virtual file from kernel's perspective.
+#[derive(Debug)]
+pub struct Chan {
+    key: ChanKey,
+    parent: Option<Arc<Chan>>,
+    name: Vec<u8>,
+
+    /// Inner mutable data.
+    inner: Mutex<ChanInner>,
+}
+
+impl Chan {
+    /// Create a new mount space from the root of a device.
+    pub async fn attach(dev: Arc<dyn Device + Send + Sync>, aname: &[u8]) -> Result<Arc<Self>> {
+        let mut name = Vec::new();
+        name.try_reserve(aname.len())?;
+        for x in aname {
+            name.push(*x);
+        }
+        let a = Arc::<Chan>::try_new_uninit()?;
+        let id = dev.clone().attach(aname)?.await?;
+        let key = ChanKey {
+            dev,
+            id,
+            dropped: false,
+        };
+        Ok(unsafe { Self::from_key(key, a) })
     }
 
-    /// Duplicate a file.
-    // pub fn dup(&self) -> Result<Self> {
-    //     let mut name = Vec::new();
-    //     name.try_reserve(self.name.len())?;
-    //     name.extend_from_slice(&self.name);
-    //     Ok(Self {
-    //         dev: self.dev.clone(),
-    //         devid: self.devid,
-    //         qid: self.qid,
-    //         flag: self.flag,
-    //         name
-    //     })
-    // }
-
-    /// Open wrapper.
-    pub async fn open(&self, name: &[u8], create_dir: Option<bool>) -> Result<Option<Chan>> {
-        self.dev.open(self, name, create_dir)?.await
+    /// Create a new mount space rooted at a chan.
+    pub async fn new(chan: &Arc<Chan>) -> Result<Arc<Self>> {
+        let a = Arc::<Chan>::try_new_uninit()?;
+        let key = Self::rekey(&chan).await?;
+        Ok(unsafe { Self::from_key(key, a) })
     }
+
+    unsafe fn from_key(key: ChanKey, mut a: Arc<MaybeUninit<Chan>>) -> Arc<Self> {
+        Arc::get_mut_unchecked(&mut a).as_mut_ptr().write(Self {
+            parent: None,
+            inner: Mutex::new(ChanInner::default()),
+            key,
+            name: Vec::new(),
+        });
+        a.assume_init()
+    }
+
+    /// Retrieve key by reopening this chan.
+    /// May failed(e.g. a removed disk chan).
+    async fn rekey(self: &Arc<Self>) -> Result<ChanKey> {
+        self.key.dev.open(&self.key.id, b"", None)?.await?.map_or(
+            Err(Error::Gone("failed to rekey")),
+            |id| {
+                Ok(ChanKey {
+                    dev: self.key.dev.clone(),
+                    id,
+                    dropped: false,
+                })
+            },
+        )
+    }
+
+    /// Mount file `old` to this chan.
+    pub async fn mount(&self, old: &Arc<Self>) -> Result<()> {
+        let mut g = self.inner.lock().await;
+        if let Err(e) = g.umnt.try_reserve(1) {
+            return Err(e.into());
+        }
+        let key = old.rekey().await?;
+        Ok(g.umnt.push(key))
+    }
+
+    /// Caller should guarantee `name` is non-empty.
+    async fn open1(
+        self: &Arc<Self>,
+        name: &[u8],
+        create_dir: Option<bool>,
+    ) -> Result<Option<Arc<Chan>>> {
+        debug_assert_eq!(name.is_empty(), false);
+
+        let mut g = self.inner.lock().await;
+        for u in g.child.iter() {
+            let u = u.upgrade().unwrap();
+            if u.name == name {
+                return Ok(Some(u.clone()));
+            }
+        }
+
+        // Pre allocation.
+        let mut names = Vec::new();
+        for x in name {
+            vec_push(&mut names, *x)?;
+        }
+        g.child.try_reserve(1)?;
+        let mut a = Arc::<Self>::try_new_uninit()?;
+
+        let mut some_chan = None;
+        for ck in iter::once(&self.key).chain(g.umnt.iter()) {
+            if let Some(id) = ck.dev.open(&ck.id, name, create_dir)?.await? {
+                let u = unsafe {
+                    Arc::get_mut_unchecked(&mut a).as_mut_ptr().write(Self {
+                        parent: Some(self.clone()),
+                        inner: Mutex::new(ChanInner::default()),
+                        key: ChanKey {
+                            dev: ck.dev.clone(),
+                            id,
+                            dropped: false,
+                        },
+                        name: names,
+                    });
+                    a.assume_init()
+                };
+                some_chan = Some(u);
+                break;
+            }
+        }
+        Ok(some_chan.map(|c| {
+            g.child.push(Arc::<Self>::downgrade(&c));
+            c
+        }))
+    }
+
+    /// Open a file located at path starting from this chan.
+    ///
+    /// Return [NotFound](Error::NotFound) if failed to find any directory components within the path.
+    /// Otherwise it can find the parent directory.
+    pub async fn open(
+        self: &Arc<Self>,
+        path: &[u8],
+        create_dir: Option<bool>,
+    ) -> Result<Option<Arc<Self>>> {
+        let path = Path::try_from(path)?;
+        let mut cur = self.clone();
+        for _ in 0..path.dotdots {
+            if let Some(fa) = &cur.parent {
+                cur = fa.clone();
+            }
+        }
+
+        for (i, name) in path.names.iter().enumerate() {
+            let last = i == path.names.len() - 1;
+            match cur
+                .open1(name.as_bytes(), if last { create_dir } else { None })
+                .await
+            {
+                Ok(Some(u)) => {
+                    // Since u is the child of cur and chan that has children won't be close.
+                    // just drop cur.
+                    cur = u;
+                }
+                Ok(None) => {
+                    cur.close().await;
+                    return if last {
+                        Ok(None)
+                    } else {
+                        Err(Error::NotFound("failed to find intermediate directory"))
+                    };
+                }
+                Err(e) => {
+                    cur.close().await;
+                    return Err(e);
+                }
+            }
+        }
+
+        Ok(Some(cur))
+    }
+
+    async fn close1(u: Arc<Self>) -> Option<Arc<Self>> {
+        let fa = &u.parent;
+
+        let mut ug = u.inner.lock().await;
+        let mut fg = if let Some(fa) = fa {
+            Some(fa.inner.lock().await)
+        } else {
+            None
+        };
+        // Once we have locked this node and its parent, the reference count won't
+        // decrease(but may be increased by dup) since every close operation also need to
+        // enter this function. And if we are the last one, the reference count won' change.
+        let last = Arc::<Self>::strong_count(&u) == 1;
+
+        if last {
+            assert_eq!(ug.child.len(), 0);
+            while let Some(ck) = ug.umnt.pop() {
+                ck.close().await;
+            }
+
+            if let Some(mut fg) = fg.take() {
+                let w = Arc::<Self>::downgrade(&u);
+                let i = fg
+                    .child
+                    .iter()
+                    .position(|x| Weak::<Self>::ptr_eq(&w, x))
+                    .unwrap();
+                fg.child.swap_remove(i);
+            }
+            drop(fg);
+            drop(ug);
+
+            let c = Arc::<Self>::try_unwrap(u).unwrap();
+            c.key.close().await;
+            c.parent
+        } else {
+            None
+        }
+    }
+
+    /// Close a file. The async destructor.
+    pub async fn close(self: Arc<Self>) {
+        let mut cur = self;
+        while let Some(fa) = Self::close1(cur).await {
+            cur = fa;
+        }
+    }
+
+    /// Duplicate a handle of file.
+    pub fn dup(self: &Arc<Self>) -> Arc<Self> {
+        self.clone()
+    }
+
     /// Remove wrapper.
     pub async fn remove(&self) -> Result<bool> {
-        self.dev.remove(self)?.await
+        self.key.dev.remove(&self.key.id)?.await
     }
     /// Stat wrapper.
     pub async fn stat(&self) -> Result<Dirent> {
-        self.dev.stat(self)?.await
+        self.key.dev.stat(&self.key.id)?.await
     }
     /// Wstat wrapper.
     pub async fn wstat(&self, dirent: &Dirent) -> Result<()> {
-        self.dev.wstat(self, dirent)?.await
+        self.key.dev.wstat(&self.key.id, dirent)?.await
     }
     /// Read wrapper.
     pub async fn read(&self, buf: &mut [u8], off: usize) -> Result<usize> {
-        off.checked_add(buf.len()).ok_or(Error::BadRequest)?;
-        self.dev.read(self, buf, off)?.await
+        off.checked_add(buf.len())
+            .ok_or(Error::BadRequest("read buffer len overflow"))?;
+        self.key.dev.read(&self.key.id, buf, off)?.await
     }
     /// Write wrapper.
     pub async fn write(&self, buf: &[u8], off: usize) -> Result<usize> {
-        off.checked_add(buf.len()).ok_or(Error::BadRequest)?;
-        self.dev.write(self, buf, off)?.await
+        off.checked_add(buf.len())
+            .ok_or(Error::BadRequest("write buffer len overflow"))?;
+        self.key.dev.write(&self.key.id, buf, off)?.await
     }
 }
 
-impl Drop for Chan {
-    /// Use [`Self::close`] instead, since Rust doesn't support async drop.
-    ///
-    /// TODO: How to statically assert some function is unreachable?
-    fn drop(&mut self) {
-        assert!(self.dropped, "forgot to close");
+struct Path<'a> {
+    dotdots: usize,
+    names: Vec<&'a str>,
+}
+
+impl<'a> TryFrom<&'a [u8]> for Path<'a> {
+    type Error = Error;
+
+    fn try_from(value: &'a [u8]) -> Result<Self> {
+        let path: &str =
+            str::from_utf8(value).map_err(|_| Error::BadRequest("path is not valid utf-8"))?;
+        let mut dotdots = 0;
+        let mut names = Vec::new();
+
+        let mut eat = |name: &'a str| -> Result<()> {
+            if name == ".." {
+                if names.pop().is_none() {
+                    dotdots += 1;
+                }
+            } else if !name.is_empty() && name != "." {
+                vec_push(&mut names, name)?;
+            }
+            Ok(())
+        };
+
+        let mut l = 0;
+        for (i, c) in path.char_indices() {
+            if c == b'/' as char {
+                eat(&path[l..i])?;
+                l = i + 1;
+            }
+        }
+        eat(&path[l..path.len()])?;
+        Ok(Self { dotdots, names })
     }
 }
 
-impl PartialEq for Chan {
-    fn eq(&self, other: &Self) -> bool {
-        self.dev.typeid() == other.dev.typeid()
-            && self.devid == other.devid
-            && self.qid.path == other.qid.path
-    }
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-impl Eq for Chan {}
+    #[test]
+    fn test_path() {
+        let p = Path::try_from("".as_bytes()).unwrap();
+        assert_eq!(p.dotdots, 0);
+        assert_eq!(p.names.is_empty(), true);
 
-impl Hash for Chan {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.dev.typeid().hash(state);
-        self.devid.hash(state);
-        self.qid.path.hash(state);
+        let p = Path::try_from("a/b/c".as_bytes()).unwrap();
+        assert_eq!(p.dotdots, 0);
+        assert_eq!(p.names, &["a", "b", "c"]);
+
+        let p = Path::try_from("a/b/c/".as_bytes()).unwrap();
+        assert_eq!(p.dotdots, 0);
+        assert_eq!(p.names, &["a", "b", "c"]);
+
+        let p = Path::try_from("a/b/c////d".as_bytes()).unwrap();
+        assert_eq!(p.dotdots, 0);
+        assert_eq!(p.names, &["a", "b", "c", "d"]);
+
+        let p = Path::try_from("a/./b/c".as_bytes()).unwrap();
+        assert_eq!(p.dotdots, 0);
+        assert_eq!(p.names, &["a", "b", "c"]);
+
+        let p = Path::try_from("a/b/../c".as_bytes()).unwrap();
+        assert_eq!(p.dotdots, 0);
+        assert_eq!(p.names, &["a", "c"]);
+
+        let p = Path::try_from("../a../b/c".as_bytes()).unwrap();
+        assert_eq!(p.dotdots, 1);
+        assert_eq!(p.names, &["a..", "b", "c"]);
+
+        let p = Path::try_from("../a/b/c".as_bytes()).unwrap();
+        assert_eq!(p.dotdots, 1);
+        assert_eq!(p.names, &["a", "b", "c"]);
+
+        let p = Path::try_from("../a/b/../../c".as_bytes()).unwrap();
+        assert_eq!(p.dotdots, 1);
+        assert_eq!(p.names, &["c"]);
     }
 }

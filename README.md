@@ -15,7 +15,7 @@ Platform-agnostic operating system building blocks in Rust, inspired by <a href=
 
 <br/><br/>
 
-- [] Data structures
+- [ ] Data structures
   - [ ] Concurrent hash map: port [DashMap](https://github.com/xacrimon/dashmap)
 - [x] Memory management
   - [x] Multi buddy system
@@ -31,11 +31,12 @@ Platform-agnostic operating system building blocks in Rust, inspired by <a href=
   - [ ] RT-Mutex
   - [ ] Online deadlock detection by wait-for graph: inspired by [parking-lot](https://github.com/Amanieu/parking_lot)
 - [x] Address space: inspired by [plan9](https://github.com/0intro/plan9)
-- [ ] Namespace: inspired by [plan9](https://github.com/0intro/plan9)
+- [x] Namespace: inspired by [plan9](https://github.com/0intro/plan9)
 - [ ] File system
-  - [x] O(1) generic LRU cache.
-  - [x] Log with read-committed isolation level.
-  - [ ] Transaction-safe FAT32.
+  - [x] O(1) generic LRU cache
+  - [x] Log with read-committed isolation level
+  - [x] Transaction-safe FAT32
+  - [ ] More FS
 
 ## Project structure
 

@@ -2,7 +2,7 @@ use crate::{rand_int, rand_str, run_multi};
 use alloc::{sync::Arc, vec::Vec};
 use core::{convert::TryInto, fmt, ops::Range};
 use kcore::{
-    chan::{CFlag, Chan, QType, Qid},
+    chan::{Chan, ChanId, ChanType},
     dev::Device,
     error::Result,
 };
@@ -40,9 +40,6 @@ impl FileDisk {
 
 #[async_trait::async_trait_try]
 impl Device for FileDisk {
-    fn typeid(&self) -> usize {
-        todo!()
-    }
     async fn shutdown(self)
     where
         Self: Sized,
@@ -50,59 +47,43 @@ impl Device for FileDisk {
         todo!()
     }
 
-    async fn attach(self: &Arc<Self>, aname: &[u8]) -> Result<Chan>
+    async fn attach(&self, aname: &[u8]) -> Result<ChanId>
     where
         Self: Sized,
     {
-        Ok(Chan {
-            dev: self.clone(),
-            devid: 0,
-            qid: Qid {
-                path: 0,
-                version: 0,
-                qtype: QType::empty(),
-            },
-            dropped: false,
-            flag: CFlag::empty(),
-            name: Vec::new(),
+        Ok(ChanId {
+            path: 0,
+            version: 0,
+            ctype: ChanType::Dir,
         })
     }
 
     async fn open(
         &self,
-        dir: &kcore::chan::Chan,
+        dir: &ChanId,
         name: &[u8],
         create_dir: Option<bool>,
-    ) -> kcore::error::Result<Option<kcore::chan::Chan>> {
+    ) -> kcore::error::Result<Option<ChanId>> {
         todo!()
     }
 
-    async fn close(&self, c: &kcore::chan::Chan) {
+    async fn close(&self, c: ChanId) {
         println!("disk close");
     }
 
-    async fn remove(&self, c: &kcore::chan::Chan) -> kcore::error::Result<bool> {
+    async fn remove(&self, c: &ChanId) -> kcore::error::Result<bool> {
         todo!()
     }
 
-    async fn stat(&self, c: &kcore::chan::Chan) -> kcore::error::Result<kcore::chan::Dirent> {
+    async fn stat(&self, c: &ChanId) -> kcore::error::Result<kcore::chan::Dirent> {
         todo!()
     }
 
-    async fn wstat(
-        &self,
-        c: &kcore::chan::Chan,
-        dirent: &kcore::chan::Dirent,
-    ) -> kcore::error::Result<()> {
+    async fn wstat(&self, c: &ChanId, dirent: &kcore::chan::Dirent) -> kcore::error::Result<()> {
         todo!()
     }
 
-    async fn read(
-        &self,
-        c: &kcore::chan::Chan,
-        buf: &mut [u8],
-        off: usize,
-    ) -> kcore::error::Result<usize> {
+    async fn read(&self, c: &ChanId, buf: &mut [u8], off: usize) -> kcore::error::Result<usize> {
         //println!("read: sz {}, off {}", buf.len(), off);
 
         let mut g = self.file.lock();
@@ -110,12 +91,7 @@ impl Device for FileDisk {
         Ok(g.read(buf).unwrap())
     }
 
-    async fn write(
-        &self,
-        c: &kcore::chan::Chan,
-        buf: &[u8],
-        off: usize,
-    ) -> kcore::error::Result<usize> {
+    async fn write(&self, c: &ChanId, buf: &[u8], off: usize) -> kcore::error::Result<usize> {
         //println!("write: sz {}, off {}", buf.len(), off);
         let mut g = self.file.lock();
         g.seek(SeekFrom::Start(off as u64)).unwrap();
@@ -136,9 +112,6 @@ impl MemDisk {
 
 #[async_trait::async_trait_try]
 impl Device for MemDisk {
-    fn typeid(&self) -> usize {
-        todo!()
-    }
     async fn shutdown(self)
     where
         Self: Sized,
@@ -146,70 +119,49 @@ impl Device for MemDisk {
         todo!()
     }
 
-    async fn attach(self: &Arc<Self>, aname: &[u8]) -> Result<Chan>
+    async fn attach(&self, aname: &[u8]) -> Result<ChanId>
     where
         Self: Sized,
     {
-        Ok(Chan {
-            dev: self.clone(),
-            devid: 0,
-            qid: Qid {
-                path: 0,
-                version: 0,
-                qtype: QType::empty(),
-            },
-            dropped: false,
-            flag: CFlag::empty(),
-            name: Vec::new(),
+        Ok(ChanId {
+            path: 0,
+            version: 0,
+            ctype: ChanType::Dir,
         })
     }
 
     async fn open(
         &self,
-        dir: &kcore::chan::Chan,
+        dir: &ChanId,
         name: &[u8],
         create_dir: Option<bool>,
-    ) -> kcore::error::Result<Option<kcore::chan::Chan>> {
+    ) -> kcore::error::Result<Option<ChanId>> {
         todo!()
     }
 
-    async fn close(&self, c: &kcore::chan::Chan) {
+    async fn close(&self, c: ChanId) {
         println!("disk close");
     }
 
-    async fn remove(&self, c: &kcore::chan::Chan) -> kcore::error::Result<bool> {
+    async fn remove(&self, c: &ChanId) -> kcore::error::Result<bool> {
         todo!()
     }
 
-    async fn stat(&self, c: &kcore::chan::Chan) -> kcore::error::Result<kcore::chan::Dirent> {
+    async fn stat(&self, c: &ChanId) -> kcore::error::Result<kcore::chan::Dirent> {
         todo!()
     }
 
-    async fn wstat(
-        &self,
-        c: &kcore::chan::Chan,
-        dirent: &kcore::chan::Dirent,
-    ) -> kcore::error::Result<()> {
+    async fn wstat(&self, c: &ChanId, dirent: &kcore::chan::Dirent) -> kcore::error::Result<()> {
         todo!()
     }
 
-    async fn read(
-        &self,
-        c: &kcore::chan::Chan,
-        buf: &mut [u8],
-        off: usize,
-    ) -> kcore::error::Result<usize> {
+    async fn read(&self, c: &ChanId, buf: &mut [u8], off: usize) -> kcore::error::Result<usize> {
         let g = self.file.lock();
         buf.copy_from_slice(g[off..off + buf.len()].try_into().unwrap());
         Ok(buf.len())
     }
 
-    async fn write(
-        &self,
-        c: &kcore::chan::Chan,
-        buf: &[u8],
-        off: usize,
-    ) -> kcore::error::Result<usize> {
+    async fn write(&self, c: &ChanId, buf: &[u8], off: usize) -> kcore::error::Result<usize> {
         let mut g = self.file.lock();
         g[off..off + buf.len()].copy_from_slice(buf);
         Ok(buf.len())
@@ -269,7 +221,7 @@ pub async fn crud<T: Device + fmt::Debug + Send + Sync + 'static>(
             println!("file '{}' start", name);
 
             let root = loop {
-                if let Ok(r) = fs.attach(b"").unwrap().await {
+                if let Ok(r) = Chan::attach(fs.clone(), b"").await {
                     break r;
                 }
                 yield_now().await;
@@ -339,7 +291,7 @@ pub async fn create_dir<T: Device + fmt::Debug + Send + Sync + 'static>(
             println!("dir '{}' start", name);
 
             let root = loop {
-                if let Ok(r) = fs.attach(b"").unwrap().await {
+                if let Ok(r) = Chan::attach(fs.clone(), b"").await {
                     break r;
                 }
                 yield_now().await;

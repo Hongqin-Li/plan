@@ -13,9 +13,21 @@ use kalloc::wrapper::vec_push;
 pub trait PageTable: Sized {
     /// Layout used to alloc and dealloc physical pages from global allocator.
     const PG_LAYOUT: Layout;
+    /// Page size derived from [PG_LAYOUT].
+    const PGSIZE: usize = Self::PG_LAYOUT.size();
+    /// Request map to the page table will be always lower than USERTOP.
+    /// This must be page aligned.
+    const USERTOP: usize;
 
     /// Create a new page table.
     fn new() -> Result<Self, Error>;
+
+    /// Switch to this page table.
+    ///
+    /// SAFETY: All pages mapped before switching should be accessiable after that.
+    ///
+    /// That means the implementation can batch the map and unmap requests.
+    fn switch(&self);
 
     /// Map virtual address `[va, va+pg.size())` to physical page `pg`.
     ///
@@ -50,7 +62,7 @@ impl<P: PageTable> Page<P> {
                 phantom: PhantomData,
             })
         } else {
-            Err(Error::OutOfMemory)
+            Err(Error::OutOfMemory("failed to allocate new page"))
         }
     }
     /// Get virtual address of the page.
@@ -118,7 +130,8 @@ impl<P: PageTable> AddressSpace<P> {
     /// Create a new address space.
     pub fn new() -> Result<Self, Error> {
         Ok(Self {
-            pgdir: PageTable::new().map_err(|_| Error::OutOfMemory)?,
+            pgdir: PageTable::new()
+                .map_err(|_| Error::OutOfMemory("failed to create page table"))?,
             seg: Vec::new(),
         })
     }
@@ -144,10 +157,22 @@ impl<P: PageTable> AddressSpace<P> {
         None
     }
 
+    /// Return va range of the segment that contains `addr`.
+    pub fn seg_range(&self, addr: usize) -> Option<Range<usize>> {
+        if addr > P::USERTOP {
+            return None;
+        }
+
+        self.overlap(&(addr..addr + 1)).map(|i| match &self.seg[i] {
+            Segment::Local(s) => s.range.clone(),
+            Segment::Shared(s) => s.range.clone(),
+        })
+    }
+
     /// Add an non-empty segment.
     ///
     /// Segments are not allowed to be overlap with each other. But can optionaly overwrite old
-    /// segments.
+    /// segments. `range` must be page aligned.
     ///
     /// Returns true if added. The overwriting procedure is NOT atomic, i.e., if overwriting failed,
     /// the overwritten segment will be dropped. But normal(non-overwrite) procedure is atomic.
@@ -162,6 +187,9 @@ impl<P: PageTable> AddressSpace<P> {
 
         if range.len() == 0 {
             return Ok(false);
+        }
+        if range.end > P::USERTOP {
+            return Err(Error::BadRequest("attach over USERTOP"));
         }
 
         let mut map_len = 0;
@@ -224,6 +252,9 @@ impl<P: PageTable> AddressSpace<P> {
     ///
     /// Returns true if removed.
     pub fn detach(&mut self, saddr: usize) -> Result<bool, Error> {
+        if saddr > P::USERTOP {
+            return Err(Error::BadRequest("detach over USERTOP"));
+        }
         if let Some(i) = self.overlap(&(saddr..(saddr + 1))) {
             let rg = match self.seg.swap_remove(i) {
                 Segment::Local(inner) => inner.range,
@@ -244,6 +275,10 @@ impl<P: PageTable> AddressSpace<P> {
     ///
     /// Return false if no such segment. Otherwise, return true.
     pub fn share(&mut self, saddr: usize) -> Result<bool, Error> {
+        if saddr > P::USERTOP {
+            return Err(Error::BadRequest("share over USERTOP"));
+        }
+
         if let Some(i) = self.overlap(&(saddr..(saddr + 1))) {
             if let Some(inner) = {
                 if let Segment::Local(inner) = &mut self.seg[i] {
@@ -279,6 +314,9 @@ impl<P: PageTable> AddressSpace<P> {
     /// This function is atomic. Return true if changed. Otherwise return false.
     pub fn segbrk(&mut self, saddr: usize, addr: usize) -> Result<bool, Error> {
         debug_assert_eq!(addr & (Self::PGSIZE - 1), 0);
+        if addr > P::USERTOP {
+            return Err(Error::BadRequest("segbrk over USERTOP"));
+        }
         if let Some(i) = self.overlap(&(saddr..(saddr + 1))) {
             let rg = match &self.seg[i] {
                 Segment::Local(inner) => inner.range.clone(),
@@ -340,7 +378,7 @@ impl<P: PageTable> AddressSpace<P> {
 
     /// Fork address space and allocate new physical pages only for local segments.
     pub fn fork(&self) -> Result<Self, Error> {
-        let mut new_pgdir = P::new().map_err(|_| Error::OutOfMemory)?;
+        let mut new_pgdir = P::new().map_err(|_| Error::OutOfMemory("failed to fork"))?;
         let mut new_segs = Vec::new();
         for s in self.seg.iter() {
             let (new_range, pages, shared) = match s {
@@ -404,9 +442,14 @@ mod tests {
 
     impl PageTable for MyPageTable {
         const PG_LAYOUT: Layout = unsafe { Layout::from_size_align_unchecked(PGSIZE, PGSIZE) };
+        const USERTOP: usize = 0xFFFF_0000;
 
         fn new() -> Result<Self, Error> {
             Ok(Self { map: Vec::new() })
+        }
+
+        fn switch(&self) {
+            todo!();
         }
 
         fn map(&mut self, va: usize, pg: &Page<Self>) -> Result<(), Error> {

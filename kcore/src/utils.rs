@@ -22,6 +22,15 @@ pub fn round_up(x: usize, n: usize) -> usize {
 }
 
 /// Check if two ranges are intersect with each other.
-pub fn intersect(a: &Range<usize>, b: &Range<usize>) -> bool {
+#[inline]
+pub fn intersect<T: Ord>(a: &Range<T>, b: &Range<T>) -> bool {
     a.start < b.end && a.end > b.start
+}
+
+/// Convert slice to uint.
+#[macro_export]
+macro_rules! from_bytes {
+    ($type:ty, $slice:expr) => {
+        <$type>::from_le_bytes($slice.try_into().unwrap())
+    };
 }

@@ -17,8 +17,6 @@ async-trait = { git = "https://github.com/Hongqin-Li/async-trait" }
 
 [dev-dependencies]
 rand = "0.8.3"
-criterion = "0.3"
+tempfile = "3.2.0"
 
-[[bench]]
-name = "bench_cache"
-harness = false
+

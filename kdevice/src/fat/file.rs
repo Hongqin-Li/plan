@@ -9,15 +9,16 @@ use core::{
 };
 
 use crate::{
+    block::BSIZE,
     cache::Cache,
-    log::{Log, BSIZE, MAXEXOPBLOCKS, MAXOPBLOCKS},
+    log::{Log, MAXEXOPBLOCKS, MAXOPBLOCKS},
 };
 
 use alloc::boxed::Box;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use kcore::{
-    chan::{CFlag, Chan, Dirent, Perm, QType, Qid},
+    chan::{Chan, ChanId, ChanType, Dirent},
     dev::Device,
     error::{Error, Result},
 };
@@ -31,10 +32,6 @@ use super::{
 
 #[async_trait::async_trait_try]
 impl Device for FAT {
-    fn typeid(&self) -> usize {
-        b'F' as usize
-    }
-
     async fn shutdown(self)
     where
         Self: Sized,
@@ -42,7 +39,7 @@ impl Device for FAT {
         self.log.close().await;
     }
 
-    async fn attach(self: &Arc<Self>, aname: &[u8]) -> Result<Chan>
+    async fn attach(&self, aname: &[u8]) -> Result<ChanId>
     where
         Self: Sized,
     {
@@ -51,31 +48,34 @@ impl Device for FAT {
             doff: 0,
             attr: ATTR_DIRECTORY,
         };
-        let ip = self.iget(root_key).await.ok_or(Error::OutOfMemory)?;
+        let ip = self
+            .iget(root_key)
+            .await
+            .ok_or(Error::OutOfMemory("attach fat"))?;
         let path = self.to_path(ip);
-        Ok(Chan {
-            dev: self.clone(),
-            devid: 0,
-            qid: Qid {
-                path,
-                version: 0,
-                qtype: QType::DIR,
-            },
-            flag: CFlag::OPEN,
-            name: Vec::new(),
-            dropped: false,
+        Ok(ChanId {
+            path,
+            version: 0,
+            ctype: ChanType::Dir,
         })
     }
 
     async fn open(
         &self,
-        dir: &Chan,
+        dir: &ChanId,
         name: &[u8],
         create_dir: Option<bool>,
-    ) -> Result<Option<Chan>> {
-        let dp = self.to_inode(dir.qid.path);
+    ) -> Result<Option<ChanId>> {
+        let dp = self.to_inode(dir.path);
+        if name.is_empty() {
+            self.iget(dp.key()).await.unwrap();
+            return Ok(Some(dir.clone()));
+        }
         if !dp.key().is_dir() {
-            return Err(Error::BadRequest);
+            if create_dir.is_some() {
+                return Err(Error::BadRequest("fat create in file"));
+            }
+            return Ok(None);
         }
 
         self.log.begin_op().await?;
@@ -114,8 +114,7 @@ impl Device for FAT {
                     some_ip = Some(ip);
                 }
             } else {
-                // Inode cache used out.
-                result = Err(Error::OutOfMemory);
+                result = Err(Error::OutOfMemory("inode cache used out"));
             }
         }
         g.addr.clear();
@@ -126,36 +125,29 @@ impl Device for FAT {
             if !op.committed {
                 self.iput(ip);
                 drop(op);
-                return Err(Error::InternalError);
+                return Err(Error::InternalError("rollback"));
             }
-            let qtype = if ip.key().is_dir() {
-                QType::DIR
+            let ctype = if ip.key().is_dir() {
+                ChanType::Dir
             } else {
-                QType::FILE
+                ChanType::File
             };
-            Ok(Some(Chan {
-                dev: dir.dev.clone(),
-                devid: dir.devid,
-                dropped: false,
-                flag: CFlag::empty(),
-                name: Vec::new(),
-                qid: Qid {
-                    path: self.to_path(ip),
-                    version: 0,
-                    qtype,
-                },
+            Ok(Some(ChanId {
+                path: self.to_path(ip),
+                version: 0,
+                ctype,
             }))
         } else {
             let committed = self.log.end_op(result.is_err(), false).await.committed;
             if !committed {
-                return Err(Error::InternalError);
+                return Err(Error::InternalError("rollback"));
             }
             return Ok(None);
         }
     }
 
-    async fn close(&self, c: &Chan) {
-        let ip = self.to_inode(c.qid.path);
+    async fn close(&self, c: ChanId) {
+        let ip = self.to_inode(c.path);
         let step = (self.meta.bps * self.meta.spc * (MAXEXOPBLOCKS - 5)) as u32;
 
         let op = loop {
@@ -210,13 +202,13 @@ impl Device for FAT {
                 break op;
             }
         };
-        self.iput(self.to_inode(c.qid.path));
+        self.iput(self.to_inode(c.path));
         drop(op);
     }
 
     /// Return false the link is already zero or it is an non-empty directory.
-    async fn remove(&self, c: &Chan) -> Result<bool> {
-        let ip = self.to_inode(c.qid.path);
+    async fn remove(&self, c: &ChanId) -> Result<bool> {
+        let ip = self.to_inode(c.path);
         let mut can_remove = Ok(false);
 
         self.log.begin_exop().await?;
@@ -242,22 +234,26 @@ impl Device for FAT {
         can_remove
     }
 
-    async fn stat(&self, c: &Chan) -> Result<Dirent> {
+    async fn stat(&self, c: &ChanId) -> Result<Dirent> {
+        let ip = self.to_inode(c.path);
+        let g = ip.lock().await?;
+        let ret = self.stati(&g).await;
+        g.unlock(false).await.unwrap();
+        ret
+    }
+
+    async fn wstat(&self, c: &ChanId, dirent: &Dirent) -> Result<()> {
         todo!()
     }
 
-    async fn wstat(&self, c: &Chan, dirent: &Dirent) -> Result<()> {
-        todo!()
-    }
-
-    async fn read(&self, c: &Chan, buf: &mut [u8], off: usize) -> Result<usize> {
-        let ip = self.to_inode(c.qid.path);
+    async fn read(&self, c: &ChanId, buf: &mut [u8], off: usize) -> Result<usize> {
+        let ip = self.to_inode(c.path);
 
         if ip.key().is_dir() {
             todo!()
         }
 
-        u32::try_from(off + buf.len()).or(Err(Error::BadRequest))?;
+        u32::try_from(off + buf.len()).or(Err(Error::BadRequest("read buf len overflow")))?;
 
         self.log.begin_op().await?;
         let mut g = ip.lock().await.unwrap();
@@ -268,18 +264,19 @@ impl Device for FAT {
         if committed {
             result
         } else {
-            Err(Error::InternalError)
+            Err(Error::InternalError("rollback"))
         }
     }
 
-    async fn write(&self, c: &Chan, buf: &[u8], off: usize) -> Result<usize> {
-        let ip = self.to_inode(c.qid.path);
+    async fn write(&self, c: &ChanId, buf: &[u8], off: usize) -> Result<usize> {
+        let ip = self.to_inode(c.path);
 
         if ip.key().is_dir() {
-            return Err(Error::BadRequest);
+            return Err(Error::BadRequest("write dir"));
         }
 
-        let end = u32::try_from(off + buf.len()).or(Err(Error::BadRequest))?;
+        let end =
+            u32::try_from(off + buf.len()).or(Err(Error::BadRequest("write buf len overflow")))?;
 
         // Each resize of step will modify at most resv blocks (1 SFN + 2 FAT).
         // let resv = 1 + 5 + 1;
@@ -310,7 +307,7 @@ impl Device for FAT {
                 g.addr.clear();
                 g.unlock(false).await.unwrap();
                 drop(op);
-                return Err(Error::InternalError);
+                return Err(Error::InternalError("rollback"));
             }
 
             if result? >= end {
@@ -364,13 +361,13 @@ mod tests {
 
         task::spawn(0, async move {
             let fs = Arc::new(
-                FAT::new(50, 100, disk.attach(b"").unwrap().await.unwrap())
+                FAT::new(50, 100, Chan::attach(disk, b"").await.unwrap())
                     .await
                     .unwrap(),
             );
             println!("fs: {:?}", fs);
 
-            let root: Chan = fs.attach(b"").unwrap().await.unwrap();
+            let root = Chan::attach(fs.clone(), b"").await.unwrap();
             let src_dir = root.open(b"src", None).await.unwrap().unwrap();
             src_dir.close().await;
 
@@ -402,13 +399,9 @@ mod tests {
             .collect();
 
         task::spawn(0, async move {
-            let fs = FAT::new(
-                2 * ntask + 10,
-                100,
-                disk.attach(b"").unwrap().await.unwrap(),
-            )
-            .await
-            .unwrap();
+            let fs = FAT::new(2 * ntask + 10, 100, Chan::attach(disk, b"").await.unwrap())
+                .await
+                .unwrap();
 
             println!("{:?}", fs);
             ktest::fs::create_dir(fs, req).await;
@@ -433,7 +426,7 @@ mod tests {
             .collect();
 
         task::spawn(0, async move {
-            let fs = FAT::new(ntask + 10, 100, disk.attach(b"").unwrap().await.unwrap())
+            let fs = FAT::new(ntask + 10, 100, Chan::attach(disk, b"").await.unwrap())
                 .await
                 .unwrap();
 
@@ -480,7 +473,7 @@ mod tests {
             let name_len = name_len.clone();
             task::spawn(0, async move {
                 let fs = Arc::new(
-                    FAT::new(ntask + 10, 100, disk.attach(b"").unwrap().await.unwrap())
+                    FAT::new(ntask + 10, 100, Chan::attach(disk, b"").await.unwrap())
                         .await
                         .unwrap(),
                 );
@@ -490,7 +483,7 @@ mod tests {
                     let names = names.clone();
 
                     task::spawn(0, async move {
-                        let root = fs.attach(b"").unwrap().await.unwrap();
+                        let root = Chan::attach(fs.clone(), b"").await.unwrap();
 
                         // Create a file with random name.
                         let name = format!("old-{}-{}", i, rand_str(rand_int(name_len)));
@@ -531,7 +524,7 @@ mod tests {
 
         task::spawn(0, async move {
             let fs = Arc::new(
-                FAT::new(ntask + 10, 100, disk.attach(b"").unwrap().await.unwrap())
+                FAT::new(ntask + 10, 100, Chan::attach(disk, b"").await.unwrap())
                     .await
                     .unwrap(),
             );
@@ -541,7 +534,7 @@ mod tests {
                 let names = names.clone();
 
                 task::spawn(0, async move {
-                    let root = fs.attach(b"").unwrap().await.unwrap();
+                    let root = Chan::attach(fs.clone(), b"").await.unwrap();
 
                     let mut g = names.lock();
                     let rm = rand_int(0..2) == 0 && !g.is_empty();

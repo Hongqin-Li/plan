@@ -5,7 +5,6 @@
 #![feature(test)]
 #![feature(allocator_api)]
 #![feature(try_reserve)]
-#![feature(const_fn)]
 #![feature(box_into_pin)]
 #![feature(generators, generator_trait)]
 #![feature(dropck_eyepatch)]
@@ -14,6 +13,11 @@
 #![feature(type_alias_impl_trait)]
 #![feature(generic_associated_types)]
 #![feature(associated_type_defaults)]
+#![feature(get_mut_unchecked)]
+#![feature(new_uninit)]
+#![feature(const_fn_fn_ptr_basics)]
+#![feature(const_mut_refs)]
+#![feature(const_fn)]
 
 extern crate alloc;
 
@@ -28,14 +32,13 @@ extern crate test;
 pub mod chan;
 pub mod dev;
 pub mod error;
-pub mod mnt;
 pub mod utils;
 pub mod vm;
-pub use async_trait::async_trait_try;
+pub use async_trait;
 pub use ksched;
 
 #[cfg(test)]
-mod tests {
+pub mod tests {
     use ksched::task;
 
     pub fn run_multi(ncpu: usize) {

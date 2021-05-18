@@ -2,6 +2,7 @@
 //!
 //! The isolation level is Read Committed.
 use crate::{
+    block::BSIZE,
     cache::{CGuard, Cache, CacheData},
     cache_impl, from_bytes,
 };
@@ -17,10 +18,6 @@ use core::{cell::UnsafeCell, convert::TryInto, mem::swap};
 
 use alloc::boxed::Box;
 use static_assertions::const_assert_eq;
-
-/// Block size. The block device hardware should guarantee that write to a block is always atomic.
-/// That's, either all data in a single block is updated or not.
-pub const BSIZE: usize = 512;
 
 /// Maximum number of blocks to be trace by log.
 /// Note that the log layer use additional one block to store log header. Thus, the total number of
@@ -88,7 +85,7 @@ struct LogInner {
 /// Generic log layer with buffer cache.
 #[derive(Debug)]
 pub struct Log {
-    disk: Chan,
+    disk: Arc<Chan>,
     begin_cvar: Condvar,
     end_cvar: Condvar,
     bio: Spinlock<CacheData<usize, Box<[u8; BSIZE]>>>,
@@ -118,12 +115,13 @@ impl Log {
     /// Create a buffer cache with maximum `nbuf` in-memory buffers.
     ///
     /// Close the disk on error.
-    pub async fn new(nbuf: usize, start: usize, disk: Chan) -> Result<Self> {
+    pub async fn new(nbuf: usize, start: usize, disk: Arc<Chan>) -> Result<Self> {
         const_assert_eq!(LOGSIZE * 8 + 8, BSIZE);
         assert!(nbuf >= NBUF);
+
         match async {
-            let mut buf = [0u8; BSIZE];
-            disk.read(&mut buf, start * BSIZE).await?;
+            let mut buf = unsafe { Box::<[u8; BSIZE]>::try_new_uninit()?.assume_init() };
+            disk.read(buf.as_mut(), start * BSIZE).await?;
 
             let log = LogInner {
                 start,
@@ -131,9 +129,13 @@ impl Log {
                 ending: 0,
                 ender: LinkedList::new(NodeAdapter::new()),
                 state: LogState::Redo,
-                lh: Self::read_head(&buf)?,
+                lh: Self::read_head(buf.as_ref())?,
             };
-            let bio = Self::new_cache(nbuf, || Ok(Box::try_new([0u8; BSIZE])?))?;
+
+            let bio = Self::new_cache(nbuf, || {
+                Ok(unsafe { Box::<[u8; BSIZE]>::try_new_uninit()?.assume_init() })
+            })?;
+
             Ok((log, bio))
         }
         .await
@@ -164,7 +166,7 @@ impl Log {
         let mut block = [0u64; LOGSIZE];
 
         if magic != LOGMAGIC || n > LOGSIZE as u32 {
-            return Err(Error::InternalError);
+            return Err(Error::InternalError("read invalid log head"));
         }
 
         for i in (8..64).step_by(8) {
@@ -302,7 +304,7 @@ impl Log {
 
             if failed {
                 drop(g);
-                return Err(Error::InternalError);
+                return Err(Error::InternalError("redo failed"));
             }
             log = g;
         }
@@ -526,7 +528,7 @@ mod tests {
         let log_start = 1000;
         ksched::task::spawn(0, async move {
             let disk = Arc::new(MemDisk::new(1100 * BSIZE));
-            let disk_chan = disk.attach(b"").unwrap().await.unwrap();
+            let disk_chan = Chan::attach(disk, b"").await.unwrap();
 
             // Install magic.
             disk_chan

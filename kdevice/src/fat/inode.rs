@@ -1,4 +1,5 @@
 //! Simulated i-node layer of FAT32 file system.
+use alloc::boxed::Box;
 use core::{
     cmp::{max, min},
     convert::{TryFrom, TryInto},
@@ -15,15 +16,16 @@ use super::fname::{
     ATTR_LONG_NAME_MASK, DIRENTSZ, LAST_LONG_ENTRY, MAX_NUMERIC_TAIL,
 };
 use crate::{
+    block::BSIZE,
     cache::{CEntry, CGuard, CNodePtr, Cache, CacheData},
     cache_impl, from_bytes,
-    log::{Log, BSIZE, LOGMAGIC, LOGSIZE},
+    log::{Log, LOGMAGIC, LOGSIZE},
 };
 
-use alloc::vec::Vec;
+use alloc::{sync::Arc, vec::Vec};
 use kalloc::wrapper::vec_push;
 use kcore::{
-    chan::Chan,
+    chan::{Chan, Dirent},
     error::{Error, Result},
 };
 use ksched::sync::Spinlock;
@@ -56,7 +58,7 @@ macro_rules! rwinode {
             let (si, soff) = (ci % spc, i % bps);
             let n = min(bps - soff, end - i);
 
-            let cno = $ip.addr.get(ci).ok_or(Error::InternalError)?;
+            let cno = $ip.addr.get(ci).ok_or(Error::InternalError("fatrw"))?;
             let disk_si = $sel.meta.data_off + (*cno as usize - 2) * spc + si;
 
             let b: CEntry<'a, Log> = $sel.log.cache_get(disk_si, false).await?.unwrap();
@@ -173,9 +175,9 @@ impl FAT {
     /// Initialize a new FAT from a virtual disk.
     ///
     /// `ninodes` is the maximum active inode, `nbuf` is the number of cached buffer.
-    pub async fn new(ninodes: usize, nbuf: usize, disk: Chan) -> Result<Self> {
-        let mut buf = [0; 90];
-        disk.read(&mut buf, 0).await?;
+    pub async fn new(ninodes: usize, nbuf: usize, disk: Arc<Chan>) -> Result<Self> {
+        let mut buf = unsafe { Box::<[u8; BSIZE]>::try_new_uninit()?.assume_init() };
+        disk.read(buf.as_mut(), 0).await?;
 
         let bps = from_bytes!(u16, buf[11..13]) as usize;
         let spc = from_bytes!(u8, buf[13..14]) as usize;
@@ -192,7 +194,7 @@ impl FAT {
             && totsect != 0
             && &buf[82..90] == b"FAT32   ")
         {
-            return Err(Error::NotImplemented);
+            return Err(Error::NotImplemented("FAT meta"));
         }
 
         // NOTE: Customized, not in FAT32.
@@ -200,15 +202,20 @@ impl FAT {
 
         let fat_off = reserved_sect;
         let data_off = reserved_sect
-            .checked_add(nfat.checked_mul(fat_sect).ok_or(Error::NotImplemented)?)
-            .ok_or(Error::NotImplemented)?;
+            .checked_add(
+                nfat.checked_mul(fat_sect)
+                    .ok_or(Error::NotImplemented("data offset too large"))?,
+            )
+            .ok_or(Error::NotImplemented("data offset too large"))?;
 
-        let data_sect = totsect.checked_sub(data_off).ok_or(Error::NotImplemented)?;
+        let data_sect = totsect
+            .checked_sub(data_off)
+            .ok_or(Error::NotImplemented("data sect too large"))?;
         // The count of data clusters starting at cluster 2.
         let data_clust = data_sect / spc as u32;
 
         if root != 2 || bps != BSIZE || data_clust < 65525 {
-            return Err(Error::NotImplemented);
+            return Err(Error::NotImplemented("FAT meta"));
         }
 
         let log_clust = (LOGSIZE + 1 + spc - 1) / spc;
@@ -246,13 +253,13 @@ impl FAT {
                 }
             }
             if log_cno == 0 {
-                return Err(Error::InsufficientStorage);
+                return Err(Error::InsufficientStorage("reverse space for log"));
             }
             buf[52..56].copy_from_slice(&(log_cno as u32).to_le_bytes());
-            disk.write(&buf, 0).await?;
+            disk.write(buf.as_ref(), 0).await?;
             // Install empty log with magic value.
             let log_bno = data_off as usize + (log_cno - 2) * spc;
-            buf2.truncate(8);
+            // buf2.truncate(8);
             buf2[0..4].copy_from_slice(&LOGMAGIC.to_le_bytes());
             buf2[4..8].copy_from_slice(&0u32.to_le_bytes());
             disk.write(&buf2, log_bno * BSIZE).await?;
@@ -309,7 +316,7 @@ impl FAT {
         if !((2..(self.meta.data_clust + 2) as u32).contains(&cno)
             && !self.meta.log_area.contains(&(cno as usize)))
         {
-            return Err(Error::InternalError);
+            return Err(Error::InternalError("invalid cno"));
         }
         Ok(cno)
     }
@@ -318,10 +325,10 @@ impl FAT {
     fn valid_fat(&self, ent: u32) -> Result<u32> {
         let ent = ent & FAT_MASK;
         if !(ent == FAT_EMPTY
-            || ent == FAT_END
+            || ent >= FAT_END
             || (2..(self.meta.data_clust + 2) as u32).contains(&ent))
         {
-            return Err(Error::InternalError);
+            return Err(Error::InternalError("invalid fat entry"));
         }
         Ok(ent)
     }
@@ -380,7 +387,7 @@ impl FAT {
             self.log.trace(g).await;
             j += 1;
         }
-        Err(Error::InsufficientStorage)
+        Err(Error::InsufficientStorage("calloc"))
     }
 
     /// This should only be called when
@@ -407,6 +414,32 @@ impl FAT {
         Ok(())
     }
 
+    /// Get the meta information of this file.
+    pub async fn stati<'a>(&'a self, ip: &'a CGuard<'a, Self>) -> Result<Dirent> {
+        if ip.key().doff == 0 {
+            return Ok(Dirent {
+                len: 0,
+                mtime: 0,
+                atime: 0,
+            });
+        }
+        let buf = self
+            .log
+            .cache_get(ip.key().doff / self.meta.bps, false)
+            .await?
+            .unwrap();
+        let g = buf.lock().await?;
+        let off = ip.key().doff % self.meta.bps;
+        debug_assert_eq!(sfn_cno(&g[off..off + 32].try_into().unwrap()), ip.key().cno);
+        let len = sfn_size(&g[off..off + 32].try_into().unwrap());
+        self.log.trace(g).await;
+        Ok(Dirent {
+            len: len as u64,
+            mtime: 0,
+            atime: 0,
+        })
+    }
+
     /// Extend the addr pointers.
     pub async fn extend<'a>(&'a self, ip: &mut CGuard<'a, Self>) -> Result<()> {
         let bpc = self.meta.bps * self.meta.spc;
@@ -418,14 +451,14 @@ impl FAT {
         }
         loop {
             let ent = self.valid_fat(self.fatrw(cno, |x| x).await?)?;
-            if ent == FAT_END {
+            if ent >= FAT_END {
                 break Ok(());
             }
             cno = self.valid_cno(ent)?;
             vec_push(&mut ip.addr, cno)?;
 
             if (ip.addr.len() - 1) * bpc >= u32::MAX as usize {
-                return Err(Error::InternalError);
+                return Err(Error::InternalError("FAT extend too large"));
             }
         }
     }
@@ -448,7 +481,7 @@ impl FAT {
         let (old, new) = if ip.key().is_dir() {
             // Directories are sized by simply following their cluster chains to the end.
             if ip.addr.len() > MAX_DIRSZ as usize / bpc {
-                return Err(Error::InternalError);
+                return Err(Error::InternalError("FAT directory too large"));
             }
             let old: u32 = (ip.addr.len() * bpc) as u32;
             (old, f(old))
@@ -482,7 +515,7 @@ impl FAT {
         } else if new_ci < old_ci {
             ip.addr.truncate(new_ci);
             let mut nxt = self.fatrw(ip.addr[new_ci - 1], |_| FAT_END).await?;
-            while nxt != FAT_END {
+            while nxt < FAT_END {
                 nxt = self.fatrw(nxt, |_| FAT_EMPTY).await?;
             }
         }
@@ -586,7 +619,7 @@ impl FAT {
                 })
                 .await? as usize;
             if !grow {
-                return Err(Error::InsufficientStorage);
+                return Err(Error::InsufficientStorage("dirlink grow dir"));
             }
             debug_assert_eq!(new % bpc, 0);
             // Zero filled.
@@ -594,7 +627,7 @@ impl FAT {
             buf.try_reserve(bpc)?;
             buf.resize(bpc, 0);
             if self.writei(dp, &buf, new - bpc).await? != bpc {
-                return Err(Error::InternalError);
+                return Err(Error::InternalError("dirlink grow dir"));
             }
         }
 
@@ -606,7 +639,7 @@ impl FAT {
             Some(loop {
                 i += 1;
                 if i >= MAX_NUMERIC_TAIL {
-                    return Err(Error::InternalError);
+                    return Err(Error::InternalError("max numeric tail"));
                 }
                 let new_sfn = fname.gen_sfn(i)?;
                 if new_sfn.data == fname.data {
@@ -824,7 +857,10 @@ struct DirIter<'a> {
 impl<'a> DirIter<'a> {
     async fn new(fs: &'a FAT, dp: &'a CGuard<'a, FAT>) -> Result<DirIter<'a>> {
         let mut siter = SectIter::new(fs, dp.key().cno);
-        let sitem = siter.next().await?.ok_or(Error::InternalError)?;
+        let sitem = siter
+            .next()
+            .await?
+            .ok_or(Error::InternalError("diriter new"))?;
         let eps = fs.meta.bps / DIRENTSZ;
         Ok(Self {
             siter,

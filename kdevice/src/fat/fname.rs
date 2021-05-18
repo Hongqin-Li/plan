@@ -144,7 +144,7 @@ pub fn lfn_set_name(buf: &mut [u8; DIRENTSZ], name: &[u16]) {
 /// Convert utf-8 bytes to utf-16.
 pub fn utf8_to_utf16(bytes: &[u8]) -> Result<Vec<u16>> {
     let mut ret = Vec::new();
-    let str = str::from_utf8(bytes).map_err(|_| Error::BadRequest)?;
+    let str = str::from_utf8(bytes).map_err(|_| Error::BadRequest("utf8 to utf16 failed"))?;
     for c in str.chars() {
         let mut buf = [0u16; 2];
         let buf = c.encode_utf16(&mut buf);
@@ -264,11 +264,12 @@ impl TryFrom<&[u8]> for Filename {
     /// We allow any bytes in LFN.
     fn try_from(bytes: &[u8]) -> core::result::Result<Self, Self::Error> {
         if bytes.len() > 0 && (bytes[0] == 0 || bytes[0] == 0xE5) {
-            return Err(Error::BadRequest);
+            return Err(Error::BadRequest("empty file name"));
         }
 
         let mut data = Vec::new();
-        let str: &str = str::from_utf8(bytes).map_err(|_| Error::BadRequest)?;
+        let str: &str =
+            str::from_utf8(bytes).map_err(|_| Error::BadRequest("filename invalid utf-8"))?;
         let mut is_sfn = true;
         let mut nperiod = 0;
         for c in str.chars() {
@@ -294,7 +295,7 @@ impl TryFrom<&[u8]> for Filename {
         }
 
         if data.is_empty() || data.len() > 255 {
-            return Err(Error::BadRequest);
+            return Err(Error::BadRequest("file name is empty or too long"));
         }
 
         let last_period = data.iter().enumerate().rfind(|(i, c)| **c == '.' as u16);
