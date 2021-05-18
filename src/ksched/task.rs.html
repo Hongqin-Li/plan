@@ -204,6 +204,30 @@
 <span id="201">201</span>
 <span id="202">202</span>
 <span id="203">203</span>
+<span id="204">204</span>
+<span id="205">205</span>
+<span id="206">206</span>
+<span id="207">207</span>
+<span id="208">208</span>
+<span id="209">209</span>
+<span id="210">210</span>
+<span id="211">211</span>
+<span id="212">212</span>
+<span id="213">213</span>
+<span id="214">214</span>
+<span id="215">215</span>
+<span id="216">216</span>
+<span id="217">217</span>
+<span id="218">218</span>
+<span id="219">219</span>
+<span id="220">220</span>
+<span id="221">221</span>
+<span id="222">222</span>
+<span id="223">223</span>
+<span id="224">224</span>
+<span id="225">225</span>
+<span id="226">226</span>
+<span id="227">227</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="doccomment">//! Async executor and some basic futures.</span>
 <span class="attribute">#![<span class="ident">allow</span>(<span class="ident">missing_docs</span>)]</span>
@@ -295,9 +319,17 @@
         <span class="ident">nice</span>: <span class="ident">usize</span>,
         <span class="ident">future</span>: <span class="kw">impl</span> <span class="ident">Future</span><span class="op">&lt;</span><span class="ident">Output</span> <span class="op">=</span> ()<span class="op">&gt;</span> <span class="op">+</span> <span class="lifetime">&#39;static</span> <span class="op">+</span> <span class="ident">Send</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">AllocError</span><span class="op">&gt;</span> {
+        <span class="self">self</span>.<span class="ident">spawn_boxed</span>(<span class="ident">nice</span>, <span class="ident">Box</span>::<span class="ident">try_new</span>(<span class="ident">future</span>)<span class="question-mark">?</span>)
+    }
+
+    <span class="kw">fn</span> <span class="ident">spawn_boxed</span>(
+        <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>,
+        <span class="ident">nice</span>: <span class="ident">usize</span>,
+        <span class="ident">boxed_future</span>: <span class="ident">Box</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">Future</span><span class="op">&lt;</span><span class="ident">Output</span> <span class="op">=</span> ()<span class="op">&gt;</span> <span class="op">+</span> <span class="lifetime">&#39;static</span> <span class="op">+</span> <span class="ident">Send</span><span class="op">&gt;</span>,
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">AllocError</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">t</span> <span class="op">=</span> <span class="ident">Arc</span>::<span class="ident">try_new</span>(<span class="ident">Task</span> {
             <span class="ident">nice</span>,
-            <span class="ident">future</span>: <span class="ident">UnsafeCell</span>::<span class="ident">new</span>(<span class="ident">Box</span>::<span class="ident">into_pin</span>(<span class="ident">Box</span>::<span class="ident">try_new</span>(<span class="ident">future</span>)<span class="question-mark">?</span>)),
+            <span class="ident">future</span>: <span class="ident">UnsafeCell</span>::<span class="ident">new</span>(<span class="ident">Box</span>::<span class="ident">into_pin</span>(<span class="ident">boxed_future</span>)),
             <span class="ident">link</span>: <span class="ident">LinkedListLink</span>::<span class="ident">new</span>(),
         })<span class="question-mark">?</span>;
         <span class="self">self</span>.<span class="ident">ntasks</span> <span class="op">+</span><span class="op">=</span> <span class="number">1</span>;
@@ -332,6 +364,22 @@
     <span class="ident">future</span>: <span class="kw">impl</span> <span class="ident">Future</span><span class="op">&lt;</span><span class="ident">Output</span> <span class="op">=</span> ()<span class="op">&gt;</span> <span class="op">+</span> <span class="lifetime">&#39;static</span> <span class="op">+</span> <span class="ident">Send</span>,
 ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">AllocError</span><span class="op">&gt;</span> {
     <span class="ident">DEFAULT_EXECUTOR</span>.<span class="ident">lock</span>().<span class="ident">spawn</span>(<span class="ident">nice</span>, <span class="ident">future</span>)
+}
+
+<span class="doccomment">/// Spawn a new boxed task to be run.</span>
+<span class="doccomment">///</span>
+<span class="doccomment">/// # Examples</span>
+<span class="doccomment">///</span>
+<span class="doccomment">/// ```</span>
+<span class="doccomment">/// ksched::task::spawn_boxed(0, Box::new(async {</span>
+<span class="doccomment">///    println!(&quot;hello, world&quot;);</span>
+<span class="doccomment">/// })).expect(&quot;oom&quot;);</span>
+<span class="doccomment">/// ```</span>
+<span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">spawn_boxed</span>(
+    <span class="ident">nice</span>: <span class="ident">usize</span>,
+    <span class="ident">boxed_future</span>: <span class="ident">Box</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">Future</span><span class="op">&lt;</span><span class="ident">Output</span> <span class="op">=</span> ()<span class="op">&gt;</span> <span class="op">+</span> <span class="lifetime">&#39;static</span> <span class="op">+</span> <span class="ident">Send</span><span class="op">&gt;</span>,
+) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">AllocError</span><span class="op">&gt;</span> {
+    <span class="ident">DEFAULT_EXECUTOR</span>.<span class="ident">lock</span>().<span class="ident">spawn_boxed</span>(<span class="ident">nice</span>, <span class="ident">boxed_future</span>)
 }
 
 <span class="doccomment">/// Run tasks until idle.</span>

@@ -194,8 +194,6 @@
 <span id="191">191</span>
 <span id="192">192</span>
 <span id="193">193</span>
-<span id="194">194</span>
-<span id="195">195</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="doccomment">//! Device driver.</span>
 <span class="doccomment">//!</span>
@@ -214,58 +212,73 @@
 <span class="doccomment">//!</span>
 <span class="doccomment">//! Use namespace instead?</span>
 
+<span class="attribute">#![<span class="ident">allow</span>(<span class="ident">missing_docs</span>)]</span>
+
 <span class="kw">use</span> <span class="ident">alloc</span>::<span class="ident">boxed</span>::<span class="ident">Box</span>;
 <span class="kw">use</span> <span class="ident">alloc</span>::<span class="ident">sync</span>::<span class="ident">Arc</span>;
 <span class="kw">use</span> <span class="ident">alloc</span>::<span class="ident">vec</span>::<span class="ident">Vec</span>;
 <span class="kw">use</span> <span class="ident">bitflags</span>::<span class="ident">bitflags</span>;
+<span class="kw">use</span> <span class="ident">core</span>::<span class="ident">ops</span>::<span class="ident">Deref</span>;
 
 <span class="kw">use</span> <span class="kw">crate</span>::{
-    <span class="ident">chan</span>::{<span class="ident">Chan</span>, <span class="ident">Dirent</span>, <span class="ident">Perm</span>},
+    <span class="ident">chan</span>::{<span class="ident">Chan</span>, <span class="ident">ChanId</span>, <span class="ident">ChanKey</span>, <span class="ident">ChanType</span>, <span class="ident">Dirent</span>, <span class="ident">Perm</span>},
     <span class="ident">error</span>::{<span class="ident">Error</span>, <span class="prelude-ty">Result</span>},
 };
 
-<span class="kw">use</span> <span class="kw">crate</span>::<span class="ident">chan</span>::<span class="ident">Qid</span>;
-
 <span class="doccomment">/// Common trait of a device driver.</span>
+<span class="doccomment">///</span>
+<span class="doccomment">/// # Why not use GAT to get async trait?</span>
+<span class="doccomment">///</span>
+<span class="doccomment">/// Since that may cause loop when our FS is dependent on a Chan, and the compiler cannot</span>
+<span class="doccomment">/// determine the future size at compile time. Think of the case when we have FS on a file,</span>
+<span class="doccomment">/// which resides on another FS, and the length of such chain cannot be known at compile time.</span>
+<span class="attribute">#[<span class="ident">allow</span>(<span class="ident">missing_docs</span>)]</span>
 <span class="attribute">#[<span class="ident">async_trait</span>::<span class="ident">async_trait_try</span>]</span>
 <span class="kw">pub</span> <span class="kw">trait</span> <span class="ident">Device</span> {
-    <span class="doccomment">/// Type determine which driver to used for this channel, analogous to UNIX&#39;s major number.</span>
-    <span class="kw">fn</span> <span class="ident">typeid</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">usize</span>;
-
     <span class="doccomment">/// The async destructor of the device.</span>
+    <span class="doccomment">///</span>
+    <span class="doccomment">/// This may be called when some device in the global device table Vec&lt;Arc&lt;Dev&gt;&gt; has</span>
+    <span class="doccomment">/// no reference(i.e. no opened file).</span>
     <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">shutdown</span>(<span class="self">self</span>)
     <span class="kw">where</span>
         <span class="self">Self</span>: <span class="ident">Sized</span>;
 
     <span class="doccomment">/// Return the root channel. `aname` is a user-specified hint.</span>
-    <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">attach</span>(<span class="self">self</span>: <span class="kw-2">&amp;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span>, <span class="ident">aname</span>: <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Chan</span><span class="op">&gt;</span>
-    <span class="kw">where</span>
-        <span class="self">Self</span>: <span class="ident">Sized</span>;
+    <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">attach</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">aname</span>: <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">ChanId</span><span class="op">&gt;</span>;
 
-    <span class="doccomment">/// Open a file by looking for the file name in the directory represented by a channel.</span>
+    <span class="doccomment">/// Open a file in the directory or reopen a file.</span>
+    <span class="doccomment">///</span>
+    <span class="doccomment">/// If `name` is empty, ignore other parameters and reopen the file itself(same as dup).</span>
+    <span class="doccomment">/// The reopen operation returns either an error or some chan id(but not [None]).</span>
+    <span class="doccomment">///</span>
+    <span class="doccomment">/// If `dir` is not a directory, return [None].</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// If `create_dir` is [None], this operation is a normal open. Return [None] if not found.</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// Otherwise, it means creating a file. The boolean indicates type of the file to be</span>
     <span class="doccomment">/// created is a directory or not. Return [None] if the file already exist.</span>
-    <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">open</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">dir</span>: <span class="kw-2">&amp;</span><span class="ident">Chan</span>, <span class="ident">name</span>: <span class="kw-2">&amp;</span>[<span class="ident">u8</span>], <span class="ident">create_dir</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">bool</span><span class="op">&gt;</span>)
-        <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Chan</span><span class="op">&gt;</span><span class="op">&gt;</span>;
+    <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">open</span>(
+        <span class="kw-2">&amp;</span><span class="self">self</span>,
+        <span class="ident">dir</span>: <span class="kw-2">&amp;</span><span class="ident">ChanId</span>,
+        <span class="ident">name</span>: <span class="kw-2">&amp;</span>[<span class="ident">u8</span>],
+        <span class="ident">create_dir</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">bool</span><span class="op">&gt;</span>,
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">ChanId</span><span class="op">&gt;</span><span class="op">&gt;</span>;
     <span class="doccomment">/// Close a file. The drop of channel is done by [Chan::close](`super::chan::Chan::close`)</span>
     <span class="doccomment">///</span>
-    <span class="doccomment">/// This functioni must always succeed.</span>
-    <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">close</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">c</span>: <span class="kw-2">&amp;</span><span class="ident">Chan</span>);
+    <span class="doccomment">/// This function must always succeed.</span>
+    <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">close</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">c</span>: <span class="ident">ChanId</span>);
 
     <span class="doccomment">/// Remove a file by hint such that the server won&#39;t remove the file until</span>
     <span class="doccomment">/// all clients have closed it. Can only remove normal file or empty directory.</span>
     <span class="doccomment">/// May not atomic since having to truncate the file first.</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// Return true if removed, else false.</span>
-    <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">remove</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">c</span>: <span class="kw-2">&amp;</span><span class="ident">Chan</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">bool</span><span class="op">&gt;</span>;
+    <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">remove</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">c</span>: <span class="kw-2">&amp;</span><span class="ident">ChanId</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">bool</span><span class="op">&gt;</span>;
 
     <span class="doccomment">/// Inquires about the file attribute identified by a channel.</span>
-    <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">stat</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">c</span>: <span class="kw-2">&amp;</span><span class="ident">Chan</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Dirent</span><span class="op">&gt;</span>;
+    <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">stat</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">c</span>: <span class="kw-2">&amp;</span><span class="ident">ChanId</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Dirent</span><span class="op">&gt;</span>;
     <span class="doccomment">/// Change the file attribute identified by a channel. Should be atomic.</span>
-    <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">wstat</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">c</span>: <span class="kw-2">&amp;</span><span class="ident">Chan</span>, <span class="ident">dirent</span>: <span class="kw-2">&amp;</span><span class="ident">Dirent</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>()<span class="op">&gt;</span>;
+    <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">wstat</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">c</span>: <span class="kw-2">&amp;</span><span class="ident">ChanId</span>, <span class="ident">dirent</span>: <span class="kw-2">&amp;</span><span class="ident">Dirent</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>()<span class="op">&gt;</span>;
 
     <span class="doccomment">/// Read data from a channel by offset and store to buffer.</span>
     <span class="doccomment">///</span>
@@ -274,13 +287,13 @@
     <span class="doccomment">/// For directories, read returns an integral number of directory entries exactly</span>
     <span class="doccomment">/// as in stat, one for each member of the directory.</span>
     <span class="doccomment">/// The offset and buffer len must be zero modulo DIRLEN.</span>
-    <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">read</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">c</span>: <span class="kw-2">&amp;</span><span class="ident">Chan</span>, <span class="ident">buf</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> [<span class="ident">u8</span>], <span class="ident">off</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span>;
+    <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">read</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">c</span>: <span class="kw-2">&amp;</span><span class="ident">ChanId</span>, <span class="ident">buf</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> [<span class="ident">u8</span>], <span class="ident">off</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span>;
 
     <span class="doccomment">/// Write the data in buffer to a channel starting by specific offset.</span>
     <span class="doccomment">/// Directories are not allowed to be written.</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// Return the number of bytes writed.</span>
-    <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">write</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">c</span>: <span class="kw-2">&amp;</span><span class="ident">Chan</span>, <span class="ident">buf</span>: <span class="kw-2">&amp;</span>[<span class="ident">u8</span>], <span class="ident">off</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span>;
+    <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">write</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">c</span>: <span class="kw-2">&amp;</span><span class="ident">ChanId</span>, <span class="ident">buf</span>: <span class="kw-2">&amp;</span>[<span class="ident">u8</span>], <span class="ident">off</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span>;
 }
 
 <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">test</span>)]</span>
@@ -289,22 +302,22 @@
 
     <span class="kw">use</span> <span class="kw">super</span>::<span class="kw-2">*</span>;
 
-    <span class="kw">use</span> <span class="kw">crate</span>::<span class="ident">chan</span>::{<span class="ident">CFlag</span>, <span class="ident">QType</span>};
+    <span class="kw">use</span> <span class="kw">crate</span>::<span class="ident">chan</span>::<span class="ident">ChanInner</span>;
+    <span class="kw">use</span> <span class="kw">crate</span>::<span class="ident">chan</span>::<span class="ident">ChanType</span>;
+    <span class="kw">use</span> <span class="ident">alloc</span>::<span class="ident">sync</span>::<span class="ident">Weak</span>;
+    <span class="kw">use</span> <span class="ident">ksched</span>::<span class="ident">sync</span>::<span class="ident">Mutex</span>;
 
     <span class="kw">struct</span> <span class="ident">A</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span>(<span class="ident">T</span>);
 
     <span class="attribute">#[<span class="ident">async_trait</span>::<span class="ident">async_trait_try</span>]</span>
     <span class="kw">impl</span><span class="op">&lt;</span><span class="ident">T</span>: <span class="ident">Send</span> <span class="op">+</span> <span class="lifetime">&#39;static</span> <span class="op">+</span> <span class="ident">Sync</span><span class="op">&gt;</span> <span class="ident">Device</span> <span class="kw">for</span> <span class="ident">A</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span> {
-        <span class="kw">fn</span> <span class="ident">typeid</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">usize</span> {
-            <span class="macro">todo</span><span class="macro">!</span>();
-        }
         <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">shutdown</span>(<span class="self">self</span>)
         <span class="kw">where</span>
             <span class="self">Self</span>: <span class="ident">Sized</span>,
         {
             <span class="macro">todo</span><span class="macro">!</span>()
         }
-        <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">attach</span>(<span class="self">self</span>: <span class="kw-2">&amp;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span>, <span class="ident">aname</span>: <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Chan</span><span class="op">&gt;</span>
+        <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">attach</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">aname</span>: <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">ChanId</span><span class="op">&gt;</span>
         <span class="kw">where</span>
             <span class="self">Self</span>: <span class="ident">Sized</span>,
         {
@@ -312,84 +325,67 @@
         }
         <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">open</span>(
             <span class="kw-2">&amp;</span><span class="self">self</span>,
-            <span class="ident">dir</span>: <span class="kw-2">&amp;</span><span class="ident">Chan</span>,
+            <span class="ident">dir</span>: <span class="kw-2">&amp;</span><span class="ident">ChanId</span>,
             <span class="ident">name</span>: <span class="kw-2">&amp;</span>[<span class="ident">u8</span>],
             <span class="ident">create_dir</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">bool</span><span class="op">&gt;</span>,
-        ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Chan</span><span class="op">&gt;</span><span class="op">&gt;</span> {
+        ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">ChanId</span><span class="op">&gt;</span><span class="op">&gt;</span> {
             <span class="macro">todo</span><span class="macro">!</span>()
         }
-        <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">close</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">c</span>: <span class="kw-2">&amp;</span><span class="ident">Chan</span>) {}
-        <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">remove</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">c</span>: <span class="kw-2">&amp;</span><span class="ident">Chan</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">bool</span><span class="op">&gt;</span> {
-            <span class="macro">todo</span><span class="macro">!</span>()
-        }
-
-        <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">stat</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">c</span>: <span class="kw-2">&amp;</span><span class="ident">Chan</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Dirent</span><span class="op">&gt;</span> {
+        <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">close</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">c</span>: <span class="ident">ChanId</span>) {}
+        <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">remove</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">c</span>: <span class="kw-2">&amp;</span><span class="ident">ChanId</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">bool</span><span class="op">&gt;</span> {
             <span class="macro">todo</span><span class="macro">!</span>()
         }
 
-        <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">wstat</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">c</span>: <span class="kw-2">&amp;</span><span class="ident">Chan</span>, <span class="ident">dirent</span>: <span class="kw-2">&amp;</span><span class="ident">Dirent</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>()<span class="op">&gt;</span> {
+        <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">stat</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">c</span>: <span class="kw-2">&amp;</span><span class="ident">ChanId</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Dirent</span><span class="op">&gt;</span> {
             <span class="macro">todo</span><span class="macro">!</span>()
         }
 
-        <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">read</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">c</span>: <span class="kw-2">&amp;</span><span class="ident">Chan</span>, <span class="ident">buf</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> [<span class="ident">u8</span>], <span class="ident">off</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span> {
+        <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">wstat</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">c</span>: <span class="kw-2">&amp;</span><span class="ident">ChanId</span>, <span class="ident">dirent</span>: <span class="kw-2">&amp;</span><span class="ident">Dirent</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>()<span class="op">&gt;</span> {
+            <span class="macro">todo</span><span class="macro">!</span>()
+        }
+
+        <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">read</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">c</span>: <span class="kw-2">&amp;</span><span class="ident">ChanId</span>, <span class="ident">buf</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> [<span class="ident">u8</span>], <span class="ident">off</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span> {
+            <span class="macro">println</span><span class="macro">!</span>(<span class="string">&quot;c {:?}&quot;</span>, <span class="ident">c</span>);
             <span class="ident">buf</span>[<span class="number">0</span>] <span class="op">=</span> <span class="number">10</span>;
             <span class="prelude-val">Ok</span>(<span class="number">0</span>)
         }
 
-        <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">write</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">c</span>: <span class="kw-2">&amp;</span><span class="ident">Chan</span>, <span class="ident">buf</span>: <span class="kw-2">&amp;</span>[<span class="ident">u8</span>], <span class="ident">off</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span> {
+        <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">write</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">c</span>: <span class="kw-2">&amp;</span><span class="ident">ChanId</span>, <span class="ident">buf</span>: <span class="kw-2">&amp;</span>[<span class="ident">u8</span>], <span class="ident">off</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span> {
             <span class="macro">todo</span><span class="macro">!</span>()
         }
     }
 
-    <span class="comment">// // May corrupt other testing threads.</span>
-    <span class="comment">// #[test]</span>
-    <span class="comment">// #[should_panic]</span>
-    <span class="comment">// fn forget_close() {</span>
-    <span class="comment">//     task::spawn(0, async move {</span>
-    <span class="comment">//         let a = Arc::new(A(1u8));</span>
-    <span class="comment">//         let c = Chan {</span>
-    <span class="comment">//             dev: a.clone(),</span>
-    <span class="comment">//             devid: 0,</span>
-    <span class="comment">//             qid: Qid {</span>
-    <span class="comment">//                 path: 0,</span>
-    <span class="comment">//                 version: 0,</span>
-    <span class="comment">//                 qtype: QType::FILE,</span>
-    <span class="comment">//             },</span>
-    <span class="comment">//             flag: CFlag::OPEN,</span>
-    <span class="comment">//             name: Vec::new(),</span>
-    <span class="comment">//             dropped: false,</span>
-    <span class="comment">//         };</span>
-    <span class="comment">//         let mut buf = [0u8; 10];</span>
-    <span class="comment">//         a.read(&amp;c, &amp;mut buf, 0).unwrap().await.unwrap();</span>
-    <span class="comment">//         assert_eq!(buf[0], 10);</span>
-    <span class="comment">//     })</span>
-    <span class="comment">//     .unwrap();</span>
-    <span class="comment">//     task::run_all();</span>
-    <span class="comment">// }</span>
-
     <span class="attribute">#[<span class="ident">test</span>]</span>
     <span class="kw">fn</span> <span class="ident">it_compiles</span>() {
-        <span class="ident">task</span>::<span class="ident">spawn</span>(<span class="number">0</span>, <span class="kw">async</span> <span class="kw">move</span> {
-            <span class="kw">let</span> <span class="ident">a</span> <span class="op">=</span> <span class="ident">Arc</span>::<span class="ident">new</span>(<span class="ident">A</span>(<span class="number">1u8</span>));
-            <span class="kw">let</span> <span class="ident">c</span> <span class="op">=</span> <span class="ident">Chan</span> {
-                <span class="ident">dev</span>: <span class="ident">a</span>.<span class="ident">clone</span>(),
-                <span class="ident">devid</span>: <span class="number">0</span>,
-                <span class="ident">qid</span>: <span class="ident">Qid</span> {
-                    <span class="ident">path</span>: <span class="number">0</span>,
-                    <span class="ident">version</span>: <span class="number">0</span>,
-                    <span class="ident">qtype</span>: <span class="ident">QType</span>::<span class="ident">FILE</span>,
-                },
-                <span class="ident">flag</span>: <span class="ident">CFlag</span>::<span class="ident">OPEN</span>,
-                <span class="ident">name</span>: <span class="ident">Vec</span>::<span class="ident">new</span>(),
-                <span class="ident">dropped</span>: <span class="bool-val">false</span>,
-            };
-            <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">buf</span> <span class="op">=</span> [<span class="number">0u8</span>; <span class="number">10</span>];
-            <span class="ident">a</span>.<span class="ident">read</span>(<span class="kw-2">&amp;</span><span class="ident">c</span>, <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">buf</span>, <span class="number">0</span>).<span class="ident">unwrap</span>().<span class="kw">await</span>.<span class="ident">unwrap</span>();
-            <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">buf</span>[<span class="number">0</span>], <span class="number">10</span>);
-            <span class="ident">c</span>.<span class="ident">close</span>().<span class="kw">await</span>;
-        })
-        .<span class="ident">unwrap</span>();
-        <span class="ident">task</span>::<span class="ident">run_all</span>();
+        <span class="comment">// task::spawn(0, async move {</span>
+        <span class="comment">//     let a = Arc::new(Dev::FAT(A(1u8)));</span>
+        <span class="comment">//     let key = ChanKey::new(</span>
+        <span class="comment">//         a.clone(),</span>
+        <span class="comment">//         0,</span>
+        <span class="comment">//         Qid {</span>
+        <span class="comment">//             path: 0,</span>
+        <span class="comment">//             version: 0,</span>
+        <span class="comment">//             qtype: QType::File,</span>
+        <span class="comment">//         },</span>
+        <span class="comment">//     );</span>
+        <span class="comment">//     let mut buf = [0u8; 10];</span>
+        <span class="comment">//     // Test NewDevice.</span>
+        <span class="comment">//     let newa = A(1u8);</span>
+        <span class="comment">//     newa.read(&amp;newa, &amp;key, &amp;mut buf, 0).await.unwrap();</span>
+
+        <span class="comment">//     let file = Arc::new(Chan {</span>
+        <span class="comment">//         key,</span>
+        <span class="comment">//         name: Vec::new(),</span>
+        <span class="comment">//         parent: Weak::new(),</span>
+        <span class="comment">//         inner: Mutex::new(ChanInner::default()),</span>
+        <span class="comment">//     });</span>
+
+        <span class="comment">//     file.read(&amp;mut buf, 0).await.unwrap();</span>
+        <span class="comment">//     assert_eq!(buf[0], 10);</span>
+        <span class="comment">//     file.close().await;</span>
+        <span class="comment">// })</span>
+        <span class="comment">// .unwrap();</span>
+        <span class="comment">// task::run_all();</span>
     }
 }
 </pre></div>

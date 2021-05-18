@@ -569,11 +569,14 @@
 <span id="566">566</span>
 <span id="567">567</span>
 <span id="568">568</span>
+<span id="569">569</span>
+<span id="570">570</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="doccomment">//! Log layer supporting transaction operations on blocks.</span>
 <span class="doccomment">//!</span>
 <span class="doccomment">//! The isolation level is Read Committed.</span>
 <span class="kw">use</span> <span class="kw">crate</span>::{
+    <span class="ident">block</span>::<span class="ident">BSIZE</span>,
     <span class="ident">cache</span>::{<span class="ident">CGuard</span>, <span class="ident">Cache</span>, <span class="ident">CacheData</span>},
     <span class="ident">cache_impl</span>, <span class="ident">from_bytes</span>,
 };
@@ -589,10 +592,6 @@
 
 <span class="kw">use</span> <span class="ident">alloc</span>::<span class="ident">boxed</span>::<span class="ident">Box</span>;
 <span class="kw">use</span> <span class="ident">static_assertions</span>::<span class="ident">const_assert_eq</span>;
-
-<span class="doccomment">/// Block size. The block device hardware should guarantee that write to a block is always atomic.</span>
-<span class="doccomment">/// That&#39;s, either all data in a single block is updated or not.</span>
-<span class="kw">pub</span> <span class="kw">const</span> <span class="ident">BSIZE</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="number">512</span>;
 
 <span class="doccomment">/// Maximum number of blocks to be trace by log.</span>
 <span class="doccomment">/// Note that the log layer use additional one block to store log header. Thus, the total number of</span>
@@ -660,7 +659,7 @@
 <span class="doccomment">/// Generic log layer with buffer cache.</span>
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Debug</span>)]</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">Log</span> {
-    <span class="ident">disk</span>: <span class="ident">Chan</span>,
+    <span class="ident">disk</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Chan</span><span class="op">&gt;</span>,
     <span class="ident">begin_cvar</span>: <span class="ident">Condvar</span>,
     <span class="ident">end_cvar</span>: <span class="ident">Condvar</span>,
     <span class="ident">bio</span>: <span class="ident">Spinlock</span><span class="op">&lt;</span><span class="ident">CacheData</span><span class="op">&lt;</span><span class="ident">usize</span>, <span class="ident">Box</span><span class="op">&lt;</span>[<span class="ident">u8</span>; <span class="ident">BSIZE</span>]<span class="op">&gt;</span><span class="op">&gt;</span><span class="op">&gt;</span>,
@@ -690,12 +689,13 @@
     <span class="doccomment">/// Create a buffer cache with maximum `nbuf` in-memory buffers.</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// Close the disk on error.</span>
-    <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">nbuf</span>: <span class="ident">usize</span>, <span class="ident">start</span>: <span class="ident">usize</span>, <span class="ident">disk</span>: <span class="ident">Chan</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">nbuf</span>: <span class="ident">usize</span>, <span class="ident">start</span>: <span class="ident">usize</span>, <span class="ident">disk</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Chan</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span> {
         <span class="macro">const_assert_eq</span><span class="macro">!</span>(<span class="ident">LOGSIZE</span> <span class="op">*</span> <span class="number">8</span> <span class="op">+</span> <span class="number">8</span>, <span class="ident">BSIZE</span>);
         <span class="macro">assert</span><span class="macro">!</span>(<span class="ident">nbuf</span> <span class="op">&gt;</span><span class="op">=</span> <span class="ident">NBUF</span>);
+
         <span class="kw">match</span> <span class="kw">async</span> {
-            <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">buf</span> <span class="op">=</span> [<span class="number">0u8</span>; <span class="ident">BSIZE</span>];
-            <span class="ident">disk</span>.<span class="ident">read</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">buf</span>, <span class="ident">start</span> <span class="op">*</span> <span class="ident">BSIZE</span>).<span class="kw">await</span><span class="question-mark">?</span>;
+            <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">buf</span> <span class="op">=</span> <span class="kw">unsafe</span> { <span class="ident">Box</span>::<span class="op">&lt;</span>[<span class="ident">u8</span>; <span class="ident">BSIZE</span>]<span class="op">&gt;</span>::<span class="ident">try_new_uninit</span>()<span class="question-mark">?</span>.<span class="ident">assume_init</span>() };
+            <span class="ident">disk</span>.<span class="ident">read</span>(<span class="ident">buf</span>.<span class="ident">as_mut</span>(), <span class="ident">start</span> <span class="op">*</span> <span class="ident">BSIZE</span>).<span class="kw">await</span><span class="question-mark">?</span>;
 
             <span class="kw">let</span> <span class="ident">log</span> <span class="op">=</span> <span class="ident">LogInner</span> {
                 <span class="ident">start</span>,
@@ -703,9 +703,13 @@
                 <span class="ident">ending</span>: <span class="number">0</span>,
                 <span class="ident">ender</span>: <span class="ident">LinkedList</span>::<span class="ident">new</span>(<span class="ident">NodeAdapter</span>::<span class="ident">new</span>()),
                 <span class="ident">state</span>: <span class="ident">LogState</span>::<span class="ident">Redo</span>,
-                <span class="ident">lh</span>: <span class="self">Self</span>::<span class="ident">read_head</span>(<span class="kw-2">&amp;</span><span class="ident">buf</span>)<span class="question-mark">?</span>,
+                <span class="ident">lh</span>: <span class="self">Self</span>::<span class="ident">read_head</span>(<span class="ident">buf</span>.<span class="ident">as_ref</span>())<span class="question-mark">?</span>,
             };
-            <span class="kw">let</span> <span class="ident">bio</span> <span class="op">=</span> <span class="self">Self</span>::<span class="ident">new_cache</span>(<span class="ident">nbuf</span>, <span class="op">|</span><span class="op">|</span> <span class="prelude-val">Ok</span>(<span class="ident">Box</span>::<span class="ident">try_new</span>([<span class="number">0u8</span>; <span class="ident">BSIZE</span>])<span class="question-mark">?</span>))<span class="question-mark">?</span>;
+
+            <span class="kw">let</span> <span class="ident">bio</span> <span class="op">=</span> <span class="self">Self</span>::<span class="ident">new_cache</span>(<span class="ident">nbuf</span>, <span class="op">|</span><span class="op">|</span> {
+                <span class="prelude-val">Ok</span>(<span class="kw">unsafe</span> { <span class="ident">Box</span>::<span class="op">&lt;</span>[<span class="ident">u8</span>; <span class="ident">BSIZE</span>]<span class="op">&gt;</span>::<span class="ident">try_new_uninit</span>()<span class="question-mark">?</span>.<span class="ident">assume_init</span>() })
+            })<span class="question-mark">?</span>;
+
             <span class="prelude-val">Ok</span>((<span class="ident">log</span>, <span class="ident">bio</span>))
         }
         .<span class="kw">await</span>
@@ -736,7 +740,7 @@
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">block</span> <span class="op">=</span> [<span class="number">0u64</span>; <span class="ident">LOGSIZE</span>];
 
         <span class="kw">if</span> <span class="ident">magic</span> <span class="op">!</span><span class="op">=</span> <span class="ident">LOGMAGIC</span> <span class="op">|</span><span class="op">|</span> <span class="ident">n</span> <span class="op">&gt;</span> <span class="ident">LOGSIZE</span> <span class="kw">as</span> <span class="ident">u32</span> {
-            <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error</span>::<span class="ident">InternalError</span>);
+            <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error</span>::<span class="ident">InternalError</span>(<span class="string">&quot;read invalid log head&quot;</span>));
         }
 
         <span class="kw">for</span> <span class="ident">i</span> <span class="kw">in</span> (<span class="number">8</span>..<span class="number">64</span>).<span class="ident">step_by</span>(<span class="number">8</span>) {
@@ -874,7 +878,7 @@
 
             <span class="kw">if</span> <span class="ident">failed</span> {
                 <span class="ident">drop</span>(<span class="ident">g</span>);
-                <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error</span>::<span class="ident">InternalError</span>);
+                <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error</span>::<span class="ident">InternalError</span>(<span class="string">&quot;redo failed&quot;</span>));
             }
             <span class="ident">log</span> <span class="op">=</span> <span class="ident">g</span>;
         }
@@ -1098,7 +1102,7 @@
         <span class="kw">let</span> <span class="ident">log_start</span> <span class="op">=</span> <span class="number">1000</span>;
         <span class="ident">ksched</span>::<span class="ident">task</span>::<span class="ident">spawn</span>(<span class="number">0</span>, <span class="kw">async</span> <span class="kw">move</span> {
             <span class="kw">let</span> <span class="ident">disk</span> <span class="op">=</span> <span class="ident">Arc</span>::<span class="ident">new</span>(<span class="ident">MemDisk</span>::<span class="ident">new</span>(<span class="number">1100</span> <span class="op">*</span> <span class="ident">BSIZE</span>));
-            <span class="kw">let</span> <span class="ident">disk_chan</span> <span class="op">=</span> <span class="ident">disk</span>.<span class="ident">attach</span>(<span class="string">b&quot;&quot;</span>).<span class="ident">unwrap</span>().<span class="kw">await</span>.<span class="ident">unwrap</span>();
+            <span class="kw">let</span> <span class="ident">disk_chan</span> <span class="op">=</span> <span class="ident">Chan</span>::<span class="ident">attach</span>(<span class="ident">disk</span>, <span class="string">b&quot;&quot;</span>).<span class="kw">await</span>.<span class="ident">unwrap</span>();
 
             <span class="comment">// Install magic.</span>
             <span class="ident">disk_chan</span>

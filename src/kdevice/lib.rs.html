@@ -27,6 +27,9 @@
 <span id="24">24</span>
 <span id="25">25</span>
 <span id="26">26</span>
+<span id="27">27</span>
+<span id="28">28</span>
+<span id="29">29</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="doccomment">//! Device driver model and file systems.</span>
 
@@ -34,14 +37,13 @@
 <span class="attribute">#![<span class="ident">no_std</span>]</span>
 <span class="attribute">#![<span class="ident">feature</span>(<span class="ident">allocator_api</span>)]</span>
 <span class="attribute">#![<span class="ident">feature</span>(<span class="ident">try_reserve</span>)]</span>
-<span class="attribute">#![<span class="ident">feature</span>(<span class="ident">const_fn</span>)]</span>
 <span class="attribute">#![<span class="ident">feature</span>(<span class="ident">box_into_pin</span>)]</span>
 <span class="attribute">#![<span class="ident">feature</span>(<span class="ident">generators</span>, <span class="ident">generator_trait</span>)]</span>
 <span class="attribute">#![<span class="ident">feature</span>(<span class="ident">generic_associated_types</span>)]</span>
-<span class="attribute">#![<span class="ident">feature</span>(<span class="ident">assoc_char_funcs</span>)]</span>
 <span class="attribute">#![<span class="ident">feature</span>(<span class="ident">type_alias_impl_trait</span>)]</span>
 <span class="attribute">#![<span class="ident">feature</span>(<span class="ident">concat_idents</span>)]</span>
-<span class="attribute">#![<span class="ident">feature</span>(<span class="ident">option_unwrap_none</span>)]</span>
+<span class="attribute">#![<span class="ident">feature</span>(<span class="ident">new_uninit</span>)]</span>
+<span class="attribute">#![<span class="ident">feature</span>(<span class="ident">const_fn</span>)]</span>
 
 <span class="kw">extern</span> <span class="kw">crate</span> <span class="ident">alloc</span>;
 
@@ -51,8 +53,12 @@
 <span class="kw">extern</span> <span class="kw">crate</span> <span class="ident">std</span>;
 
 <span class="kw">pub</span> <span class="kw">mod</span> <span class="ident">cache</span>;
-<span class="kw">pub</span> <span class="kw">mod</span> <span class="ident">fat</span>;
 <span class="kw">pub</span> <span class="kw">mod</span> <span class="ident">log</span>;
+
+<span class="kw">pub</span> <span class="kw">mod</span> <span class="ident">block</span>;
+<span class="kw">pub</span> <span class="kw">mod</span> <span class="ident">fat</span>;
+<span class="kw">pub</span> <span class="kw">mod</span> <span class="ident">root</span>;
+
 <span class="kw">mod</span> <span class="ident">utils</span>;
 </pre></div>
 </section><section id="search" class="content hidden"></section><section class="footer"></section><div id="rustdoc-vars" data-root-path="../../" data-current-crate="kdevice"></div>

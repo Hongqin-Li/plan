@@ -1,1 +1,1 @@
-initSidebarItems({"attr":[["async_trait_try",""]],"mod":[["chan","Channel."],["dev","Device driver."],["error","Common error types for kernel development."],["mnt","Mount space."],["utils","Simple util funtions."],["vm","Virtual memory tools."]]});
+initSidebarItems({"macro":[["from_bytes","Convert slice to uint."]],"mod":[["chan","Channel and mount space."],["dev","Device driver."],["error","Common error types for kernel development."],["utils","Simple util funtions."],["vm","Virtual memory tools."]]});
