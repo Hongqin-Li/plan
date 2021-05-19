@@ -263,23 +263,23 @@ fn cache_get1<T: Cache>(
     flush: bool,
 ) -> Result<Option<(bool, CNodePtr<T::Key, T::Value>)>> {
     let mut g = sel.cache_self().lock();
-    if let Some(ptr) = g.map.get(&key) {
-        let ptr = ptr.clone();
-        let u = unsafe { ptr.deref().inner.get().as_mut().unwrap() };
-        u.nref += 1;
-        debug_assert_ne!(u.state, CState::Empty);
-
-        // #[cfg(test)]
-        // println!("cache_get: key {:?}, nref: {}", u.key, u.nref);
-
-        drop(g);
-        return Ok(Some((false, ptr)));
-    }
 
     let CacheData {
         ref mut map,
         ref mut lru,
     } = g.deref_mut();
+
+    if let Some(ptr) = map.get(&key) {
+        let mut cur = unsafe { LinkedList::cursor_mut_from_ptr(lru, ptr.0) };
+        let node = cur.remove().unwrap();
+        let u = unsafe { node.inner.get().as_mut().unwrap() };
+        u.nref += 1;
+        debug_assert_ne!(u.state, CState::Empty);
+
+        lru.push_back(node);
+
+        return Ok(Some((false, ptr.clone())));
+    }
 
     let mut cur = lru.front_mut();
     while let Some(u) = cur.get() {
@@ -406,7 +406,7 @@ where
 {
     fn drop(&mut self) {
         let inner = unsafe { (*self.ptr.0).inner.get().as_mut().unwrap() };
-        let mut g = self.cache.cache_self().lock();
+        let g = self.cache.cache_self().lock();
         debug_assert_ne!(inner.nref, 0);
         debug_assert_ne!(inner.state, CState::Empty);
         // SAFETY: nref is guarded by cache.inner.
@@ -414,12 +414,6 @@ where
 
         // #[cfg(test)]
         // println!("cache_drop: key {:?}, nref: {}", inner.key, inner.nref);
-
-        if inner.nref == 0 {
-            let mut cur = unsafe { LinkedList::cursor_mut_from_ptr(&mut g.lru, self.ptr.0) };
-            let x = cur.remove().unwrap();
-            g.lru.push_back(x);
-        }
         drop(g);
     }
 }
