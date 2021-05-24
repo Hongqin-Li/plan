@@ -180,12 +180,10 @@ impl<const N: usize> Device for Blocks<N> {
                 return Ok(Some(dir.clone()));
             } else {
                 // Since devices and their partitions are opened exclusively.
-                return Err(Error::Conflict("open in block file"));
+                return Err(Error::Conflict("dup of block file"));
             }
-        } else if dir.ctype != ChanType::Dir {
-            return Ok(None);
         }
-
+        debug_assert_eq!(dir.ctype, ChanType::Dir);
         if let Some(create_dir) = create_dir {
             if !create_dir {
                 // Create a block device file by probing.
@@ -288,6 +286,10 @@ impl<const N: usize> Device for Blocks<N> {
         }
         g.part = None;
         Ok(true)
+    }
+
+    async fn truncate(&self, c: &ChanId, size: usize) -> Result<usize> {
+        Err(Error::BadRequest("resize file of devblock"))
     }
 
     async fn stat(&self, c: &ChanId) -> Result<Dirent> {

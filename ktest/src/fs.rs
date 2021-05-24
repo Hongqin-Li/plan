@@ -54,7 +54,7 @@ impl Device for FileDisk {
         Ok(ChanId {
             path: 0,
             version: 0,
-            ctype: ChanType::Dir,
+            ctype: ChanType::File,
         })
     }
 
@@ -97,6 +97,9 @@ impl Device for FileDisk {
         g.seek(SeekFrom::Start(off as u64)).unwrap();
         Ok(g.write(buf).unwrap())
     }
+    async fn truncate(&self, c: &ChanId, size: usize) -> Result<usize> {
+        todo!()
+    }
 }
 
 pub struct MemDisk {
@@ -126,7 +129,7 @@ impl Device for MemDisk {
         Ok(ChanId {
             path: 0,
             version: 0,
-            ctype: ChanType::Dir,
+            ctype: ChanType::File,
         })
     }
 
@@ -165,6 +168,10 @@ impl Device for MemDisk {
         let mut g = self.file.lock();
         g[off..off + buf.len()].copy_from_slice(buf);
         Ok(buf.len())
+    }
+
+    async fn truncate(&self, c: &ChanId, size: usize) -> Result<usize> {
+        todo!()
     }
 }
 

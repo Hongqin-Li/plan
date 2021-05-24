@@ -36,3 +36,21 @@ pub mod sync {
     pub use super::rwlock::{RwLock, RwLockReadGuard, RwLockUpgradableReadGuard, RwLockWriteGuard};
     pub use super::spinlock::{Spinlock, SpinlockGuard};
 }
+
+#[cfg(test)]
+pub mod tests {
+    use super::*;
+
+    pub fn run_multi(ncpu: usize) {
+        let mut threads = vec![];
+        for _ in 0..ncpu {
+            let t = std::thread::spawn(move || {
+                task::run_all();
+            });
+            threads.push(t);
+        }
+        for thread in threads {
+            thread.join().unwrap();
+        }
+    }
+}

@@ -15,8 +15,6 @@ Platform-agnostic operating system building blocks in Rust, inspired by <a href=
 
 <br/><br/>
 
-- [ ] Data structures
-  - [ ] Concurrent hash map: port [DashMap](https://github.com/xacrimon/dashmap)
 - [x] Memory management
   - [x] Multi buddy system
   - [x] Cached allocator(like slab)
@@ -27,7 +25,7 @@ Platform-agnostic operating system building blocks in Rust, inspired by <a href=
   - [x] O(1) priority scheduler: in fact, it's O(logP), where P is the maximum priority level. Inspired by [RT-Thread](https://github.com/RT-Thread/rt-thread)
   - [x] Mutex/Condvar/Rwlock: doc-test ported from [async-std](https://github.com/async-rs/async-std)
   - [x] IPC: mpsc, can be used to eliminate recusive await
-  - [ ] Test Mutex/Condvar/RwLock/mpsc
+  - [x] Test Mutex/Condvar/RwLock/mpsc
   - [ ] RT-Mutex
   - [ ] Online deadlock detection by wait-for graph: inspired by [parking-lot](https://github.com/Amanieu/parking_lot)
 - [x] Address space: inspired by [plan9](https://github.com/0intro/plan9)

@@ -107,24 +107,24 @@ impl<T> RwLock<T> {
     }
 }
 
-fn try_read(g: &mut RwLockInner) -> bool {
-    if g.state & 1 == 0 && g.waiting_writer == 0 {
+fn try_read(g: &mut RwLockInner, wait_writer: bool) -> bool {
+    if g.state & 1 == 0 && (!wait_writer || g.waiting_writer == 0) {
         g.state += ONE_READER;
         true
     } else {
         false
     }
 }
-fn try_upread(g: &mut RwLockInner) -> bool {
-    if g.state & 3 == 0 && g.waiting_writer == 0 {
+fn try_upread(g: &mut RwLockInner, wait_writer: bool) -> bool {
+    if g.state & 3 == 0 && (!wait_writer || g.waiting_writer == 0) {
         g.state |= 2;
         true
     } else {
         false
     }
 }
-fn try_write(g: &mut RwLockInner) -> bool {
-    if g.waiting_writer == 0 && g.state == 0 {
+fn try_write(g: &mut RwLockInner, wait_writer: bool) -> bool {
+    if g.state == 0 && (!wait_writer || g.waiting_writer == 0) {
         g.state |= 1;
         true
     } else {
@@ -141,7 +141,7 @@ impl<T: ?Sized> RwLock<T> {
     /// See also [read](`Self::read`)
     pub fn try_read(&self) -> Option<RwLockReadGuard<'_, T>> {
         let mut g = self.inner.lock();
-        if try_read(&mut g) {
+        if try_read(&mut g, true) {
             Some(RwLockReadGuard(self))
         } else {
             None
@@ -183,7 +183,7 @@ impl<T: ?Sized> RwLock<T> {
                 let mut g = self.lk.inner.lock();
                 if self.first {
                     self.first = false;
-                    if try_read(&mut g) {
+                    if try_read(&mut g, true) {
                         Poll::Ready(RwLockReadGuard(self.lk))
                     } else {
                         g.slpque.sleep(RwType::Reader, cx.waker().clone());
@@ -213,7 +213,7 @@ impl<T: ?Sized> RwLock<T> {
     /// See also [upgradable_read](`Self::upgradable_read`)
     pub fn try_upgradable_read(&self) -> Option<RwLockUpgradableReadGuard<'_, T>> {
         let mut g = self.inner.lock();
-        if try_upread(&mut g) {
+        if try_upread(&mut g, true) {
             Some(RwLockUpgradableReadGuard(self))
         } else {
             None
@@ -260,7 +260,7 @@ impl<T: ?Sized> RwLock<T> {
                 let mut g = self.lk.inner.lock();
                 if self.first {
                     self.first = false;
-                    if try_upread(&mut g) {
+                    if try_upread(&mut g, true) {
                         Poll::Ready(RwLockUpgradableReadGuard(self.lk))
                     } else {
                         g.slpque.sleep(RwType::UpgradableReader, cx.waker().clone());
@@ -287,7 +287,7 @@ impl<T: ?Sized> RwLock<T> {
     /// See also [write](`Self::write`)
     pub fn try_write(&self) -> Option<RwLockWriteGuard<'_, T>> {
         let mut g = self.inner.lock();
-        if try_write(&mut g) {
+        if try_write(&mut g, true) {
             Some(RwLockWriteGuard(self))
         } else {
             None
@@ -324,7 +324,7 @@ impl<T: ?Sized> RwLock<T> {
                 let mut g = self.lk.inner.lock();
                 if self.first {
                     self.first = false;
-                    if try_write(&mut g) {
+                    if try_write(&mut g, true) {
                         Poll::Ready(RwLockWriteGuard(self.lk))
                     } else {
                         g.slpque.sleep(RwType::Writer, cx.waker().clone());
@@ -405,15 +405,16 @@ unsafe impl<T: Sync + ?Sized> Sync for RwLockReadGuard<'_, T> {}
 fn extend_wake(g: &mut RwLockInner) {
     while let Some((t, w)) = g.slpque.que.pop_front() {
         let try_wake = match t {
-            RwType::Reader => try_read(g),
-            RwType::Writer => try_write(g)
+            RwType::Reader => try_read(g, false),
+            RwType::UpgradableReader => try_upread(g, false),
+            RwType::Writer => try_write(g, false)
                 .then(|| {
                     g.waiting_writer -= 1;
-                    true
                 })
                 .is_some(),
-            RwType::UpgradableReader => try_upread(g),
         };
+        #[cfg(test)]
+        println!("extend_wake: {:?}, try_wake {}", t, try_wake);
         if try_wake {
             w.wake()
         } else {
@@ -578,7 +579,7 @@ impl<'a, T: ?Sized> RwLockUpgradableReadGuard<'a, T> {
                     debug_assert_eq!(g.state & 1, 0);
                     debug_assert_eq!(g.state & 2, 2);
                     g.state -= 2;
-                    if try_write(&mut g) {
+                    if try_write(&mut g, false) {
                         Poll::Ready(RwLockWriteGuard(self.lk))
                     } else {
                         g.slpque.sleep_front(RwType::Writer, cx.waker().clone());
@@ -604,8 +605,7 @@ impl<'a, T: ?Sized> RwLockUpgradableReadGuard<'a, T> {
 impl<T: ?Sized> Drop for RwLockUpgradableReadGuard<'_, T> {
     fn drop(&mut self) {
         let mut g = self.0.inner.lock();
-        debug_assert_eq!(g.state & 1, 0);
-        debug_assert_eq!(g.state & 2, 2);
+        debug_assert_eq!(g.state & 3, 2);
         g.state -= 2;
         extend_wake(&mut g);
     }
@@ -628,17 +628,6 @@ impl<T: ?Sized> Deref for RwLockUpgradableReadGuard<'_, T> {
 
     fn deref(&self) -> &T {
         unsafe { &*self.0.value.get() }
-    }
-}
-
-struct RwLockWriteGuardInner<'a, T: ?Sized>(&'a RwLock<T>);
-
-impl<T: ?Sized> Drop for RwLockWriteGuardInner<'_, T> {
-    fn drop(&mut self) {
-        let mut g = self.0.inner.lock();
-        debug_assert_eq!(g.state, 1);
-        g.state = 0;
-        extend_wake(&mut g);
     }
 }
 
@@ -678,9 +667,9 @@ impl<'a, T: ?Sized> RwLockWriteGuard<'a, T> {
         extend_wake(&mut g);
         drop(g);
 
-        let ng = RwLockReadGuard(self.0);
+        let g = RwLockReadGuard(self.0);
         mem::forget(self);
-        ng
+        g
     }
 
     /// Downgrades into an upgradable reader guard.
@@ -715,9 +704,18 @@ impl<'a, T: ?Sized> RwLockWriteGuard<'a, T> {
         extend_wake(&mut g);
         drop(g);
 
-        let ng = RwLockUpgradableReadGuard(self.0);
+        let g = RwLockUpgradableReadGuard(self.0);
         mem::forget(self);
-        ng
+        g
+    }
+}
+
+impl<T: ?Sized> Drop for RwLockWriteGuard<'_, T> {
+    fn drop(&mut self) {
+        let mut g = self.0.inner.lock();
+        debug_assert_eq!(g.state, 1);
+        g.state = 0;
+        extend_wake(&mut g);
     }
 }
 
@@ -744,5 +742,108 @@ impl<T: ?Sized> Deref for RwLockWriteGuard<'_, T> {
 impl<T: ?Sized> DerefMut for RwLockWriteGuard<'_, T> {
     fn deref_mut(&mut self) -> &mut T {
         unsafe { &mut *self.0.value.get() }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tests::run_multi;
+    use crate::*;
+    use alloc::sync::Arc;
+
+    #[test]
+    fn test_readers() {
+        const N: usize = 100;
+        let x = Arc::new(RwLock::new(10usize));
+        for _ in 0..N {
+            let x = x.clone();
+            task::spawn(0, async move {
+                let g = x.read().await;
+                assert_eq!(*g, 10);
+            })
+            .unwrap();
+        }
+        run_multi(10);
+    }
+
+    #[test]
+    fn test_writers() {
+        const N: usize = 100;
+        let x = Arc::new(RwLock::new(0usize));
+        for _ in 0..N {
+            let x = x.clone();
+            task::spawn(0, async move {
+                let mut g = x.write().await;
+                *g += 1;
+                println!("{}", *g);
+            })
+            .unwrap();
+        }
+        run_multi(10);
+        task::spawn(0, async move {
+            let g = x.read().await;
+            assert_eq!(*g, N);
+        })
+        .unwrap();
+        run_multi(1);
+    }
+
+    #[test]
+    fn test_readwrite() {
+        const N: usize = 100;
+        let x = Arc::new(RwLock::new(0usize));
+        for _ in 0..N {
+            let x = x.clone();
+            let x2 = x.clone();
+            task::spawn(0, async move {
+                let mut g = x.write().await;
+                *g += 1;
+            })
+            .unwrap();
+            task::spawn(0, async move {
+                let g = x2.read().await;
+                assert!(*g >= 1);
+            })
+            .unwrap();
+        }
+        run_multi(10);
+
+        task::spawn(0, async move {
+            let g = x.read().await;
+            assert_eq!(*g, N);
+        })
+        .unwrap();
+        run_multi(1);
+    }
+
+    #[test]
+    fn test_upgradable_read() {
+        const N: usize = 100;
+        let x = Arc::new(RwLock::new(0usize));
+        for _ in 0..N {
+            let x = x.clone();
+            let x2 = x.clone();
+            task::spawn(0, async move {
+                let mut g = x.write().await;
+                *g += 1;
+            })
+            .unwrap();
+
+            task::spawn(0, async move {
+                let g = x2.upgradable_read().await;
+                let mut g = g.upgrade().await;
+                *g += 1;
+            })
+            .unwrap();
+        }
+
+        run_multi(10);
+        task::spawn(0, async move {
+            let g = x.read().await;
+            assert_eq!(*g, 2 * N);
+        })
+        .unwrap();
+        run_multi(1);
     }
 }

@@ -234,6 +234,53 @@ impl Device for FAT {
         can_remove
     }
 
+    async fn truncate(&self, c: &ChanId, size: usize) -> Result<usize> {
+        let ip = self.to_inode(c.path);
+
+        if ip.key().is_dir() {
+            return Err(Error::BadRequest("resize dir"));
+        }
+
+        // Each resize of step will modify at most resv blocks (1 SFN + 2 FAT).
+        // let resv = 1 + 5 + 1;
+        let step = (self.meta.bps * self.meta.spc * (MAXOPBLOCKS - 2)) as u32;
+        let size: u32 = size.try_into().unwrap_or(u32::MAX);
+        loop {
+            self.log.begin_op().await?;
+            let mut g = ip.lock().await.unwrap();
+
+            let result = self
+                .resize(&mut g, |old| {
+                    if old <= size {
+                        old
+                    } else {
+                        max(old.checked_sub(step).unwrap_or(size), size)
+                    }
+                })
+                .await;
+            if result.is_err() {
+                g.addr.clear();
+            }
+
+            g.unlock(false).await.unwrap();
+            let op = self.log.end_op(result.is_err(), true).await;
+
+            if !op.committed {
+                // Won't block since we have acquired log's lock in op.
+                let mut g = ip.lock().await.unwrap();
+                g.addr.clear();
+                g.unlock(false).await.unwrap();
+                drop(op);
+                return Err(Error::InternalError("rollback"));
+            }
+
+            let newsz = result?;
+            if newsz <= size {
+                return Ok(newsz as usize);
+            }
+        }
+    }
+
     async fn stat(&self, c: &ChanId) -> Result<Dirent> {
         let ip = self.to_inode(c.path);
         let g = ip.lock().await?;

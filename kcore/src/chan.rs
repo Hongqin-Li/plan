@@ -4,7 +4,10 @@ use alloc::sync::Weak;
 use alloc::vec::Vec;
 use core::{cmp::min, convert::TryFrom, fmt::Debug, iter, mem::MaybeUninit, str};
 use kalloc::wrapper::vec_push;
-use ksched::{sync::Mutex, task::yield_now};
+use ksched::{
+    sync::{Mutex, RwLock},
+    task::yield_now,
+};
 
 use alloc::sync::Arc;
 
@@ -92,6 +95,16 @@ impl ChanKey {
         }
     }
 
+    /// SAFETY: Your need to guarantee that the original key won't dropped
+    /// when borrowed.
+    unsafe fn borrow(&self) -> Self {
+        Self {
+            dev: self.dev.clone(),
+            id: self.id,
+            dropped: true,
+        }
+    }
+
     /// FIXME: pre-allocate the future on creation.
     async fn close(mut self) {
         self.dropped = true;
@@ -141,7 +154,7 @@ pub struct Chan {
     name: Vec<u8>,
 
     /// Inner mutable data.
-    inner: Mutex<ChanInner>,
+    inner: RwLock<ChanInner>,
 }
 
 impl Chan {
@@ -172,7 +185,7 @@ impl Chan {
     unsafe fn from_key(key: ChanKey, mut a: Arc<MaybeUninit<Chan>>) -> Arc<Self> {
         Arc::get_mut_unchecked(&mut a).as_mut_ptr().write(Self {
             parent: None,
-            inner: Mutex::new(ChanInner::default()),
+            inner: RwLock::new(ChanInner::default()),
             key,
             name: Vec::new(),
         });
@@ -194,14 +207,32 @@ impl Chan {
         )
     }
 
-    /// Mount file `old` to this chan.
+    /// Mount directory to this chan.
     pub async fn mount(&self, old: &Arc<Self>) -> Result<()> {
-        let mut g = self.inner.lock().await;
-        if let Err(e) = g.umnt.try_reserve(1) {
-            return Err(e.into());
+        if !(self.is_dir() && old.is_dir()) {
+            return Err(Error::BadRequest("cannot mount file"));
         }
+        let mut g = self.inner.write().await;
+        g.umnt.try_reserve(1)?;
         let key = old.rekey().await?;
         Ok(g.umnt.push(key))
+    }
+
+    /// Bind file to this chan.
+    pub async fn bind(&self, old: &Arc<Self>) -> Result<()> {
+        if self.is_dir() || old.is_dir() {
+            return Err(Error::BadRequest("cannot bind dir"));
+        }
+        let mut g = self.inner.write().await;
+        if g.umnt.is_empty() {
+            g.umnt.try_reserve(1)?;
+        }
+        let key = old.rekey().await?;
+        if let Some(key) = g.umnt.pop() {
+            key.close().await;
+        }
+        g.umnt.push(key);
+        Ok(())
     }
 
     /// Caller should guarantee `name` is non-empty.
@@ -211,8 +242,11 @@ impl Chan {
         create_dir: Option<bool>,
     ) -> Result<Option<Arc<Chan>>> {
         debug_assert_eq!(name.is_empty(), false);
+        if !self.is_dir() {
+            return Ok(None);
+        }
 
-        let mut g = self.inner.lock().await;
+        let mut g = self.inner.write().await;
         for u in g.child.iter() {
             let u = u.upgrade().unwrap();
             if u.name == name {
@@ -229,14 +263,15 @@ impl Chan {
         let mut a = Arc::<Self>::try_new_uninit()?;
 
         let mut some_chan = None;
-        for ck in iter::once(&self.key).chain(g.umnt.iter()) {
-            if let Some(id) = ck.dev.open(&ck.id, name, create_dir)?.await? {
+        for key in iter::once(&self.key).chain(g.umnt.iter()) {
+            debug_assert_eq!(key.id.ctype, ChanType::Dir);
+            if let Some(id) = key.dev.open(&key.id, name, create_dir)?.await? {
                 let u = unsafe {
                     Arc::get_mut_unchecked(&mut a).as_mut_ptr().write(Self {
                         parent: Some(self.clone()),
-                        inner: Mutex::new(ChanInner::default()),
+                        inner: RwLock::new(ChanInner::default()),
                         key: ChanKey {
-                            dev: ck.dev.clone(),
+                            dev: key.dev.clone(),
                             id,
                             dropped: false,
                         },
@@ -303,9 +338,9 @@ impl Chan {
     async fn close1(u: Arc<Self>) -> Option<Arc<Self>> {
         let fa = &u.parent;
 
-        let mut ug = u.inner.lock().await;
+        let mut ug = u.inner.write().await;
         let mut fg = if let Some(fa) = fa {
-            Some(fa.inner.lock().await)
+            Some(fa.inner.write().await)
         } else {
             None
         };
@@ -353,29 +388,67 @@ impl Chan {
         self.clone()
     }
 
+    /// Check if this chan is directory.
+    /// Chans in umnt are of same type of itself.
+    pub fn is_dir(&self) -> bool {
+        self.key.id.ctype == ChanType::Dir
+    }
+
     /// Remove wrapper.
     pub async fn remove(&self) -> Result<bool> {
         self.key.dev.remove(&self.key.id)?.await
     }
+
     /// Stat wrapper.
     pub async fn stat(&self) -> Result<Dirent> {
         self.key.dev.stat(&self.key.id)?.await
     }
+
     /// Wstat wrapper.
     pub async fn wstat(&self, dirent: &Dirent) -> Result<()> {
-        self.key.dev.wstat(&self.key.id, dirent)?.await
+        todo!();
+        // self.key.dev.wstat(&self.key.id, dirent)?.await
     }
+
     /// Read wrapper.
     pub async fn read(&self, buf: &mut [u8], off: usize) -> Result<usize> {
+        if self.is_dir() {
+            return Err(Error::BadRequest("read dir"));
+        }
         off.checked_add(buf.len())
             .ok_or(Error::BadRequest("read buffer len overflow"))?;
-        self.key.dev.read(&self.key.id, buf, off)?.await
+
+        let g = self.inner.read().await;
+        let key = g.umnt.first().unwrap_or(&self.key);
+        let ret = key.dev.read(&key.id, buf, off)?.await;
+        drop(g);
+        ret
     }
     /// Write wrapper.
     pub async fn write(&self, buf: &[u8], off: usize) -> Result<usize> {
+        if self.is_dir() {
+            return Err(Error::BadRequest("write dir"));
+        }
         off.checked_add(buf.len())
             .ok_or(Error::BadRequest("write buffer len overflow"))?;
-        self.key.dev.write(&self.key.id, buf, off)?.await
+
+        let g = self.inner.read().await;
+        let key = g.umnt.first().unwrap_or(&self.key);
+        let ret = key.dev.write(&key.id, buf, off)?.await;
+        drop(g);
+        ret
+    }
+
+    /// Truncate wrapper.
+    pub async fn truncate(&self, size: usize) -> Result<usize> {
+        if self.is_dir() {
+            return Err(Error::BadRequest("truncate dir"));
+        }
+        let g = self.inner.read().await;
+        let key = g.umnt.first().unwrap_or(&self.key);
+        let ret = key.dev.truncate(&key.id, size)?.await;
+        drop(g);
+        ret
     }
 }
 

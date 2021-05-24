@@ -54,7 +54,7 @@ pub trait Device {
     /// If `name` is empty, ignore other parameters and reopen the file itself(same as dup).
     /// The reopen operation returns either an error or some chan id(but not [None]).
     ///
-    /// If `dir` is not a directory, return [None].
+    /// `dir` is guaranteed to be a directory if `name` is not empty.
     ///
     /// If `create_dir` is [None], this operation is a normal open. Return [None] if not found.
     ///
@@ -97,6 +97,16 @@ pub trait Device {
     ///
     /// Return the number of bytes writed.
     async fn write(&self, c: &ChanId, buf: &[u8], off: usize) -> Result<usize>;
+    /// Reduce the size of a file.
+    ///
+    /// If the file previously was larger than or equal to this size, the extra data is lost.
+    /// Otherwise, do nothing.
+    ///
+    /// Return the new size, which may or may not be equal to the expected size.
+    ///
+    /// NOTE: truncate with infinite size can be used to retrieve the size of the file.
+    /// Why not resize? Since resize by write can better handle initial bytes.
+    async fn truncate(&self, c: &ChanId, size: usize) -> Result<usize>;
 }
 
 #[cfg(test)]
@@ -137,6 +147,9 @@ mod tests {
         async fn close(&self, c: ChanId) {}
         async fn remove(&self, c: &ChanId) -> Result<bool> {
             todo!()
+        }
+        async fn truncate(&self, c: &ChanId, size: usize) -> Result<usize> {
+            todo!();
         }
 
         async fn stat(&self, c: &ChanId) -> Result<Dirent> {

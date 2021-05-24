@@ -44,9 +44,10 @@ impl Device for Root {
             Ok(Some(dir.clone()))
         } else if create_dir.is_some() {
             Err(Error::BadRequest("create in devroot"))
-        } else if dir.ctype == ChanType::File {
+        } else if dir.path != 0 {
             Ok(None)
         } else {
+            debug_assert_eq!(dir.ctype, ChanType::Dir);
             debug_assert_eq!(dir.path, 0);
             Ok(ROOT_DIRS
                 .iter()
@@ -67,6 +68,10 @@ impl Device for Root {
         Err(Error::BadRequest("remove file of devroot"))
     }
 
+    async fn truncate(&self, c: &ChanId, size: usize) -> Result<usize> {
+        Err(Error::BadRequest("truncate file of devroot"))
+    }
+
     async fn stat(&self, c: &ChanId) -> Result<Dirent> {
         todo!()
     }
@@ -80,7 +85,7 @@ impl Device for Root {
     }
 
     async fn write(&self, c: &ChanId, buf: &[u8], off: usize) -> Result<usize> {
-        Err(Error::BadRequest("write file of devroot"))
+        unreachable!()
     }
 }
 
@@ -123,6 +128,8 @@ mod tests {
             // Mount fs to root.
             let fs_root = Chan::attach(fs.clone(), b"").await.unwrap();
             root.mount(&fs_root).await.unwrap();
+            // Cannot bind to directory.
+            assert_eq!(root.bind(&fs_root).await.is_err(), true);
             fs_root.close().await;
 
             // Can open file in mounted fs.
