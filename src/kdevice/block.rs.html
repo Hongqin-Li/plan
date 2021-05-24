@@ -379,6 +379,8 @@
 <span id="376">376</span>
 <span id="377">377</span>
 <span id="378">378</span>
+<span id="379">379</span>
+<span id="380">380</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="doccomment">//! Block device driver.</span>
 
@@ -562,12 +564,10 @@
                 <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="prelude-val">Some</span>(<span class="ident">dir</span>.<span class="ident">clone</span>()));
             } <span class="kw">else</span> {
                 <span class="comment">// Since devices and their partitions are opened exclusively.</span>
-                <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error</span>::<span class="ident">Conflict</span>(<span class="string">&quot;open in block file&quot;</span>));
+                <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error</span>::<span class="ident">Conflict</span>(<span class="string">&quot;dup of block file&quot;</span>));
             }
-        } <span class="kw">else</span> <span class="kw">if</span> <span class="ident">dir</span>.<span class="ident">ctype</span> <span class="op">!</span><span class="op">=</span> <span class="ident">ChanType</span>::<span class="ident">Dir</span> {
-            <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="prelude-val">None</span>);
         }
-
+        <span class="macro">debug_assert_eq</span><span class="macro">!</span>(<span class="ident">dir</span>.<span class="ident">ctype</span>, <span class="ident">ChanType</span>::<span class="ident">Dir</span>);
         <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">create_dir</span>) <span class="op">=</span> <span class="ident">create_dir</span> {
             <span class="kw">if</span> <span class="op">!</span><span class="ident">create_dir</span> {
                 <span class="comment">// Create a block device file by probing.</span>
@@ -670,6 +670,10 @@
         }
         <span class="ident">g</span>.<span class="ident">part</span> <span class="op">=</span> <span class="prelude-val">None</span>;
         <span class="prelude-val">Ok</span>(<span class="bool-val">true</span>)
+    }
+
+    <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">truncate</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">c</span>: <span class="kw-2">&amp;</span><span class="ident">ChanId</span>, <span class="ident">size</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span> {
+        <span class="prelude-val">Err</span>(<span class="ident">Error</span>::<span class="ident">BadRequest</span>(<span class="string">&quot;resize file of devblock&quot;</span>))
     }
 
     <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">stat</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">c</span>: <span class="kw-2">&amp;</span><span class="ident">ChanId</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Dirent</span><span class="op">&gt;</span> {

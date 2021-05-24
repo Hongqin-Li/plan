@@ -462,6 +462,79 @@
 <span id="459">459</span>
 <span id="460">460</span>
 <span id="461">461</span>
+<span id="462">462</span>
+<span id="463">463</span>
+<span id="464">464</span>
+<span id="465">465</span>
+<span id="466">466</span>
+<span id="467">467</span>
+<span id="468">468</span>
+<span id="469">469</span>
+<span id="470">470</span>
+<span id="471">471</span>
+<span id="472">472</span>
+<span id="473">473</span>
+<span id="474">474</span>
+<span id="475">475</span>
+<span id="476">476</span>
+<span id="477">477</span>
+<span id="478">478</span>
+<span id="479">479</span>
+<span id="480">480</span>
+<span id="481">481</span>
+<span id="482">482</span>
+<span id="483">483</span>
+<span id="484">484</span>
+<span id="485">485</span>
+<span id="486">486</span>
+<span id="487">487</span>
+<span id="488">488</span>
+<span id="489">489</span>
+<span id="490">490</span>
+<span id="491">491</span>
+<span id="492">492</span>
+<span id="493">493</span>
+<span id="494">494</span>
+<span id="495">495</span>
+<span id="496">496</span>
+<span id="497">497</span>
+<span id="498">498</span>
+<span id="499">499</span>
+<span id="500">500</span>
+<span id="501">501</span>
+<span id="502">502</span>
+<span id="503">503</span>
+<span id="504">504</span>
+<span id="505">505</span>
+<span id="506">506</span>
+<span id="507">507</span>
+<span id="508">508</span>
+<span id="509">509</span>
+<span id="510">510</span>
+<span id="511">511</span>
+<span id="512">512</span>
+<span id="513">513</span>
+<span id="514">514</span>
+<span id="515">515</span>
+<span id="516">516</span>
+<span id="517">517</span>
+<span id="518">518</span>
+<span id="519">519</span>
+<span id="520">520</span>
+<span id="521">521</span>
+<span id="522">522</span>
+<span id="523">523</span>
+<span id="524">524</span>
+<span id="525">525</span>
+<span id="526">526</span>
+<span id="527">527</span>
+<span id="528">528</span>
+<span id="529">529</span>
+<span id="530">530</span>
+<span id="531">531</span>
+<span id="532">532</span>
+<span id="533">533</span>
+<span id="534">534</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="doccomment">//! Channel and mount space.</span>
 
@@ -469,7 +542,10 @@
 <span class="kw">use</span> <span class="ident">alloc</span>::<span class="ident">vec</span>::<span class="ident">Vec</span>;
 <span class="kw">use</span> <span class="ident">core</span>::{<span class="ident">cmp</span>::<span class="ident">min</span>, <span class="ident">convert</span>::<span class="ident">TryFrom</span>, <span class="ident">fmt</span>::<span class="ident">Debug</span>, <span class="ident">iter</span>, <span class="ident">mem</span>::<span class="ident">MaybeUninit</span>, <span class="ident">str</span>};
 <span class="kw">use</span> <span class="ident">kalloc</span>::<span class="ident">wrapper</span>::<span class="ident">vec_push</span>;
-<span class="kw">use</span> <span class="ident">ksched</span>::{<span class="ident">sync</span>::<span class="ident">Mutex</span>, <span class="ident">task</span>::<span class="ident">yield_now</span>};
+<span class="kw">use</span> <span class="ident">ksched</span>::{
+    <span class="ident">sync</span>::{<span class="ident">Mutex</span>, <span class="ident">RwLock</span>},
+    <span class="ident">task</span>::<span class="ident">yield_now</span>,
+};
 
 <span class="kw">use</span> <span class="ident">alloc</span>::<span class="ident">sync</span>::<span class="ident">Arc</span>;
 
@@ -557,6 +633,16 @@
         }
     }
 
+    <span class="doccomment">/// SAFETY: Your need to guarantee that the original key won&#39;t dropped</span>
+    <span class="doccomment">/// when borrowed.</span>
+    <span class="kw">unsafe</span> <span class="kw">fn</span> <span class="ident">borrow</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
+        <span class="self">Self</span> {
+            <span class="ident">dev</span>: <span class="self">self</span>.<span class="ident">dev</span>.<span class="ident">clone</span>(),
+            <span class="ident">id</span>: <span class="self">self</span>.<span class="ident">id</span>,
+            <span class="ident">dropped</span>: <span class="bool-val">true</span>,
+        }
+    }
+
     <span class="doccomment">/// FIXME: pre-allocate the future on creation.</span>
     <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">close</span>(<span class="kw-2">mut</span> <span class="self">self</span>) {
         <span class="self">self</span>.<span class="ident">dropped</span> <span class="op">=</span> <span class="bool-val">true</span>;
@@ -606,7 +692,7 @@
     <span class="ident">name</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>,
 
     <span class="doccomment">/// Inner mutable data.</span>
-    <span class="ident">inner</span>: <span class="ident">Mutex</span><span class="op">&lt;</span><span class="ident">ChanInner</span><span class="op">&gt;</span>,
+    <span class="ident">inner</span>: <span class="ident">RwLock</span><span class="op">&lt;</span><span class="ident">ChanInner</span><span class="op">&gt;</span>,
 }
 
 <span class="kw">impl</span> <span class="ident">Chan</span> {
@@ -637,7 +723,7 @@
     <span class="kw">unsafe</span> <span class="kw">fn</span> <span class="ident">from_key</span>(<span class="ident">key</span>: <span class="ident">ChanKey</span>, <span class="kw-2">mut</span> <span class="ident">a</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">MaybeUninit</span><span class="op">&lt;</span><span class="ident">Chan</span><span class="op">&gt;</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span> {
         <span class="ident">Arc</span>::<span class="ident">get_mut_unchecked</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">a</span>).<span class="ident">as_mut_ptr</span>().<span class="ident">write</span>(<span class="self">Self</span> {
             <span class="ident">parent</span>: <span class="prelude-val">None</span>,
-            <span class="ident">inner</span>: <span class="ident">Mutex</span>::<span class="ident">new</span>(<span class="ident">ChanInner</span>::<span class="ident">default</span>()),
+            <span class="ident">inner</span>: <span class="ident">RwLock</span>::<span class="ident">new</span>(<span class="ident">ChanInner</span>::<span class="ident">default</span>()),
             <span class="ident">key</span>,
             <span class="ident">name</span>: <span class="ident">Vec</span>::<span class="ident">new</span>(),
         });
@@ -659,14 +745,32 @@
         )
     }
 
-    <span class="doccomment">/// Mount file `old` to this chan.</span>
+    <span class="doccomment">/// Mount directory to this chan.</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">mount</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">old</span>: <span class="kw-2">&amp;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>()<span class="op">&gt;</span> {
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">g</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="kw">await</span>;
-        <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Err</span>(<span class="ident">e</span>) <span class="op">=</span> <span class="ident">g</span>.<span class="ident">umnt</span>.<span class="ident">try_reserve</span>(<span class="number">1</span>) {
-            <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">e</span>.<span class="ident">into</span>());
+        <span class="kw">if</span> <span class="op">!</span>(<span class="self">self</span>.<span class="ident">is_dir</span>() <span class="op">&amp;&amp;</span> <span class="ident">old</span>.<span class="ident">is_dir</span>()) {
+            <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error</span>::<span class="ident">BadRequest</span>(<span class="string">&quot;cannot mount file&quot;</span>));
         }
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">g</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">write</span>().<span class="kw">await</span>;
+        <span class="ident">g</span>.<span class="ident">umnt</span>.<span class="ident">try_reserve</span>(<span class="number">1</span>)<span class="question-mark">?</span>;
         <span class="kw">let</span> <span class="ident">key</span> <span class="op">=</span> <span class="ident">old</span>.<span class="ident">rekey</span>().<span class="kw">await</span><span class="question-mark">?</span>;
         <span class="prelude-val">Ok</span>(<span class="ident">g</span>.<span class="ident">umnt</span>.<span class="ident">push</span>(<span class="ident">key</span>))
+    }
+
+    <span class="doccomment">/// Bind file to this chan.</span>
+    <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">bind</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">old</span>: <span class="kw-2">&amp;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>()<span class="op">&gt;</span> {
+        <span class="kw">if</span> <span class="self">self</span>.<span class="ident">is_dir</span>() <span class="op">|</span><span class="op">|</span> <span class="ident">old</span>.<span class="ident">is_dir</span>() {
+            <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error</span>::<span class="ident">BadRequest</span>(<span class="string">&quot;cannot bind dir&quot;</span>));
+        }
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">g</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">write</span>().<span class="kw">await</span>;
+        <span class="kw">if</span> <span class="ident">g</span>.<span class="ident">umnt</span>.<span class="ident">is_empty</span>() {
+            <span class="ident">g</span>.<span class="ident">umnt</span>.<span class="ident">try_reserve</span>(<span class="number">1</span>)<span class="question-mark">?</span>;
+        }
+        <span class="kw">let</span> <span class="ident">key</span> <span class="op">=</span> <span class="ident">old</span>.<span class="ident">rekey</span>().<span class="kw">await</span><span class="question-mark">?</span>;
+        <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">key</span>) <span class="op">=</span> <span class="ident">g</span>.<span class="ident">umnt</span>.<span class="ident">pop</span>() {
+            <span class="ident">key</span>.<span class="ident">close</span>().<span class="kw">await</span>;
+        }
+        <span class="ident">g</span>.<span class="ident">umnt</span>.<span class="ident">push</span>(<span class="ident">key</span>);
+        <span class="prelude-val">Ok</span>(())
     }
 
     <span class="doccomment">/// Caller should guarantee `name` is non-empty.</span>
@@ -676,8 +780,11 @@
         <span class="ident">create_dir</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">bool</span><span class="op">&gt;</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Chan</span><span class="op">&gt;</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="macro">debug_assert_eq</span><span class="macro">!</span>(<span class="ident">name</span>.<span class="ident">is_empty</span>(), <span class="bool-val">false</span>);
+        <span class="kw">if</span> <span class="op">!</span><span class="self">self</span>.<span class="ident">is_dir</span>() {
+            <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="prelude-val">None</span>);
+        }
 
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">g</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="kw">await</span>;
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">g</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">write</span>().<span class="kw">await</span>;
         <span class="kw">for</span> <span class="ident">u</span> <span class="kw">in</span> <span class="ident">g</span>.<span class="ident">child</span>.<span class="ident">iter</span>() {
             <span class="kw">let</span> <span class="ident">u</span> <span class="op">=</span> <span class="ident">u</span>.<span class="ident">upgrade</span>().<span class="ident">unwrap</span>();
             <span class="kw">if</span> <span class="ident">u</span>.<span class="ident">name</span> <span class="op">=</span><span class="op">=</span> <span class="ident">name</span> {
@@ -694,14 +801,15 @@
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">a</span> <span class="op">=</span> <span class="ident">Arc</span>::<span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span>::<span class="ident">try_new_uninit</span>()<span class="question-mark">?</span>;
 
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">some_chan</span> <span class="op">=</span> <span class="prelude-val">None</span>;
-        <span class="kw">for</span> <span class="ident">ck</span> <span class="kw">in</span> <span class="ident">iter</span>::<span class="ident">once</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">key</span>).<span class="ident">chain</span>(<span class="ident">g</span>.<span class="ident">umnt</span>.<span class="ident">iter</span>()) {
-            <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">id</span>) <span class="op">=</span> <span class="ident">ck</span>.<span class="ident">dev</span>.<span class="ident">open</span>(<span class="kw-2">&amp;</span><span class="ident">ck</span>.<span class="ident">id</span>, <span class="ident">name</span>, <span class="ident">create_dir</span>)<span class="question-mark">?</span>.<span class="kw">await</span><span class="question-mark">?</span> {
+        <span class="kw">for</span> <span class="ident">key</span> <span class="kw">in</span> <span class="ident">iter</span>::<span class="ident">once</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">key</span>).<span class="ident">chain</span>(<span class="ident">g</span>.<span class="ident">umnt</span>.<span class="ident">iter</span>()) {
+            <span class="macro">debug_assert_eq</span><span class="macro">!</span>(<span class="ident">key</span>.<span class="ident">id</span>.<span class="ident">ctype</span>, <span class="ident">ChanType</span>::<span class="ident">Dir</span>);
+            <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">id</span>) <span class="op">=</span> <span class="ident">key</span>.<span class="ident">dev</span>.<span class="ident">open</span>(<span class="kw-2">&amp;</span><span class="ident">key</span>.<span class="ident">id</span>, <span class="ident">name</span>, <span class="ident">create_dir</span>)<span class="question-mark">?</span>.<span class="kw">await</span><span class="question-mark">?</span> {
                 <span class="kw">let</span> <span class="ident">u</span> <span class="op">=</span> <span class="kw">unsafe</span> {
                     <span class="ident">Arc</span>::<span class="ident">get_mut_unchecked</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">a</span>).<span class="ident">as_mut_ptr</span>().<span class="ident">write</span>(<span class="self">Self</span> {
                         <span class="ident">parent</span>: <span class="prelude-val">Some</span>(<span class="self">self</span>.<span class="ident">clone</span>()),
-                        <span class="ident">inner</span>: <span class="ident">Mutex</span>::<span class="ident">new</span>(<span class="ident">ChanInner</span>::<span class="ident">default</span>()),
+                        <span class="ident">inner</span>: <span class="ident">RwLock</span>::<span class="ident">new</span>(<span class="ident">ChanInner</span>::<span class="ident">default</span>()),
                         <span class="ident">key</span>: <span class="ident">ChanKey</span> {
-                            <span class="ident">dev</span>: <span class="ident">ck</span>.<span class="ident">dev</span>.<span class="ident">clone</span>(),
+                            <span class="ident">dev</span>: <span class="ident">key</span>.<span class="ident">dev</span>.<span class="ident">clone</span>(),
                             <span class="ident">id</span>,
                             <span class="ident">dropped</span>: <span class="bool-val">false</span>,
                         },
@@ -768,9 +876,9 @@
     <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">close1</span>(<span class="ident">u</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">fa</span> <span class="op">=</span> <span class="kw-2">&amp;</span><span class="ident">u</span>.<span class="ident">parent</span>;
 
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">ug</span> <span class="op">=</span> <span class="ident">u</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="kw">await</span>;
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">ug</span> <span class="op">=</span> <span class="ident">u</span>.<span class="ident">inner</span>.<span class="ident">write</span>().<span class="kw">await</span>;
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">fg</span> <span class="op">=</span> <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">fa</span>) <span class="op">=</span> <span class="ident">fa</span> {
-            <span class="prelude-val">Some</span>(<span class="ident">fa</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="kw">await</span>)
+            <span class="prelude-val">Some</span>(<span class="ident">fa</span>.<span class="ident">inner</span>.<span class="ident">write</span>().<span class="kw">await</span>)
         } <span class="kw">else</span> {
             <span class="prelude-val">None</span>
         };
@@ -818,29 +926,67 @@
         <span class="self">self</span>.<span class="ident">clone</span>()
     }
 
+    <span class="doccomment">/// Check if this chan is directory.</span>
+    <span class="doccomment">/// Chans in umnt are of same type of itself.</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">is_dir</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
+        <span class="self">self</span>.<span class="ident">key</span>.<span class="ident">id</span>.<span class="ident">ctype</span> <span class="op">=</span><span class="op">=</span> <span class="ident">ChanType</span>::<span class="ident">Dir</span>
+    }
+
     <span class="doccomment">/// Remove wrapper.</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">remove</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">bool</span><span class="op">&gt;</span> {
         <span class="self">self</span>.<span class="ident">key</span>.<span class="ident">dev</span>.<span class="ident">remove</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">key</span>.<span class="ident">id</span>)<span class="question-mark">?</span>.<span class="kw">await</span>
     }
+
     <span class="doccomment">/// Stat wrapper.</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">stat</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Dirent</span><span class="op">&gt;</span> {
         <span class="self">self</span>.<span class="ident">key</span>.<span class="ident">dev</span>.<span class="ident">stat</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">key</span>.<span class="ident">id</span>)<span class="question-mark">?</span>.<span class="kw">await</span>
     }
+
     <span class="doccomment">/// Wstat wrapper.</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">wstat</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">dirent</span>: <span class="kw-2">&amp;</span><span class="ident">Dirent</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>()<span class="op">&gt;</span> {
-        <span class="self">self</span>.<span class="ident">key</span>.<span class="ident">dev</span>.<span class="ident">wstat</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">key</span>.<span class="ident">id</span>, <span class="ident">dirent</span>)<span class="question-mark">?</span>.<span class="kw">await</span>
+        <span class="macro">todo</span><span class="macro">!</span>();
+        <span class="comment">// self.key.dev.wstat(&amp;self.key.id, dirent)?.await</span>
     }
+
     <span class="doccomment">/// Read wrapper.</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">read</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">buf</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> [<span class="ident">u8</span>], <span class="ident">off</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span> {
+        <span class="kw">if</span> <span class="self">self</span>.<span class="ident">is_dir</span>() {
+            <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error</span>::<span class="ident">BadRequest</span>(<span class="string">&quot;read dir&quot;</span>));
+        }
         <span class="ident">off</span>.<span class="ident">checked_add</span>(<span class="ident">buf</span>.<span class="ident">len</span>())
             .<span class="ident">ok_or</span>(<span class="ident">Error</span>::<span class="ident">BadRequest</span>(<span class="string">&quot;read buffer len overflow&quot;</span>))<span class="question-mark">?</span>;
-        <span class="self">self</span>.<span class="ident">key</span>.<span class="ident">dev</span>.<span class="ident">read</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">key</span>.<span class="ident">id</span>, <span class="ident">buf</span>, <span class="ident">off</span>)<span class="question-mark">?</span>.<span class="kw">await</span>
+
+        <span class="kw">let</span> <span class="ident">g</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">read</span>().<span class="kw">await</span>;
+        <span class="kw">let</span> <span class="ident">key</span> <span class="op">=</span> <span class="ident">g</span>.<span class="ident">umnt</span>.<span class="ident">first</span>().<span class="ident">unwrap_or</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">key</span>);
+        <span class="kw">let</span> <span class="ident">ret</span> <span class="op">=</span> <span class="ident">key</span>.<span class="ident">dev</span>.<span class="ident">read</span>(<span class="kw-2">&amp;</span><span class="ident">key</span>.<span class="ident">id</span>, <span class="ident">buf</span>, <span class="ident">off</span>)<span class="question-mark">?</span>.<span class="kw">await</span>;
+        <span class="ident">drop</span>(<span class="ident">g</span>);
+        <span class="ident">ret</span>
     }
     <span class="doccomment">/// Write wrapper.</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">write</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">buf</span>: <span class="kw-2">&amp;</span>[<span class="ident">u8</span>], <span class="ident">off</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span> {
+        <span class="kw">if</span> <span class="self">self</span>.<span class="ident">is_dir</span>() {
+            <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error</span>::<span class="ident">BadRequest</span>(<span class="string">&quot;write dir&quot;</span>));
+        }
         <span class="ident">off</span>.<span class="ident">checked_add</span>(<span class="ident">buf</span>.<span class="ident">len</span>())
             .<span class="ident">ok_or</span>(<span class="ident">Error</span>::<span class="ident">BadRequest</span>(<span class="string">&quot;write buffer len overflow&quot;</span>))<span class="question-mark">?</span>;
-        <span class="self">self</span>.<span class="ident">key</span>.<span class="ident">dev</span>.<span class="ident">write</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">key</span>.<span class="ident">id</span>, <span class="ident">buf</span>, <span class="ident">off</span>)<span class="question-mark">?</span>.<span class="kw">await</span>
+
+        <span class="kw">let</span> <span class="ident">g</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">read</span>().<span class="kw">await</span>;
+        <span class="kw">let</span> <span class="ident">key</span> <span class="op">=</span> <span class="ident">g</span>.<span class="ident">umnt</span>.<span class="ident">first</span>().<span class="ident">unwrap_or</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">key</span>);
+        <span class="kw">let</span> <span class="ident">ret</span> <span class="op">=</span> <span class="ident">key</span>.<span class="ident">dev</span>.<span class="ident">write</span>(<span class="kw-2">&amp;</span><span class="ident">key</span>.<span class="ident">id</span>, <span class="ident">buf</span>, <span class="ident">off</span>)<span class="question-mark">?</span>.<span class="kw">await</span>;
+        <span class="ident">drop</span>(<span class="ident">g</span>);
+        <span class="ident">ret</span>
+    }
+
+    <span class="doccomment">/// Truncate wrapper.</span>
+    <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">truncate</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">size</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span> {
+        <span class="kw">if</span> <span class="self">self</span>.<span class="ident">is_dir</span>() {
+            <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error</span>::<span class="ident">BadRequest</span>(<span class="string">&quot;truncate dir&quot;</span>));
+        }
+        <span class="kw">let</span> <span class="ident">g</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">read</span>().<span class="kw">await</span>;
+        <span class="kw">let</span> <span class="ident">key</span> <span class="op">=</span> <span class="ident">g</span>.<span class="ident">umnt</span>.<span class="ident">first</span>().<span class="ident">unwrap_or</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">key</span>);
+        <span class="kw">let</span> <span class="ident">ret</span> <span class="op">=</span> <span class="ident">key</span>.<span class="ident">dev</span>.<span class="ident">truncate</span>(<span class="kw-2">&amp;</span><span class="ident">key</span>.<span class="ident">id</span>, <span class="ident">size</span>)<span class="question-mark">?</span>.<span class="kw">await</span>;
+        <span class="ident">drop</span>(<span class="ident">g</span>);
+        <span class="ident">ret</span>
     }
 }
 
