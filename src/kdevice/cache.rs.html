@@ -1,7 +1,7 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `kdevice/src/cache.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>cache.rs - source</title><link rel="stylesheet" type="text/css" href="../../normalize.css"><link rel="stylesheet" type="text/css" href="../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../../light.css"  id="themeStyle"><link rel="stylesheet" type="text/css" href="../../dark.css" disabled ><link rel="stylesheet" type="text/css" href="../../ayu.css" disabled ><script id="default-settings"></script><script src="../../storage.js"></script><noscript><link rel="stylesheet" href="../../noscript.css"></noscript><link rel="icon" type="image/svg+xml" href="../../favicon.svg">
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `kdevice/src/cache.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>cache.rs - source</title><link rel="stylesheet" type="text/css" href="../../normalize.css"><link rel="stylesheet" type="text/css" href="../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../../light.css"  id="themeStyle"><link rel="stylesheet" type="text/css" href="../../dark.css" disabled ><link rel="stylesheet" type="text/css" href="../../ayu.css" disabled ><script id="default-settings"></script><script src="../../storage.js"></script><script src="../../crates.js"></script><noscript><link rel="stylesheet" href="../../noscript.css"></noscript><link rel="icon" type="image/svg+xml" href="../../favicon.svg">
 <link rel="alternate icon" type="image/png" href="../../favicon-16x16.png">
-<link rel="alternate icon" type="image/png" href="../../favicon-32x32.png"><style type="text/css">#crate-search{background-image:url("../../down-arrow.svg");}</style></head><body class="rustdoc source"><!--[if lte IE 8]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu">&#9776;</div><a href='../../kdevice/index.html'><div class='logo-container rust-logo'><img src='../../rust-logo.png' alt='logo'></div></a></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!" aria-haspopup="menu"><img src="../../brush.svg" width="18" alt="Pick another theme!"></button><div id="theme-choices" role="menu"></div></div><script src="../../theme.js"></script><nav class="sub"><form class="search-form"><div class="search-container"><div><select id="crate-search"><option value="All crates">All crates</option></select><input class="search-input" name="search" disabled autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><button type="button" class="help-button">?</button>
-                <a id="settings-menu" href="../../settings.html"><img src="../../wheel.svg" width="18" alt="Change settings"></a></div></form></nav><section id="main" class="content"><pre class="line-numbers"><span id="1">  1</span>
+<link rel="alternate icon" type="image/png" href="../../favicon-32x32.png"><style type="text/css">#crate-search{background-image:url("../../down-arrow.svg");}</style></head><body class="rustdoc source"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu" role="button">&#9776;</div><a href='../../kdevice/index.html'><div class='logo-container rust-logo'><img src='../../rust-logo.png' alt='logo'></div></a></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!" aria-haspopup="menu"><img src="../../brush.svg" width="18" height="18" alt="Pick another theme!"></button><div id="theme-choices" role="menu"></div></div><nav class="sub"><form class="search-form"><div class="search-container"><div><select id="crate-search"><option value="All crates">All crates</option></select><input class="search-input" name="search" disabled autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><button type="button" id="help-button">?</button>
+                <a id="settings-menu" href="../../settings.html"><img src="../../wheel.svg" width="18" height="18" alt="Change settings"></a></div></form></nav><section id="main" class="content"><div class="example-wrap"><pre class="line-numbers"><span id="1">  1</span>
 <span id="2">  2</span>
 <span id="3">  3</span>
 <span id="4">  4</span>
@@ -803,25 +803,25 @@
 <span id="800">800</span>
 <span id="801">801</span>
 <span id="802">802</span>
-</pre><div class="example-wrap"><pre class="rust ">
+</pre><pre class="rust">
 <span class="doccomment">//! Efficient cache layer based on LRU and hash map.</span>
 
-<span class="kw">use</span> <span class="ident">alloc</span>::<span class="ident">boxed</span>::<span class="ident">Box</span>;
+<span class="kw">use</span> <span class="ident">alloc::boxed::Box</span>;
 <span class="kw">use</span> <span class="ident">core</span>::{
-    <span class="ident">cell</span>::<span class="ident">UnsafeCell</span>,
+    <span class="ident">cell::UnsafeCell</span>,
     <span class="ident">fmt</span>::{<span class="self">self</span>, <span class="ident">Debug</span>},
-    <span class="ident">future</span>::<span class="ident">Future</span>,
-    <span class="ident">hash</span>::<span class="ident">Hash</span>,
+    <span class="ident">future::Future</span>,
+    <span class="ident">hash::Hash</span>,
     <span class="ident">mem</span>,
     <span class="ident">ops</span>::{<span class="ident">Deref</span>, <span class="ident">DerefMut</span>},
 };
 
-<span class="kw">use</span> <span class="ident">kalloc</span>::<span class="ident">wrapper</span>::<span class="ident">map_insert</span>;
-<span class="kw">use</span> <span class="ident">kalloc</span>::<span class="ident">wrapper</span>::<span class="ident">HashMap</span>;
-<span class="kw">use</span> <span class="ident">kcore</span>::<span class="ident">error</span>::<span class="prelude-ty">Result</span>;
-<span class="kw">use</span> <span class="ident">ksched</span>::<span class="ident">sync</span>::{<span class="ident">Mutex</span>, <span class="ident">Spinlock</span>};
+<span class="kw">use</span> <span class="ident">kalloc::wrapper::map_insert</span>;
+<span class="kw">use</span> <span class="ident">kalloc::wrapper::HashMap</span>;
+<span class="kw">use</span> <span class="ident">kcore::error::Result</span>;
+<span class="kw">use</span> <span class="ident">ksched::sync</span>::{<span class="ident">Mutex</span>, <span class="ident">Spinlock</span>};
 
-<span class="kw">use</span> <span class="ident">intrusive_collections</span>::<span class="ident">intrusive_adapter</span>;
+<span class="kw">use</span> <span class="ident">intrusive_collections::intrusive_adapter</span>;
 <span class="kw">use</span> <span class="ident">intrusive_collections</span>::{<span class="ident">LinkedList</span>, <span class="ident">LinkedListLink</span>};
 
 <span class="doccomment">/// Status of a cache entry.</span>
@@ -859,7 +859,7 @@
 }
 
 <span class="kw">impl</span><span class="op">&lt;</span><span class="ident">K</span>: <span class="ident">Debug</span>, <span class="ident">V</span>: <span class="ident">Debug</span><span class="op">&gt;</span> <span class="ident">Debug</span> <span class="kw">for</span> <span class="ident">CNodeInner</span><span class="op">&lt;</span><span class="ident">K</span>, <span class="ident">V</span><span class="op">&gt;</span> {
-    <span class="kw">fn</span> <span class="ident">fmt</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">f</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">fmt</span>::<span class="ident">Formatter</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">fmt</span>::<span class="prelude-ty">Result</span> {
+    <span class="kw">fn</span> <span class="ident">fmt</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">f</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">fmt::Formatter</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">fmt::Result</span> {
         <span class="ident">f</span>.<span class="ident">debug_struct</span>(<span class="string">&quot;CNodeInner&quot;</span>)
             .<span class="ident">field</span>(<span class="string">&quot;nref&quot;</span>, <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">nref</span>)
             .<span class="ident">field</span>(<span class="string">&quot;lock&quot;</span>, <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">lock</span>)
@@ -892,13 +892,13 @@
 
 <span class="kw">impl</span><span class="op">&lt;</span><span class="ident">K</span>, <span class="ident">V</span><span class="op">&gt;</span> <span class="ident">Deref</span> <span class="kw">for</span> <span class="ident">CNodePtr</span><span class="op">&lt;</span><span class="ident">K</span>, <span class="ident">V</span><span class="op">&gt;</span> {
     <span class="kw">type</span> <span class="ident">Target</span> <span class="op">=</span> <span class="ident">CNode</span><span class="op">&lt;</span><span class="ident">K</span>, <span class="ident">V</span><span class="op">&gt;</span>;
-    <span class="kw">fn</span> <span class="ident">deref</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw-2">&amp;</span><span class="self">Self</span>::<span class="ident">Target</span> {
+    <span class="kw">fn</span> <span class="ident">deref</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw-2">&amp;</span><span class="self">Self</span><span class="ident">::Target</span> {
         <span class="kw">unsafe</span> { <span class="self">self</span>.<span class="number">0</span>.<span class="ident">as_ref</span>().<span class="ident">unwrap</span>() }
     }
 }
 
 <span class="kw">impl</span><span class="op">&lt;</span><span class="ident">K</span>, <span class="ident">V</span><span class="op">&gt;</span> <span class="ident">Debug</span> <span class="kw">for</span> <span class="ident">CNodePtr</span><span class="op">&lt;</span><span class="ident">K</span>, <span class="ident">V</span><span class="op">&gt;</span> {
-    <span class="kw">fn</span> <span class="ident">fmt</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">f</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">fmt</span>::<span class="ident">Formatter</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">fmt</span>::<span class="prelude-ty">Result</span> {
+    <span class="kw">fn</span> <span class="ident">fmt</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">f</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">fmt::Formatter</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">fmt::Result</span> {
         <span class="ident">f</span>.<span class="ident">debug_tuple</span>(<span class="string">&quot;CNodePtr&quot;</span>).<span class="ident">field</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="number">0</span>).<span class="ident">finish</span>()
     }
 }
@@ -911,7 +911,7 @@
 }
 
 <span class="kw">impl</span><span class="op">&lt;</span><span class="ident">K</span>: <span class="ident">Debug</span>, <span class="ident">V</span>: <span class="ident">Debug</span><span class="op">&gt;</span> <span class="ident">Debug</span> <span class="kw">for</span> <span class="ident">CNode</span><span class="op">&lt;</span><span class="ident">K</span>, <span class="ident">V</span><span class="op">&gt;</span> {
-    <span class="kw">fn</span> <span class="ident">fmt</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">f</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">fmt</span>::<span class="ident">Formatter</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">fmt</span>::<span class="prelude-ty">Result</span> {
+    <span class="kw">fn</span> <span class="ident">fmt</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">f</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">fmt::Formatter</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">fmt::Result</span> {
         <span class="ident">f</span>.<span class="ident">debug_struct</span>(<span class="string">&quot;CNode&quot;</span>)
             .<span class="ident">field</span>(<span class="string">&quot;link&quot;</span>, <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">link</span>)
             .<span class="ident">field</span>(<span class="string">&quot;inner&quot;</span>, <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">inner</span>)
@@ -919,7 +919,7 @@
     }
 }
 
-<span class="macro">intrusive_adapter</span><span class="macro">!</span>(<span class="ident">CNodeAdapter</span><span class="op">&lt;</span><span class="ident">K</span>, <span class="ident">V</span><span class="op">&gt;</span> <span class="op">=</span> <span class="ident">Box</span><span class="op">&lt;</span><span class="ident">CNode</span><span class="op">&lt;</span><span class="ident">K</span>, <span class="ident">V</span><span class="op">&gt;</span><span class="op">&gt;</span>: <span class="ident">CNode</span><span class="op">&lt;</span><span class="ident">K</span>, <span class="ident">V</span><span class="op">&gt;</span> { <span class="ident">link</span>: <span class="ident">LinkedListLink</span> });
+<span class="macro">intrusive_adapter!</span>(<span class="ident">CNodeAdapter</span><span class="op">&lt;</span><span class="ident">K</span>, <span class="ident">V</span><span class="op">&gt;</span> <span class="op">=</span> <span class="ident">Box</span><span class="op">&lt;</span><span class="ident">CNode</span><span class="op">&lt;</span><span class="ident">K</span>, <span class="ident">V</span><span class="op">&gt;</span><span class="op">&gt;</span>: <span class="ident">CNode</span><span class="op">&lt;</span><span class="ident">K</span>, <span class="ident">V</span><span class="op">&gt;</span> { <span class="ident">link</span>: <span class="ident">LinkedListLink</span> });
 
 <span class="doccomment">/// Inner data structure of the cache.</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">CacheData</span><span class="op">&lt;</span><span class="ident">K</span>, <span class="ident">V</span><span class="op">&gt;</span> {
@@ -928,7 +928,7 @@
 }
 
 <span class="kw">impl</span><span class="op">&lt;</span><span class="ident">K</span>: <span class="ident">Debug</span>, <span class="ident">V</span>: <span class="ident">Debug</span><span class="op">&gt;</span> <span class="ident">Debug</span> <span class="kw">for</span> <span class="ident">CacheData</span><span class="op">&lt;</span><span class="ident">K</span>, <span class="ident">V</span><span class="op">&gt;</span> {
-    <span class="kw">fn</span> <span class="ident">fmt</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">f</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">fmt</span>::<span class="ident">Formatter</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">fmt</span>::<span class="prelude-ty">Result</span> {
+    <span class="kw">fn</span> <span class="ident">fmt</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">f</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">fmt::Formatter</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">fmt::Result</span> {
         <span class="ident">f</span>.<span class="ident">debug_struct</span>(<span class="string">&quot;CacheData&quot;</span>)
             .<span class="ident">field</span>(<span class="string">&quot;map&quot;</span>, <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">map</span>)
             .<span class="ident">field</span>(<span class="string">&quot;lru&quot;</span>, <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">lru</span>)
@@ -942,12 +942,12 @@
     <span class="self">Self</span>: <span class="ident">Sized</span>,
 {
     <span class="doccomment">/// Key type.</span>
-    <span class="kw">type</span> <span class="ident">Key</span>: <span class="ident">Hash</span> <span class="op">+</span> <span class="ident">Eq</span> <span class="op">+</span> <span class="ident">Default</span> <span class="op">+</span> <span class="ident">Copy</span> <span class="op">+</span> <span class="ident">fmt</span>::<span class="ident">Debug</span>;
+    <span class="kw">type</span> <span class="ident">Key</span>: <span class="ident">Hash</span> <span class="op">+</span> <span class="ident">Eq</span> <span class="op">+</span> <span class="ident">Default</span> <span class="op">+</span> <span class="ident">Copy</span> <span class="op">+</span> <span class="ident">fmt::Debug</span>;
     <span class="doccomment">/// Value type.</span>
-    <span class="kw">type</span> <span class="ident">Value</span>: <span class="ident">fmt</span>::<span class="ident">Debug</span>;
+    <span class="kw">type</span> <span class="ident">Value</span>: <span class="ident">fmt::Debug</span>;
 
     <span class="doccomment">/// Function used to retrieve the cache.</span>
-    <span class="kw">fn</span> <span class="ident">cache_self</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span>(<span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="ident">Spinlock</span><span class="op">&lt;</span><span class="ident">CacheData</span><span class="op">&lt;</span><span class="self">Self</span>::<span class="ident">Key</span>, <span class="self">Self</span>::<span class="ident">Value</span><span class="op">&gt;</span><span class="op">&gt;</span>;
+    <span class="kw">fn</span> <span class="ident">cache_self</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span>(<span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="ident">Spinlock</span><span class="op">&lt;</span><span class="ident">CacheData</span><span class="op">&lt;</span><span class="self">Self</span><span class="ident">::Key</span>, <span class="self">Self</span><span class="ident">::Value</span><span class="op">&gt;</span><span class="op">&gt;</span>;
 
     <span class="doccomment">/// Create a new cache with at most n in-memory cache entries.</span>
     <span class="doccomment">///</span>
@@ -957,24 +957,24 @@
     <span class="doccomment">/// Donot override this implementation.</span>
     <span class="kw">fn</span> <span class="ident">new_cache</span>(
         <span class="ident">n</span>: <span class="ident">usize</span>,
-        <span class="ident">default_val</span>: <span class="kw">impl</span> <span class="ident">Fn</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="self">Self</span>::<span class="ident">Value</span><span class="op">&gt;</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Spinlock</span><span class="op">&lt;</span><span class="ident">CacheData</span><span class="op">&lt;</span><span class="self">Self</span>::<span class="ident">Key</span>, <span class="self">Self</span>::<span class="ident">Value</span><span class="op">&gt;</span><span class="op">&gt;</span><span class="op">&gt;</span> {
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">lru</span> <span class="op">=</span> <span class="ident">LinkedList</span>::<span class="ident">new</span>(<span class="ident">CNodeAdapter</span>::<span class="ident">new</span>());
+        <span class="ident">default_val</span>: <span class="kw">impl</span> <span class="ident">Fn</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="self">Self</span><span class="ident">::Value</span><span class="op">&gt;</span>,
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Spinlock</span><span class="op">&lt;</span><span class="ident">CacheData</span><span class="op">&lt;</span><span class="self">Self</span><span class="ident">::Key</span>, <span class="self">Self</span><span class="ident">::Value</span><span class="op">&gt;</span><span class="op">&gt;</span><span class="op">&gt;</span> {
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">lru</span> <span class="op">=</span> <span class="ident">LinkedList::new</span>(<span class="ident">CNodeAdapter::new</span>());
         <span class="kw">for</span> <span class="kw">_</span> <span class="kw">in</span> <span class="number">0</span>..<span class="ident">n</span> {
-            <span class="ident">lru</span>.<span class="ident">push_back</span>(<span class="ident">Box</span>::<span class="ident">try_new</span>(<span class="ident">CNode</span> {
-                <span class="ident">link</span>: <span class="ident">LinkedListLink</span>::<span class="ident">new</span>(),
-                <span class="ident">inner</span>: <span class="ident">UnsafeCell</span>::<span class="ident">new</span>(<span class="ident">CNodeInner</span> {
+            <span class="ident">lru</span>.<span class="ident">push_back</span>(<span class="ident">Box::try_new</span>(<span class="ident">CNode</span> {
+                <span class="ident">link</span>: <span class="ident">LinkedListLink::new</span>(),
+                <span class="ident">inner</span>: <span class="ident">UnsafeCell::new</span>(<span class="ident">CNodeInner</span> {
                     <span class="ident">nref</span>: <span class="number">0</span>,
-                    <span class="ident">key</span>: <span class="self">Self</span>::<span class="ident">Key</span>::<span class="ident">default</span>(),
+                    <span class="ident">key</span>: <span class="self">Self</span><span class="ident">::Key::default</span>(),
                     <span class="ident">val</span>: <span class="ident">default_val</span>()<span class="question-mark">?</span>,
-                    <span class="ident">lock</span>: <span class="ident">Mutex</span>::<span class="ident">new</span>(()),
-                    <span class="ident">state</span>: <span class="ident">CState</span>::<span class="ident">Empty</span>,
+                    <span class="ident">lock</span>: <span class="ident">Mutex::new</span>(()),
+                    <span class="ident">state</span>: <span class="ident">CState::Empty</span>,
                     <span class="ident">nlocks</span>: <span class="number">0</span>,
                 }),
             })<span class="question-mark">?</span>);
         }
-        <span class="prelude-val">Ok</span>(<span class="ident">Spinlock</span>::<span class="ident">new</span>(<span class="ident">CacheData</span> {
-            <span class="ident">map</span>: <span class="ident">HashMap</span>::<span class="ident">new</span>(),
+        <span class="prelude-val">Ok</span>(<span class="ident">Spinlock::new</span>(<span class="ident">CacheData</span> {
+            <span class="ident">map</span>: <span class="ident">HashMap::new</span>(),
             <span class="ident">lru</span>,
         }))
     }
@@ -982,32 +982,32 @@
     <span class="doccomment">/// Future returned by [`Self::disk_read`].</span>
     <span class="kw">type</span> <span class="ident">ReadFut</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span>: <span class="ident">Future</span><span class="op">&lt;</span><span class="ident">Output</span> <span class="op">=</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>()<span class="op">&gt;</span><span class="op">&gt;</span> <span class="op">+</span> <span class="lifetime">&#39;a</span>
     <span class="kw">where</span>
-        <span class="self">Self</span>::<span class="ident">Key</span>: <span class="lifetime">&#39;a</span>,
-        <span class="self">Self</span>::<span class="ident">Value</span>: <span class="lifetime">&#39;a</span>;
+        <span class="self">Self</span><span class="ident">::Key</span>: <span class="lifetime">&#39;a</span>,
+        <span class="self">Self</span><span class="ident">::Value</span>: <span class="lifetime">&#39;a</span>;
     <span class="doccomment">/// Async function to fetch data from disk, should be implemented by yourself.</span>
-    <span class="kw">fn</span> <span class="ident">disk_read</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span>(<span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="self">self</span>, <span class="ident">key</span>: <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="self">Self</span>::<span class="ident">Key</span>, <span class="ident">val</span>: <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="kw-2">mut</span> <span class="self">Self</span>::<span class="ident">Value</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span>::<span class="ident">ReadFut</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span>;
+    <span class="kw">fn</span> <span class="ident">disk_read</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span>(<span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="self">self</span>, <span class="ident">key</span>: <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="self">Self</span><span class="ident">::Key</span>, <span class="ident">val</span>: <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="kw-2">mut</span> <span class="self">Self</span><span class="ident">::Value</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span><span class="ident">::ReadFut</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span>;
 
     <span class="doccomment">/// Future returned by [`Self::disk_write`].</span>
     <span class="kw">type</span> <span class="ident">WriteFut</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span>: <span class="ident">Future</span><span class="op">&lt;</span><span class="ident">Output</span> <span class="op">=</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>()<span class="op">&gt;</span><span class="op">&gt;</span> <span class="op">+</span> <span class="lifetime">&#39;a</span>
     <span class="kw">where</span>
-        <span class="self">Self</span>::<span class="ident">Key</span>: <span class="lifetime">&#39;a</span>,
-        <span class="self">Self</span>::<span class="ident">Value</span>: <span class="lifetime">&#39;a</span>;
+        <span class="self">Self</span><span class="ident">::Key</span>: <span class="lifetime">&#39;a</span>,
+        <span class="self">Self</span><span class="ident">::Value</span>: <span class="lifetime">&#39;a</span>;
 
     <span class="doccomment">/// Async function to flush data to disk, should be implemented by yourself.</span>
-    <span class="kw">fn</span> <span class="ident">disk_write</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span>(<span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="self">self</span>, <span class="ident">key</span>: <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="self">Self</span>::<span class="ident">Key</span>, <span class="ident">val</span>: <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="self">Self</span>::<span class="ident">Value</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span>::<span class="ident">WriteFut</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span>;
+    <span class="kw">fn</span> <span class="ident">disk_write</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span>(<span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="self">self</span>, <span class="ident">key</span>: <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="self">Self</span><span class="ident">::Key</span>, <span class="ident">val</span>: <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="self">Self</span><span class="ident">::Value</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span><span class="ident">::WriteFut</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span>;
 
     <span class="doccomment">/// Future returned by [`Self::cache_get`].</span>
     <span class="kw">type</span> <span class="ident">GetFut</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span>: <span class="ident">Future</span><span class="op">&lt;</span><span class="ident">Output</span> <span class="op">=</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">CEntry</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="self">Self</span><span class="op">&gt;</span><span class="op">&gt;</span><span class="op">&gt;</span><span class="op">&gt;</span> <span class="op">+</span> <span class="lifetime">&#39;a</span>
     <span class="kw">where</span>
         <span class="self">Self</span>: <span class="lifetime">&#39;a</span>,
-        <span class="self">Self</span>::<span class="ident">Key</span>: <span class="lifetime">&#39;a</span>,
-        <span class="self">Self</span>::<span class="ident">Value</span>: <span class="lifetime">&#39;a</span>;
+        <span class="self">Self</span><span class="ident">::Key</span>: <span class="lifetime">&#39;a</span>,
+        <span class="self">Self</span><span class="ident">::Value</span>: <span class="lifetime">&#39;a</span>;
 
     <span class="doccomment">/// Get a cache item by key. Won&#39;t lock it.</span>
     <span class="doccomment">/// If key has already been in memory, this operation always succeed.</span>
     <span class="doccomment">/// If cannot reserve cache entry, returns [None].</span>
     <span class="doccomment">/// Donot implement it. Instead, injected to the trait implementation by [`super::cache_impl`].</span>
-    <span class="kw">fn</span> <span class="ident">cache_get</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span>(<span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="self">self</span>, <span class="ident">key</span>: <span class="self">Self</span>::<span class="ident">Key</span>, <span class="ident">flush</span>: <span class="ident">bool</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span>::<span class="ident">GetFut</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span>;
+    <span class="kw">fn</span> <span class="ident">cache_get</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span>(<span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="self">self</span>, <span class="ident">key</span>: <span class="self">Self</span><span class="ident">::Key</span>, <span class="ident">flush</span>: <span class="ident">bool</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span><span class="ident">::GetFut</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span>;
 
     <span class="doccomment">/// Mark all dirty entry as invalid without synchronizing with disk. May cause inconsistency!</span>
     <span class="doccomment">/// Donot implement it. Instead, injected to the trait implementation by [`super::cache_impl`].</span>
@@ -1016,45 +1016,45 @@
 
 <span class="doccomment">/// Macro to automatically inject implementations.</span>
 <span class="attribute">#[<span class="ident">macro_export</span>]</span>
-<span class="macro">macro_rules</span><span class="macro">!</span> <span class="ident">cache_impl</span> {
+<span class="macro">macro_rules!</span> <span class="ident">cache_impl</span> {
     (<span class="macro-nonterminal">$</span><span class="macro-nonterminal">key</span>:<span class="ident">ty</span>, <span class="macro-nonterminal">$</span><span class="macro-nonterminal">val</span>:<span class="ident">ty</span>, <span class="macro-nonterminal">$</span><span class="macro-nonterminal">field</span>:<span class="ident">ident</span>) <span class="op">=</span><span class="op">&gt;</span> {
         <span class="kw">type</span> <span class="ident">Key</span> <span class="op">=</span> <span class="macro-nonterminal">$</span><span class="macro-nonterminal">key</span>;
         <span class="kw">type</span> <span class="ident">Value</span> <span class="op">=</span> <span class="macro-nonterminal">$</span><span class="macro-nonterminal">val</span>;
 
-        <span class="kw">fn</span> <span class="ident">cache_self</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span>(<span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="ident">Spinlock</span><span class="op">&lt;</span><span class="ident">CacheData</span><span class="op">&lt;</span><span class="self">Self</span>::<span class="ident">Key</span>, <span class="self">Self</span>::<span class="ident">Value</span><span class="op">&gt;</span><span class="op">&gt;</span> {
+        <span class="kw">fn</span> <span class="ident">cache_self</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span>(<span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="ident">Spinlock</span><span class="op">&lt;</span><span class="ident">CacheData</span><span class="op">&lt;</span><span class="self">Self</span><span class="ident">::Key</span>, <span class="self">Self</span><span class="ident">::Value</span><span class="op">&gt;</span><span class="op">&gt;</span> {
             <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="macro-nonterminal">$</span><span class="macro-nonterminal">field</span>
         }
 
         <span class="kw">type</span> <span class="ident">ReadFut</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span>
         <span class="kw">where</span>
-            <span class="self">Self</span>::<span class="ident">Key</span>: <span class="lifetime">&#39;a</span>,
-            <span class="self">Self</span>::<span class="ident">Value</span>: <span class="lifetime">&#39;a</span>,
-        <span class="op">=</span> <span class="kw">impl</span> <span class="ident">core</span>::<span class="ident">future</span>::<span class="ident">Future</span><span class="op">&lt;</span><span class="ident">Output</span> <span class="op">=</span> <span class="ident">kcore</span>::<span class="ident">error</span>::<span class="prelude-ty">Result</span><span class="op">&lt;</span>()<span class="op">&gt;</span><span class="op">&gt;</span> <span class="op">+</span> <span class="lifetime">&#39;a</span>;
+            <span class="self">Self</span><span class="ident">::Key</span>: <span class="lifetime">&#39;a</span>,
+            <span class="self">Self</span><span class="ident">::Value</span>: <span class="lifetime">&#39;a</span>,
+        <span class="op">=</span> <span class="kw">impl</span> <span class="ident">core::future::Future</span><span class="op">&lt;</span><span class="ident">Output</span> <span class="op">=</span> <span class="ident">kcore::error::Result</span><span class="op">&lt;</span>()<span class="op">&gt;</span><span class="op">&gt;</span> <span class="op">+</span> <span class="lifetime">&#39;a</span>;
 
         <span class="kw">type</span> <span class="ident">WriteFut</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span>
         <span class="kw">where</span>
-            <span class="self">Self</span>::<span class="ident">Key</span>: <span class="lifetime">&#39;a</span>,
-            <span class="self">Self</span>::<span class="ident">Value</span>: <span class="lifetime">&#39;a</span>,
-        <span class="op">=</span> <span class="kw">impl</span> <span class="ident">core</span>::<span class="ident">future</span>::<span class="ident">Future</span><span class="op">&lt;</span><span class="ident">Output</span> <span class="op">=</span> <span class="ident">kcore</span>::<span class="ident">error</span>::<span class="prelude-ty">Result</span><span class="op">&lt;</span>()<span class="op">&gt;</span><span class="op">&gt;</span> <span class="op">+</span> <span class="lifetime">&#39;a</span>;
+            <span class="self">Self</span><span class="ident">::Key</span>: <span class="lifetime">&#39;a</span>,
+            <span class="self">Self</span><span class="ident">::Value</span>: <span class="lifetime">&#39;a</span>,
+        <span class="op">=</span> <span class="kw">impl</span> <span class="ident">core::future::Future</span><span class="op">&lt;</span><span class="ident">Output</span> <span class="op">=</span> <span class="ident">kcore::error::Result</span><span class="op">&lt;</span>()<span class="op">&gt;</span><span class="op">&gt;</span> <span class="op">+</span> <span class="lifetime">&#39;a</span>;
 
         <span class="kw">type</span> <span class="ident">GetFut</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span>
         <span class="kw">where</span>
             <span class="self">Self</span>: <span class="lifetime">&#39;a</span>,
-            <span class="self">Self</span>::<span class="ident">Key</span>: <span class="lifetime">&#39;a</span>,
-            <span class="self">Self</span>::<span class="ident">Value</span>: <span class="lifetime">&#39;a</span>,
-        <span class="op">=</span> <span class="kw">impl</span> <span class="ident">core</span>::<span class="ident">future</span>::<span class="ident">Future</span><span class="op">&lt;</span>
-            <span class="ident">Output</span> <span class="op">=</span> <span class="ident">kcore</span>::<span class="ident">error</span>::<span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="macro-nonterminal">$</span><span class="kw">crate</span>::<span class="macro-nonterminal">cache</span>::<span class="ident">CEntry</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="self">Self</span><span class="op">&gt;</span><span class="op">&gt;</span><span class="op">&gt;</span>,
+            <span class="self">Self</span><span class="ident">::Key</span>: <span class="lifetime">&#39;a</span>,
+            <span class="self">Self</span><span class="ident">::Value</span>: <span class="lifetime">&#39;a</span>,
+        <span class="op">=</span> <span class="kw">impl</span> <span class="ident">core::future::Future</span><span class="op">&lt;</span>
+            <span class="ident">Output</span> <span class="op">=</span> <span class="ident">kcore::error::Result</span><span class="op">&lt;</span><span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="macro-nonterminal">$</span><span class="kw">crate</span><span class="macro-nonterminal">::cache::CEntry</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="self">Self</span><span class="op">&gt;</span><span class="op">&gt;</span><span class="op">&gt;</span>,
         <span class="op">&gt;</span>;
 
-        <span class="kw">fn</span> <span class="ident">cache_get</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span>(<span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="self">self</span>, <span class="ident">key</span>: <span class="self">Self</span>::<span class="ident">Key</span>, <span class="ident">flush</span>: <span class="ident">bool</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span>::<span class="ident">GetFut</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span>
+        <span class="kw">fn</span> <span class="ident">cache_get</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span>(<span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="self">self</span>, <span class="ident">key</span>: <span class="self">Self</span><span class="ident">::Key</span>, <span class="ident">flush</span>: <span class="ident">bool</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span><span class="ident">::GetFut</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span>
         <span class="kw">where</span>
-            <span class="self">Self</span>::<span class="ident">Key</span>: <span class="ident">core</span>::<span class="ident">hash</span>::<span class="ident">Hash</span> <span class="op">+</span> <span class="ident">Eq</span> <span class="op">+</span> <span class="ident">Copy</span>,
+            <span class="self">Self</span><span class="ident">::Key</span>: <span class="ident">core::hash::Hash</span> <span class="op">+</span> <span class="ident">Eq</span> <span class="op">+</span> <span class="ident">Copy</span>,
         {
-            <span class="macro-nonterminal">$</span><span class="kw">crate</span>::<span class="macro-nonterminal">cache</span>::<span class="ident">cache_get</span>(<span class="self">self</span>, <span class="ident">key</span>, <span class="ident">flush</span>)
+            <span class="macro-nonterminal">$</span><span class="kw">crate</span><span class="macro-nonterminal">::cache::cache_get</span>(<span class="self">self</span>, <span class="ident">key</span>, <span class="ident">flush</span>)
         }
 
         <span class="kw">fn</span> <span class="ident">cache_invalidate</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span>(<span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="self">self</span>) {
-            <span class="macro-nonterminal">$</span><span class="kw">crate</span>::<span class="macro-nonterminal">cache</span>::<span class="ident">cache_invalidate</span>(<span class="self">self</span>);
+            <span class="macro-nonterminal">$</span><span class="kw">crate</span><span class="macro-nonterminal">::cache::cache_invalidate</span>(<span class="self">self</span>);
         }
     };
 }
@@ -1065,9 +1065,9 @@
 <span class="doccomment">/// NOTE: should be fn since [`LinkedList::CursorMut`] is not [Send].</span>
 <span class="kw">fn</span> <span class="ident">cache_get1</span><span class="op">&lt;</span><span class="ident">T</span>: <span class="ident">Cache</span><span class="op">&gt;</span>(
     <span class="ident">sel</span>: <span class="kw-2">&amp;</span><span class="ident">T</span>,
-    <span class="ident">key</span>: <span class="ident">T</span>::<span class="ident">Key</span>,
+    <span class="ident">key</span>: <span class="ident">T::Key</span>,
     <span class="ident">flush</span>: <span class="ident">bool</span>,
-) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="prelude-ty">Option</span><span class="op">&lt;</span>(<span class="ident">bool</span>, <span class="ident">CNodePtr</span><span class="op">&lt;</span><span class="ident">T</span>::<span class="ident">Key</span>, <span class="ident">T</span>::<span class="ident">Value</span><span class="op">&gt;</span>)<span class="op">&gt;</span><span class="op">&gt;</span> {
+) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="prelude-ty">Option</span><span class="op">&lt;</span>(<span class="ident">bool</span>, <span class="ident">CNodePtr</span><span class="op">&lt;</span><span class="ident">T::Key</span>, <span class="ident">T::Value</span><span class="op">&gt;</span>)<span class="op">&gt;</span><span class="op">&gt;</span> {
     <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">g</span> <span class="op">=</span> <span class="ident">sel</span>.<span class="ident">cache_self</span>().<span class="ident">lock</span>();
 
     <span class="kw">let</span> <span class="ident">CacheData</span> {
@@ -1076,11 +1076,11 @@
     } <span class="op">=</span> <span class="ident">g</span>.<span class="ident">deref_mut</span>();
 
     <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">ptr</span>) <span class="op">=</span> <span class="ident">map</span>.<span class="ident">get</span>(<span class="kw-2">&amp;</span><span class="ident">key</span>) {
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">cur</span> <span class="op">=</span> <span class="kw">unsafe</span> { <span class="ident">LinkedList</span>::<span class="ident">cursor_mut_from_ptr</span>(<span class="ident">lru</span>, <span class="ident">ptr</span>.<span class="number">0</span>) };
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">cur</span> <span class="op">=</span> <span class="kw">unsafe</span> { <span class="ident">LinkedList::cursor_mut_from_ptr</span>(<span class="ident">lru</span>, <span class="ident">ptr</span>.<span class="number">0</span>) };
         <span class="kw">let</span> <span class="ident">node</span> <span class="op">=</span> <span class="ident">cur</span>.<span class="ident">remove</span>().<span class="ident">unwrap</span>();
         <span class="kw">let</span> <span class="ident">u</span> <span class="op">=</span> <span class="kw">unsafe</span> { <span class="ident">node</span>.<span class="ident">inner</span>.<span class="ident">get</span>().<span class="ident">as_mut</span>().<span class="ident">unwrap</span>() };
         <span class="ident">u</span>.<span class="ident">nref</span> <span class="op">+</span><span class="op">=</span> <span class="number">1</span>;
-        <span class="macro">debug_assert_ne</span><span class="macro">!</span>(<span class="ident">u</span>.<span class="ident">state</span>, <span class="ident">CState</span>::<span class="ident">Empty</span>);
+        <span class="macro">debug_assert_ne!</span>(<span class="ident">u</span>.<span class="ident">state</span>, <span class="ident">CState::Empty</span>);
 
         <span class="ident">lru</span>.<span class="ident">push_back</span>(<span class="ident">node</span>);
 
@@ -1091,22 +1091,22 @@
     <span class="kw">while</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">u</span>) <span class="op">=</span> <span class="ident">cur</span>.<span class="ident">get</span>() {
         <span class="kw">let</span> <span class="ident">inner</span> <span class="op">=</span> <span class="kw">unsafe</span> { <span class="ident">u</span>.<span class="ident">inner</span>.<span class="ident">get</span>().<span class="ident">as_mut</span>().<span class="ident">unwrap</span>() };
         <span class="kw">if</span> <span class="ident">inner</span>.<span class="ident">nref</span> <span class="op">=</span><span class="op">=</span> <span class="number">0</span> {
-            <span class="kw">let</span> <span class="ident">ptr</span> <span class="op">=</span> <span class="ident">CNodePtr</span>(<span class="ident">u</span> <span class="kw">as</span> <span class="kw-2">*</span><span class="kw">const</span> <span class="ident">CNode</span><span class="op">&lt;</span><span class="ident">T</span>::<span class="ident">Key</span>, <span class="ident">T</span>::<span class="ident">Value</span><span class="op">&gt;</span>);
+            <span class="kw">let</span> <span class="ident">ptr</span> <span class="op">=</span> <span class="ident">CNodePtr</span>(<span class="ident">u</span> <span class="kw">as</span> <span class="kw-2">*</span><span class="kw">const</span> <span class="ident">CNode</span><span class="op">&lt;</span><span class="ident">T::Key</span>, <span class="ident">T::Value</span><span class="op">&gt;</span>);
 
-            <span class="kw">if</span> <span class="ident">inner</span>.<span class="ident">state</span> <span class="op">=</span><span class="op">=</span> <span class="ident">CState</span>::<span class="ident">Dirty</span> {
+            <span class="kw">if</span> <span class="ident">inner</span>.<span class="ident">state</span> <span class="op">=</span><span class="op">=</span> <span class="ident">CState::Dirty</span> {
                 <span class="kw">if</span> <span class="ident">flush</span> {
                     <span class="ident">inner</span>.<span class="ident">nref</span> <span class="op">+</span><span class="op">=</span> <span class="number">1</span>;
 
                     <span class="comment">// Always succeed since ref is 0.</span>
                     <span class="kw">let</span> <span class="ident">gg</span> <span class="op">=</span> <span class="ident">inner</span>.<span class="ident">lock</span>.<span class="ident">try_lock</span>().<span class="ident">unwrap</span>();
-                    <span class="ident">mem</span>::<span class="ident">forget</span>(<span class="ident">gg</span>);
+                    <span class="ident">mem::forget</span>(<span class="ident">gg</span>);
                     <span class="ident">drop</span>(<span class="ident">g</span>);
                     <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="prelude-val">Some</span>((<span class="bool-val">true</span>, <span class="ident">ptr</span>)));
                 }
             } <span class="kw">else</span> {
                 <span class="ident">map_insert</span>(<span class="ident">map</span>, <span class="ident">key</span>, <span class="ident">ptr</span>.<span class="ident">clone</span>())<span class="question-mark">?</span>;
-                <span class="kw">if</span> <span class="ident">inner</span>.<span class="ident">state</span> <span class="op">!</span><span class="op">=</span> <span class="ident">CState</span>::<span class="ident">Empty</span> {
-                    <span class="macro">debug_assert_eq</span><span class="macro">!</span>(<span class="ident">map</span>.<span class="ident">get</span>(<span class="kw-2">&amp;</span><span class="ident">inner</span>.<span class="ident">key</span>).<span class="ident">unwrap</span>().<span class="number">0</span>, <span class="ident">ptr</span>.<span class="number">0</span>);
+                <span class="kw">if</span> <span class="ident">inner</span>.<span class="ident">state</span> <span class="op">!</span><span class="op">=</span> <span class="ident">CState::Empty</span> {
+                    <span class="macro">debug_assert_eq!</span>(<span class="ident">map</span>.<span class="ident">get</span>(<span class="kw-2">&amp;</span><span class="ident">inner</span>.<span class="ident">key</span>).<span class="ident">unwrap</span>().<span class="number">0</span>, <span class="ident">ptr</span>.<span class="number">0</span>);
                     <span class="ident">map</span>.<span class="ident">remove</span>(<span class="kw-2">&amp;</span><span class="ident">inner</span>.<span class="ident">key</span>);
                 }
 
@@ -1117,7 +1117,7 @@
                 <span class="comment">// Since anyone who want to access inner.state after this point</span>
                 <span class="comment">// should first acquire g, which must be after `drop(g)`. Thus,</span>
                 <span class="comment">// no need for memory fence here.</span>
-                <span class="ident">inner</span>.<span class="ident">state</span> <span class="op">=</span> <span class="ident">CState</span>::<span class="ident">Invalid</span>;
+                <span class="ident">inner</span>.<span class="ident">state</span> <span class="op">=</span> <span class="ident">CState::Invalid</span>;
                 <span class="ident">inner</span>.<span class="ident">nlocks</span> <span class="op">=</span> <span class="number">0</span>;
                 <span class="ident">drop</span>(<span class="ident">g</span>);
                 <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="prelude-val">Some</span>((<span class="bool-val">false</span>, <span class="ident">ptr</span>)));
@@ -1131,7 +1131,7 @@
 <span class="doccomment">/// Get a cache entry by key.</span>
 <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">cache_get</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">T</span>: <span class="ident">Cache</span><span class="op">&gt;</span>(
     <span class="ident">sel</span>: <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="ident">T</span>,
-    <span class="ident">key</span>: <span class="ident">T</span>::<span class="ident">Key</span>,
+    <span class="ident">key</span>: <span class="ident">T::Key</span>,
     <span class="ident">flush</span>: <span class="ident">bool</span>,
 ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">CEntry</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">T</span><span class="op">&gt;</span><span class="op">&gt;</span><span class="op">&gt;</span> {
     <span class="kw">loop</span> {
@@ -1142,7 +1142,7 @@
                 <span class="kw">let</span> <span class="ident">inner</span> <span class="op">=</span> <span class="kw">unsafe</span> { (<span class="kw-2">*</span><span class="ident">ptr</span>).<span class="ident">inner</span>.<span class="ident">get</span>().<span class="ident">as_mut</span>().<span class="ident">unwrap</span>() };
                 <span class="kw">let</span> <span class="ident">result</span> <span class="op">=</span> <span class="ident">sel</span>.<span class="ident">disk_write</span>(<span class="kw-2">&amp;</span><span class="ident">inner</span>.<span class="ident">key</span>, <span class="kw-2">&amp;</span><span class="ident">inner</span>.<span class="ident">val</span>).<span class="kw">await</span>;
                 <span class="kw">if</span> <span class="ident">result</span>.<span class="ident">is_ok</span>() {
-                    <span class="ident">inner</span>.<span class="ident">state</span> <span class="op">=</span> <span class="ident">CState</span>::<span class="ident">Valid</span>;
+                    <span class="ident">inner</span>.<span class="ident">state</span> <span class="op">=</span> <span class="ident">CState::Valid</span>;
                 }
                 <span class="ident">inner</span>.<span class="ident">lock</span>.<span class="ident">release</span>();
                 <span class="comment">// Don&#39;t move to back of LRU since it&#39;s likely to be replaced soon.</span>
@@ -1163,8 +1163,8 @@
     <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">cur</span> <span class="op">=</span> <span class="ident">g</span>.<span class="ident">lru</span>.<span class="ident">front_mut</span>();
     <span class="kw">while</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">u</span>) <span class="op">=</span> <span class="ident">cur</span>.<span class="ident">get</span>() {
         <span class="kw">let</span> <span class="ident">inner</span> <span class="op">=</span> <span class="kw">unsafe</span> { <span class="ident">u</span>.<span class="ident">inner</span>.<span class="ident">get</span>().<span class="ident">as_mut</span>().<span class="ident">unwrap</span>() };
-        <span class="kw">if</span> <span class="ident">inner</span>.<span class="ident">nref</span> <span class="op">=</span><span class="op">=</span> <span class="number">0</span> <span class="op">&amp;&amp;</span> <span class="ident">inner</span>.<span class="ident">state</span> <span class="op">=</span><span class="op">=</span> <span class="ident">CState</span>::<span class="ident">Dirty</span> {
-            <span class="ident">inner</span>.<span class="ident">state</span> <span class="op">=</span> <span class="ident">CState</span>::<span class="ident">Invalid</span>;
+        <span class="kw">if</span> <span class="ident">inner</span>.<span class="ident">nref</span> <span class="op">=</span><span class="op">=</span> <span class="number">0</span> <span class="op">&amp;&amp;</span> <span class="ident">inner</span>.<span class="ident">state</span> <span class="op">=</span><span class="op">=</span> <span class="ident">CState::Dirty</span> {
+            <span class="ident">inner</span>.<span class="ident">state</span> <span class="op">=</span> <span class="ident">CState::Invalid</span>;
         }
         <span class="ident">cur</span>.<span class="ident">move_next</span>();
     }
@@ -1180,9 +1180,9 @@
         <span class="kw">if</span> <span class="ident">inner</span>.<span class="ident">nref</span> <span class="op">!</span><span class="op">=</span> <span class="number">0</span> {
             <span class="ident">refed</span> <span class="op">+</span><span class="op">=</span> <span class="number">1</span>;
             <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">test</span>)]</span>
-            <span class="macro">println</span><span class="macro">!</span>(<span class="string">&quot;cache_stat: referred {:?}, nref {}&quot;</span>, <span class="ident">inner</span>.<span class="ident">key</span>, <span class="ident">inner</span>.<span class="ident">nref</span>);
+            <span class="macro">println!</span>(<span class="string">&quot;cache_stat: referred {:?}, nref {}&quot;</span>, <span class="ident">inner</span>.<span class="ident">key</span>, <span class="ident">inner</span>.<span class="ident">nref</span>);
         }
-        <span class="kw">if</span> <span class="ident">inner</span>.<span class="ident">state</span> <span class="op">=</span><span class="op">=</span> <span class="ident">CState</span>::<span class="ident">Dirty</span> {
+        <span class="kw">if</span> <span class="ident">inner</span>.<span class="ident">state</span> <span class="op">=</span><span class="op">=</span> <span class="ident">CState::Dirty</span> {
             <span class="ident">dirty</span> <span class="op">+</span><span class="op">=</span> <span class="number">1</span>;
         }
         <span class="ident">cur</span>.<span class="ident">move_next</span>();
@@ -1203,7 +1203,7 @@
     <span class="ident">T</span>: <span class="ident">Cache</span>,
 {
     <span class="ident">cache</span>: <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="ident">T</span>,
-    <span class="ident">ptr</span>: <span class="ident">CNodePtr</span><span class="op">&lt;</span><span class="ident">T</span>::<span class="ident">Key</span>, <span class="ident">T</span>::<span class="ident">Value</span><span class="op">&gt;</span>,
+    <span class="ident">ptr</span>: <span class="ident">CNodePtr</span><span class="op">&lt;</span><span class="ident">T::Key</span>, <span class="ident">T::Value</span><span class="op">&gt;</span>,
 }
 
 <span class="kw">impl</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">T</span><span class="op">&gt;</span> <span class="ident">Drop</span> <span class="kw">for</span> <span class="ident">CEntry</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">T</span><span class="op">&gt;</span>
@@ -1213,8 +1213,8 @@
     <span class="kw">fn</span> <span class="ident">drop</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>) {
         <span class="kw">let</span> <span class="ident">inner</span> <span class="op">=</span> <span class="kw">unsafe</span> { (<span class="kw-2">*</span><span class="self">self</span>.<span class="ident">ptr</span>.<span class="number">0</span>).<span class="ident">inner</span>.<span class="ident">get</span>().<span class="ident">as_mut</span>().<span class="ident">unwrap</span>() };
         <span class="kw">let</span> <span class="ident">g</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">cache</span>.<span class="ident">cache_self</span>().<span class="ident">lock</span>();
-        <span class="macro">debug_assert_ne</span><span class="macro">!</span>(<span class="ident">inner</span>.<span class="ident">nref</span>, <span class="number">0</span>);
-        <span class="macro">debug_assert_ne</span><span class="macro">!</span>(<span class="ident">inner</span>.<span class="ident">state</span>, <span class="ident">CState</span>::<span class="ident">Empty</span>);
+        <span class="macro">debug_assert_ne!</span>(<span class="ident">inner</span>.<span class="ident">nref</span>, <span class="number">0</span>);
+        <span class="macro">debug_assert_ne!</span>(<span class="ident">inner</span>.<span class="ident">state</span>, <span class="ident">CState::Empty</span>);
         <span class="comment">// SAFETY: nref is guarded by cache.inner.</span>
         <span class="ident">inner</span>.<span class="ident">nref</span> <span class="op">-</span><span class="op">=</span> <span class="number">1</span>;
 
@@ -1233,33 +1233,33 @@
         <span class="kw">let</span> <span class="ident">inner</span> <span class="op">=</span> <span class="kw">unsafe</span> { (<span class="kw-2">*</span><span class="self">self</span>.<span class="ident">ptr</span>.<span class="number">0</span>).<span class="ident">inner</span>.<span class="ident">get</span>().<span class="ident">as_mut</span>().<span class="ident">unwrap</span>() };
 
         <span class="ident">inner</span>.<span class="ident">lock</span>.<span class="ident">acquire</span>().<span class="kw">await</span>;
-        <span class="macro">debug_assert_ne</span><span class="macro">!</span>(<span class="ident">inner</span>.<span class="ident">nref</span>, <span class="number">0</span>);
-        <span class="macro">debug_assert_ne</span><span class="macro">!</span>(<span class="ident">inner</span>.<span class="ident">state</span>, <span class="ident">CState</span>::<span class="ident">Empty</span>);
+        <span class="macro">debug_assert_ne!</span>(<span class="ident">inner</span>.<span class="ident">nref</span>, <span class="number">0</span>);
+        <span class="macro">debug_assert_ne!</span>(<span class="ident">inner</span>.<span class="ident">state</span>, <span class="ident">CState::Empty</span>);
         <span class="ident">inner</span>.<span class="ident">nlocks</span> <span class="op">+</span><span class="op">=</span> <span class="number">1</span>;
 
-        <span class="kw">if</span> <span class="ident">inner</span>.<span class="ident">state</span> <span class="op">=</span><span class="op">=</span> <span class="ident">CState</span>::<span class="ident">Invalid</span> {
+        <span class="kw">if</span> <span class="ident">inner</span>.<span class="ident">state</span> <span class="op">=</span><span class="op">=</span> <span class="ident">CState::Invalid</span> {
             <span class="comment">// Read from disk.</span>
             <span class="kw">let</span> <span class="ident">result</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">cache</span>.<span class="ident">disk_read</span>(<span class="kw-2">&amp;</span><span class="ident">inner</span>.<span class="ident">key</span>, <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">inner</span>.<span class="ident">val</span>).<span class="kw">await</span>;
             <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Err</span>(<span class="ident">e</span>) <span class="op">=</span> <span class="ident">result</span> {
                 <span class="ident">inner</span>.<span class="ident">lock</span>.<span class="ident">release</span>();
                 <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">e</span>);
             }
-            <span class="ident">inner</span>.<span class="ident">state</span> <span class="op">=</span> <span class="ident">CState</span>::<span class="ident">Valid</span>;
+            <span class="ident">inner</span>.<span class="ident">state</span> <span class="op">=</span> <span class="ident">CState::Valid</span>;
         }
         <span class="prelude-val">Ok</span>(<span class="ident">CGuard</span>(<span class="self">self</span>))
     }
 
     <span class="doccomment">/// Get pointer to this cache entry.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">leak</span>(<span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">CNodePtr</span><span class="op">&lt;</span><span class="ident">T</span>::<span class="ident">Key</span>, <span class="ident">T</span>::<span class="ident">Value</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">leak</span>(<span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">CNodePtr</span><span class="op">&lt;</span><span class="ident">T::Key</span>, <span class="ident">T::Value</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">p</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">ptr</span>;
-        <span class="ident">mem</span>::<span class="ident">forget</span>(<span class="self">self</span>);
+        <span class="ident">mem::forget</span>(<span class="self">self</span>);
         <span class="ident">p</span>
     }
 
     <span class="doccomment">/// Get the key of this cache entry.</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// Safe since the key is immutable since referenced.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">key</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">T</span>::<span class="ident">Key</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">key</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">T::Key</span> {
         <span class="kw">let</span> <span class="ident">inner</span> <span class="op">=</span> <span class="kw">unsafe</span> { (<span class="kw-2">*</span><span class="self">self</span>.<span class="ident">ptr</span>).<span class="ident">inner</span>.<span class="ident">get</span>().<span class="ident">as_ref</span>().<span class="ident">unwrap</span>() };
         <span class="ident">inner</span>.<span class="ident">key</span>
     }
@@ -1277,7 +1277,7 @@
     }
 
     <span class="doccomment">/// Restore the cache entry from a node pointer. Useful for non-RAII operations.</span>
-    <span class="kw">pub</span> <span class="kw">unsafe</span> <span class="kw">fn</span> <span class="ident">from_ptr</span>(<span class="ident">cache</span>: <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="ident">T</span>, <span class="ident">ptr</span>: <span class="ident">CNodePtr</span><span class="op">&lt;</span><span class="ident">T</span>::<span class="ident">Key</span>, <span class="ident">T</span>::<span class="ident">Value</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
+    <span class="kw">pub</span> <span class="kw">unsafe</span> <span class="kw">fn</span> <span class="ident">from_ptr</span>(<span class="ident">cache</span>: <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="ident">T</span>, <span class="ident">ptr</span>: <span class="ident">CNodePtr</span><span class="op">&lt;</span><span class="ident">T::Key</span>, <span class="ident">T::Value</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
         <span class="self">Self</span> { <span class="ident">cache</span>, <span class="ident">ptr</span> }
     }
 }
@@ -1294,23 +1294,23 @@
     <span class="doccomment">/// Check if the buffer is dirty.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">is_dirty</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
         <span class="kw">let</span> <span class="ident">inner</span> <span class="op">=</span> <span class="kw">unsafe</span> { (<span class="kw-2">*</span><span class="self">self</span>.<span class="number">0</span>.<span class="ident">ptr</span>).<span class="ident">inner</span>.<span class="ident">get</span>().<span class="ident">as_mut</span>().<span class="ident">unwrap</span>() };
-        <span class="macro">debug_assert_eq</span><span class="macro">!</span>(<span class="ident">inner</span>.<span class="ident">lock</span>.<span class="ident">try_lock</span>().<span class="ident">is_none</span>(), <span class="bool-val">true</span>);
+        <span class="macro">debug_assert_eq!</span>(<span class="ident">inner</span>.<span class="ident">lock</span>.<span class="ident">try_lock</span>().<span class="ident">is_none</span>(), <span class="bool-val">true</span>);
 
-        <span class="ident">inner</span>.<span class="ident">state</span> <span class="op">=</span><span class="op">=</span> <span class="ident">CState</span>::<span class="ident">Dirty</span>
+        <span class="ident">inner</span>.<span class="ident">state</span> <span class="op">=</span><span class="op">=</span> <span class="ident">CState::Dirty</span>
     }
 
     <span class="doccomment">/// Return the key of this cache entry.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">key</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">T</span>::<span class="ident">Key</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">key</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">T::Key</span> {
         <span class="kw">let</span> <span class="ident">inner</span> <span class="op">=</span> <span class="kw">unsafe</span> { (<span class="kw-2">*</span><span class="self">self</span>.<span class="number">0</span>.<span class="ident">ptr</span>).<span class="ident">inner</span>.<span class="ident">get</span>().<span class="ident">as_mut</span>().<span class="ident">unwrap</span>() };
-        <span class="macro">debug_assert_eq</span><span class="macro">!</span>(<span class="ident">inner</span>.<span class="ident">lock</span>.<span class="ident">try_lock</span>().<span class="ident">is_none</span>(), <span class="bool-val">true</span>);
+        <span class="macro">debug_assert_eq!</span>(<span class="ident">inner</span>.<span class="ident">lock</span>.<span class="ident">try_lock</span>().<span class="ident">is_none</span>(), <span class="bool-val">true</span>);
         <span class="ident">inner</span>.<span class="ident">key</span>
     }
 
     <span class="doccomment">/// Return the key of this cache entry.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">nlocks</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">usize</span> {
         <span class="kw">let</span> <span class="ident">inner</span> <span class="op">=</span> <span class="kw">unsafe</span> { (<span class="kw-2">*</span><span class="self">self</span>.<span class="number">0</span>.<span class="ident">ptr</span>).<span class="ident">inner</span>.<span class="ident">get</span>().<span class="ident">as_mut</span>().<span class="ident">unwrap</span>() };
-        <span class="macro">debug_assert_eq</span><span class="macro">!</span>(<span class="ident">inner</span>.<span class="ident">lock</span>.<span class="ident">try_lock</span>().<span class="ident">is_none</span>(), <span class="bool-val">true</span>);
-        <span class="macro">debug_assert</span><span class="macro">!</span>(<span class="ident">inner</span>.<span class="ident">nlocks</span> <span class="op">&gt;</span> <span class="number">0</span>);
+        <span class="macro">debug_assert_eq!</span>(<span class="ident">inner</span>.<span class="ident">lock</span>.<span class="ident">try_lock</span>().<span class="ident">is_none</span>(), <span class="bool-val">true</span>);
+        <span class="macro">debug_assert!</span>(<span class="ident">inner</span>.<span class="ident">nlocks</span> <span class="op">&gt;</span> <span class="number">0</span>);
         <span class="ident">inner</span>.<span class="ident">nlocks</span>
     }
 
@@ -1323,22 +1323,22 @@
     <span class="doccomment">/// If flush is false, this operation will always succeed.</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">unlock</span>(<span class="self">self</span>, <span class="ident">flush</span>: <span class="ident">bool</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>()<span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">inner</span> <span class="op">=</span> <span class="kw">unsafe</span> { (<span class="kw-2">*</span><span class="self">self</span>.<span class="number">0</span>.<span class="ident">ptr</span>).<span class="ident">inner</span>.<span class="ident">get</span>().<span class="ident">as_mut</span>().<span class="ident">unwrap</span>() };
-        <span class="macro">debug_assert_eq</span><span class="macro">!</span>(<span class="ident">inner</span>.<span class="ident">lock</span>.<span class="ident">try_lock</span>().<span class="ident">is_none</span>(), <span class="bool-val">true</span>);
+        <span class="macro">debug_assert_eq!</span>(<span class="ident">inner</span>.<span class="ident">lock</span>.<span class="ident">try_lock</span>().<span class="ident">is_none</span>(), <span class="bool-val">true</span>);
 
         <span class="kw">if</span> <span class="ident">flush</span> {
-            <span class="kw">if</span> <span class="ident">inner</span>.<span class="ident">state</span> <span class="op">=</span><span class="op">=</span> <span class="ident">CState</span>::<span class="ident">Dirty</span> {
+            <span class="kw">if</span> <span class="ident">inner</span>.<span class="ident">state</span> <span class="op">=</span><span class="op">=</span> <span class="ident">CState::Dirty</span> {
                 <span class="comment">// Flush to disk.</span>
                 <span class="kw">let</span> <span class="ident">result</span> <span class="op">=</span> <span class="self">self</span>.<span class="number">0</span>.<span class="ident">cache</span>.<span class="ident">disk_write</span>(<span class="kw-2">&amp;</span><span class="ident">inner</span>.<span class="ident">key</span>, <span class="kw-2">&amp;</span><span class="ident">inner</span>.<span class="ident">val</span>).<span class="kw">await</span>;
                 <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Err</span>(<span class="ident">e</span>) <span class="op">=</span> <span class="ident">result</span> {
                     <span class="ident">inner</span>.<span class="ident">lock</span>.<span class="ident">release</span>();
-                    <span class="ident">mem</span>::<span class="ident">forget</span>(<span class="self">self</span>);
+                    <span class="ident">mem::forget</span>(<span class="self">self</span>);
                     <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">e</span>);
                 }
-                <span class="ident">inner</span>.<span class="ident">state</span> <span class="op">=</span> <span class="ident">CState</span>::<span class="ident">Valid</span>;
+                <span class="ident">inner</span>.<span class="ident">state</span> <span class="op">=</span> <span class="ident">CState::Valid</span>;
             }
         }
         <span class="ident">inner</span>.<span class="ident">lock</span>.<span class="ident">release</span>();
-        <span class="ident">mem</span>::<span class="ident">forget</span>(<span class="self">self</span>);
+        <span class="ident">mem::forget</span>(<span class="self">self</span>);
 
         <span class="prelude-val">Ok</span>(())
     }
@@ -1348,13 +1348,13 @@
 <span class="kw">where</span>
     <span class="ident">T</span>: <span class="ident">Cache</span>,
 {
-    <span class="kw">type</span> <span class="ident">Target</span> <span class="op">=</span> <span class="ident">T</span>::<span class="ident">Value</span>;
-    <span class="kw">fn</span> <span class="ident">deref</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw-2">&amp;</span><span class="self">Self</span>::<span class="ident">Target</span> {
+    <span class="kw">type</span> <span class="ident">Target</span> <span class="op">=</span> <span class="ident">T::Value</span>;
+    <span class="kw">fn</span> <span class="ident">deref</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw-2">&amp;</span><span class="self">Self</span><span class="ident">::Target</span> {
         <span class="kw">let</span> <span class="ident">inner</span> <span class="op">=</span> <span class="kw">unsafe</span> { (<span class="kw-2">*</span><span class="self">self</span>.<span class="number">0</span>.<span class="ident">ptr</span>).<span class="ident">inner</span>.<span class="ident">get</span>().<span class="ident">as_ref</span>().<span class="ident">unwrap</span>() };
 
-        <span class="macro">debug_assert_eq</span><span class="macro">!</span>(<span class="ident">inner</span>.<span class="ident">lock</span>.<span class="ident">try_lock</span>().<span class="ident">is_none</span>(), <span class="bool-val">true</span>);
-        <span class="macro">debug_assert_ne</span><span class="macro">!</span>(<span class="ident">inner</span>.<span class="ident">state</span>, <span class="ident">CState</span>::<span class="ident">Empty</span>);
-        <span class="macro">debug_assert_ne</span><span class="macro">!</span>(<span class="ident">inner</span>.<span class="ident">state</span>, <span class="ident">CState</span>::<span class="ident">Invalid</span>);
+        <span class="macro">debug_assert_eq!</span>(<span class="ident">inner</span>.<span class="ident">lock</span>.<span class="ident">try_lock</span>().<span class="ident">is_none</span>(), <span class="bool-val">true</span>);
+        <span class="macro">debug_assert_ne!</span>(<span class="ident">inner</span>.<span class="ident">state</span>, <span class="ident">CState::Empty</span>);
+        <span class="macro">debug_assert_ne!</span>(<span class="ident">inner</span>.<span class="ident">state</span>, <span class="ident">CState::Invalid</span>);
 
         <span class="kw-2">&amp;</span><span class="ident">inner</span>.<span class="ident">val</span>
     }
@@ -1364,14 +1364,14 @@
 <span class="kw">where</span>
     <span class="ident">T</span>: <span class="ident">Cache</span>,
 {
-    <span class="kw">fn</span> <span class="ident">deref_mut</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">Self</span>::<span class="ident">Target</span> {
+    <span class="kw">fn</span> <span class="ident">deref_mut</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">Self</span><span class="ident">::Target</span> {
         <span class="kw">let</span> <span class="ident">inner</span> <span class="op">=</span> <span class="kw">unsafe</span> { (<span class="kw-2">*</span><span class="self">self</span>.<span class="number">0</span>.<span class="ident">ptr</span>.<span class="number">0</span>).<span class="ident">inner</span>.<span class="ident">get</span>().<span class="ident">as_mut</span>().<span class="ident">unwrap</span>() };
 
-        <span class="macro">debug_assert_eq</span><span class="macro">!</span>(<span class="ident">inner</span>.<span class="ident">lock</span>.<span class="ident">try_lock</span>().<span class="ident">is_none</span>(), <span class="bool-val">true</span>);
-        <span class="macro">debug_assert_ne</span><span class="macro">!</span>(<span class="ident">inner</span>.<span class="ident">state</span>, <span class="ident">CState</span>::<span class="ident">Empty</span>);
-        <span class="macro">debug_assert_ne</span><span class="macro">!</span>(<span class="ident">inner</span>.<span class="ident">state</span>, <span class="ident">CState</span>::<span class="ident">Invalid</span>);
+        <span class="macro">debug_assert_eq!</span>(<span class="ident">inner</span>.<span class="ident">lock</span>.<span class="ident">try_lock</span>().<span class="ident">is_none</span>(), <span class="bool-val">true</span>);
+        <span class="macro">debug_assert_ne!</span>(<span class="ident">inner</span>.<span class="ident">state</span>, <span class="ident">CState::Empty</span>);
+        <span class="macro">debug_assert_ne!</span>(<span class="ident">inner</span>.<span class="ident">state</span>, <span class="ident">CState::Invalid</span>);
 
-        <span class="ident">inner</span>.<span class="ident">state</span> <span class="op">=</span> <span class="ident">CState</span>::<span class="ident">Dirty</span>;
+        <span class="ident">inner</span>.<span class="ident">state</span> <span class="op">=</span> <span class="ident">CState::Dirty</span>;
         <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">inner</span>.<span class="ident">val</span>
     }
 }
@@ -1381,15 +1381,15 @@
     <span class="ident">T</span>: <span class="ident">Cache</span>,
 {
     <span class="kw">fn</span> <span class="ident">drop</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>) {
-        <span class="macro">panic</span><span class="macro">!</span>(<span class="string">&quot;forget to unlock&quot;</span>);
+        <span class="macro">panic!</span>(<span class="string">&quot;forget to unlock&quot;</span>);
     }
 }
 
-<span class="kw">impl</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span> <span class="ident">fmt</span>::<span class="ident">Debug</span> <span class="kw">for</span> <span class="ident">CGuard</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span>, <span class="ident">T</span><span class="op">&gt;</span>
+<span class="kw">impl</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span> <span class="ident">fmt::Debug</span> <span class="kw">for</span> <span class="ident">CGuard</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span>, <span class="ident">T</span><span class="op">&gt;</span>
 <span class="kw">where</span>
     <span class="ident">T</span>: <span class="ident">Cache</span>,
 {
-    <span class="kw">fn</span> <span class="ident">fmt</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">f</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">fmt</span>::<span class="ident">Formatter</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">fmt</span>::<span class="prelude-ty">Result</span> {
+    <span class="kw">fn</span> <span class="ident">fmt</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">f</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">fmt::Formatter</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">fmt::Result</span> {
         <span class="kw">let</span> <span class="ident">inner</span> <span class="op">=</span> <span class="kw">unsafe</span> { (<span class="kw-2">*</span><span class="self">self</span>.<span class="number">0</span>.<span class="ident">ptr</span>.<span class="number">0</span>).<span class="ident">inner</span>.<span class="ident">get</span>().<span class="ident">as_mut</span>().<span class="ident">unwrap</span>() };
         <span class="ident">f</span>.<span class="ident">debug_tuple</span>(<span class="string">&quot;CGuard&quot;</span>)
             .<span class="ident">field</span>(<span class="kw-2">&amp;</span><span class="ident">inner</span>.<span class="ident">state</span>)
@@ -1405,12 +1405,12 @@
 <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">test</span>)]</span>
 <span class="kw">mod</span> <span class="ident">tests</span> {
     <span class="kw">use</span> <span class="kw">super</span>::<span class="kw-2">*</span>;
-    <span class="kw">use</span> <span class="ident">alloc</span>::<span class="ident">sync</span>::<span class="ident">Arc</span>;
-    <span class="kw">use</span> <span class="ident">alloc</span>::<span class="ident">vec</span>::<span class="ident">Vec</span>;
-    <span class="kw">use</span> <span class="ident">ksched</span>::<span class="ident">task</span>;
+    <span class="kw">use</span> <span class="ident">alloc::sync::Arc</span>;
+    <span class="kw">use</span> <span class="ident">alloc::vec::Vec</span>;
+    <span class="kw">use</span> <span class="ident">ksched::task</span>;
     <span class="kw">use</span> <span class="ident">ktest</span>::<span class="kw-2">*</span>;
-    <span class="kw">use</span> <span class="ident">rand</span>::<span class="ident">Rng</span>;
-    <span class="kw">use</span> <span class="ident">task</span>::<span class="ident">yield_now</span>;
+    <span class="kw">use</span> <span class="ident">rand::Rng</span>;
+    <span class="kw">use</span> <span class="ident">task::yield_now</span>;
 
     <span class="kw">struct</span> <span class="ident">MyCache</span><span class="op">&lt;</span><span class="kw">const</span> <span class="ident">CACHESZ</span>: <span class="ident">usize</span>, <span class="kw">const</span> <span class="ident">DISKSZ</span>: <span class="ident">usize</span><span class="op">&gt;</span> {
         <span class="ident">cache</span>: <span class="ident">Spinlock</span><span class="op">&lt;</span><span class="ident">CacheData</span><span class="op">&lt;</span><span class="ident">usize</span>, <span class="ident">u32</span><span class="op">&gt;</span><span class="op">&gt;</span>,
@@ -1420,20 +1420,20 @@
     <span class="kw">impl</span><span class="op">&lt;</span><span class="kw">const</span> <span class="ident">CACHESZ</span>: <span class="ident">usize</span>, <span class="kw">const</span> <span class="ident">DISKSZ</span>: <span class="ident">usize</span><span class="op">&gt;</span> <span class="ident">MyCache</span><span class="op">&lt;</span><span class="ident">CACHESZ</span>, <span class="ident">DISKSZ</span><span class="op">&gt;</span> {
         <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span> {
             <span class="prelude-val">Ok</span>(<span class="self">Self</span> {
-                <span class="ident">cache</span>: <span class="self">Self</span>::<span class="ident">new_cache</span>(<span class="ident">CACHESZ</span>, <span class="op">|</span><span class="op">|</span> <span class="prelude-val">Ok</span>(<span class="number">0</span>))<span class="question-mark">?</span>,
-                <span class="ident">disk</span>: <span class="ident">Arc</span>::<span class="ident">try_new</span>(<span class="ident">Mutex</span>::<span class="ident">new</span>([<span class="number">0</span>; <span class="ident">DISKSZ</span>]))<span class="question-mark">?</span>,
+                <span class="ident">cache</span>: <span class="self">Self</span><span class="ident">::new_cache</span>(<span class="ident">CACHESZ</span>, <span class="op">|</span><span class="op">|</span> <span class="prelude-val">Ok</span>(<span class="number">0</span>))<span class="question-mark">?</span>,
+                <span class="ident">disk</span>: <span class="ident">Arc::try_new</span>(<span class="ident">Mutex::new</span>([<span class="number">0</span>; <span class="ident">DISKSZ</span>]))<span class="question-mark">?</span>,
             })
         }
     }
 
     <span class="kw">impl</span><span class="op">&lt;</span><span class="kw">const</span> <span class="ident">CACHESZ</span>: <span class="ident">usize</span>, <span class="kw">const</span> <span class="ident">DISKSZ</span>: <span class="ident">usize</span><span class="op">&gt;</span> <span class="ident">Cache</span> <span class="kw">for</span> <span class="ident">MyCache</span><span class="op">&lt;</span><span class="ident">CACHESZ</span>, <span class="ident">DISKSZ</span><span class="op">&gt;</span> {
-        <span class="macro">cache_impl</span><span class="macro">!</span>(<span class="ident">usize</span>, <span class="ident">u32</span>, <span class="ident">cache</span>);
+        <span class="macro">cache_impl!</span>(<span class="ident">usize</span>, <span class="ident">u32</span>, <span class="ident">cache</span>);
 
         <span class="kw">fn</span> <span class="ident">disk_read</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span>(
             <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="self">self</span>,
-            <span class="ident">key</span>: <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="self">Self</span>::<span class="ident">Key</span>,
-            <span class="ident">val</span>: <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="kw-2">mut</span> <span class="self">Self</span>::<span class="ident">Value</span>,
-        ) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span>::<span class="ident">ReadFut</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span> {
+            <span class="ident">key</span>: <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="self">Self</span><span class="ident">::Key</span>,
+            <span class="ident">val</span>: <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="kw-2">mut</span> <span class="self">Self</span><span class="ident">::Value</span>,
+        ) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span><span class="ident">::ReadFut</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span> {
             <span class="kw">async</span> <span class="kw">move</span> {
                 <span class="kw">let</span> <span class="ident">g</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">disk</span>.<span class="ident">lock</span>().<span class="kw">await</span>;
                 <span class="kw-2">*</span><span class="ident">val</span> <span class="op">=</span> <span class="ident">g</span>[<span class="ident">key</span>.<span class="ident">clone</span>()];
@@ -1443,9 +1443,9 @@
 
         <span class="kw">fn</span> <span class="ident">disk_write</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span>(
             <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="self">self</span>,
-            <span class="ident">key</span>: <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="self">Self</span>::<span class="ident">Key</span>,
-            <span class="ident">val</span>: <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="self">Self</span>::<span class="ident">Value</span>,
-        ) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span>::<span class="ident">WriteFut</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span> {
+            <span class="ident">key</span>: <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="self">Self</span><span class="ident">::Key</span>,
+            <span class="ident">val</span>: <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="self">Self</span><span class="ident">::Value</span>,
+        ) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span><span class="ident">::WriteFut</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span> {
             <span class="kw">async</span> <span class="kw">move</span> {
                 <span class="kw">let</span> <span class="ident">key</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="ident">key</span>.<span class="ident">clone</span>().<span class="ident">into</span>();
                 <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">g</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">disk</span>.<span class="ident">lock</span>().<span class="kw">await</span>;
@@ -1460,12 +1460,12 @@
         <span class="ident">ntask</span>: <span class="ident">usize</span>,
         <span class="ident">write_back</span>: <span class="ident">bool</span>,
     ) {
-        <span class="kw">let</span> <span class="ident">cache</span> <span class="op">=</span> <span class="ident">Arc</span>::<span class="ident">new</span>(<span class="ident">MyCache</span>::<span class="op">&lt;</span><span class="ident">CACHESZ</span>, <span class="ident">DISKSZ</span><span class="op">&gt;</span>::<span class="ident">new</span>().<span class="ident">unwrap</span>());
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">rng</span> <span class="op">=</span> <span class="ident">rand</span>::<span class="ident">thread_rng</span>();
+        <span class="kw">let</span> <span class="ident">cache</span> <span class="op">=</span> <span class="ident">Arc::new</span>(<span class="ident">MyCache</span>::<span class="op">&lt;</span><span class="ident">CACHESZ</span>, <span class="ident">DISKSZ</span><span class="op">&gt;</span><span class="ident">::new</span>().<span class="ident">unwrap</span>());
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">rng</span> <span class="op">=</span> <span class="ident">rand::thread_rng</span>();
         <span class="kw">let</span> <span class="ident">idx</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span> <span class="op">=</span> (<span class="number">0</span>..<span class="ident">ntask</span>).<span class="ident">map</span>(<span class="op">|</span><span class="kw">_</span><span class="op">|</span> <span class="ident">rng</span>.<span class="ident">gen_range</span>(<span class="number">0</span>..<span class="ident">DISKSZ</span>)).<span class="ident">collect</span>();
         <span class="kw">for</span> <span class="ident">idx</span> <span class="kw">in</span> <span class="ident">idx</span> {
             <span class="kw">let</span> <span class="ident">cache</span> <span class="op">=</span> <span class="ident">cache</span>.<span class="ident">clone</span>();
-            <span class="ident">task</span>::<span class="ident">spawn</span>(<span class="number">0</span>, <span class="kw">async</span> <span class="kw">move</span> {
+            <span class="ident">task::spawn</span>(<span class="number">0</span>, <span class="kw">async</span> <span class="kw">move</span> {
                 <span class="kw">let</span> <span class="ident">ent</span> <span class="op">=</span> <span class="kw">loop</span> {
                     <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">ent</span>) <span class="op">=</span> <span class="ident">cache</span>.<span class="ident">cache_get</span>(<span class="ident">idx</span>, <span class="bool-val">true</span>).<span class="kw">await</span>.<span class="ident">unwrap</span>() {
                         <span class="kw">break</span> <span class="ident">ent</span>;
@@ -1485,7 +1485,7 @@
                     <span class="ident">yield_now</span>().<span class="kw">await</span>;
                 };
                 <span class="kw">let</span> <span class="ident">b</span> <span class="op">=</span> <span class="ident">ent</span>.<span class="ident">lock</span>().<span class="kw">await</span>.<span class="ident">unwrap</span>();
-                <span class="macro">assert</span><span class="macro">!</span>(<span class="kw-2">*</span><span class="ident">b</span> <span class="op">&gt;</span> <span class="ident">pre</span>);
+                <span class="macro">assert!</span>(<span class="kw-2">*</span><span class="ident">b</span> <span class="op">&gt;</span> <span class="ident">pre</span>);
                 <span class="ident">b</span>.<span class="ident">unlock</span>(<span class="op">!</span><span class="ident">write_back</span>).<span class="kw">await</span>.<span class="ident">unwrap</span>();
                 <span class="ident">drop</span>(<span class="ident">ent</span>);
             })
@@ -1494,29 +1494,29 @@
 
         <span class="ident">run_multi</span>(<span class="ident">ncpu</span>);
         <span class="kw">let</span> (<span class="ident">refed</span>, <span class="ident">dirty</span>) <span class="op">=</span> <span class="ident">cache_stat</span>(<span class="ident">cache</span>.<span class="ident">deref</span>());
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">refed</span>, <span class="number">0</span>);
+        <span class="macro">assert_eq!</span>(<span class="ident">refed</span>, <span class="number">0</span>);
         <span class="kw">if</span> <span class="op">!</span><span class="ident">write_back</span> {
-            <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">dirty</span>, <span class="number">0</span>);
+            <span class="macro">assert_eq!</span>(<span class="ident">dirty</span>, <span class="number">0</span>);
         }
 
         <span class="kw">let</span> <span class="ident">cache2</span> <span class="op">=</span> <span class="ident">cache</span>.<span class="ident">clone</span>();
-        <span class="ident">task</span>::<span class="ident">spawn</span>(<span class="number">0</span>, <span class="kw">async</span> <span class="kw">move</span> {
+        <span class="ident">task::spawn</span>(<span class="number">0</span>, <span class="kw">async</span> <span class="kw">move</span> {
             <span class="kw">let</span> <span class="ident">g</span> <span class="op">=</span> <span class="ident">cache2</span>.<span class="ident">disk</span>.<span class="ident">lock</span>().<span class="kw">await</span>;
             <span class="kw">let</span> <span class="ident">sum</span> <span class="op">=</span> <span class="ident">g</span>.<span class="ident">iter</span>().<span class="ident">sum</span>::<span class="op">&lt;</span><span class="ident">u32</span><span class="op">&gt;</span>();
             <span class="kw">if</span> <span class="ident">write_back</span> {
-                <span class="macro">assert</span><span class="macro">!</span>(<span class="ident">sum</span> <span class="op">&lt;</span><span class="op">=</span> <span class="ident">ntask</span> <span class="kw">as</span> <span class="ident">u32</span>);
+                <span class="macro">assert!</span>(<span class="ident">sum</span> <span class="op">&lt;</span><span class="op">=</span> <span class="ident">ntask</span> <span class="kw">as</span> <span class="ident">u32</span>);
             } <span class="kw">else</span> {
-                <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">sum</span>, <span class="ident">ntask</span> <span class="kw">as</span> <span class="ident">u32</span>);
+                <span class="macro">assert_eq!</span>(<span class="ident">sum</span>, <span class="ident">ntask</span> <span class="kw">as</span> <span class="ident">u32</span>);
             }
         })
         .<span class="ident">unwrap</span>();
-        <span class="ident">task</span>::<span class="ident">run_all</span>();
+        <span class="ident">task::run_all</span>();
 
-        <span class="kw">let</span> <span class="ident">tot</span> <span class="op">=</span> <span class="ident">Arc</span>::<span class="ident">new</span>(<span class="ident">Spinlock</span>::<span class="ident">new</span>(<span class="number">0</span>));
+        <span class="kw">let</span> <span class="ident">tot</span> <span class="op">=</span> <span class="ident">Arc::new</span>(<span class="ident">Spinlock::new</span>(<span class="number">0</span>));
         <span class="kw">for</span> <span class="ident">i</span> <span class="kw">in</span> <span class="number">0</span>..<span class="ident">DISKSZ</span> {
             <span class="kw">let</span> <span class="ident">tot</span> <span class="op">=</span> <span class="ident">tot</span>.<span class="ident">clone</span>();
             <span class="kw">let</span> <span class="ident">cache</span> <span class="op">=</span> <span class="ident">cache</span>.<span class="ident">clone</span>();
-            <span class="ident">task</span>::<span class="ident">spawn</span>(<span class="number">0</span>, <span class="kw">async</span> <span class="kw">move</span> {
+            <span class="ident">task::spawn</span>(<span class="number">0</span>, <span class="kw">async</span> <span class="kw">move</span> {
                 <span class="kw">let</span> <span class="ident">ent</span> <span class="op">=</span> <span class="kw">loop</span> {
                     <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">ent</span>) <span class="op">=</span> <span class="ident">cache</span>.<span class="ident">cache_get</span>(<span class="ident">i</span>, <span class="bool-val">true</span>).<span class="kw">await</span>.<span class="ident">unwrap</span>() {
                         <span class="kw">break</span> <span class="ident">ent</span>;
@@ -1532,17 +1532,17 @@
             })
             .<span class="ident">unwrap</span>();
         }
-        <span class="ident">task</span>::<span class="ident">run_all</span>();
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="kw-2">*</span><span class="ident">tot</span>.<span class="ident">lock</span>(), <span class="ident">ntask</span> <span class="kw">as</span> <span class="ident">u32</span>);
+        <span class="ident">task::run_all</span>();
+        <span class="macro">assert_eq!</span>(<span class="kw-2">*</span><span class="ident">tot</span>.<span class="ident">lock</span>(), <span class="ident">ntask</span> <span class="kw">as</span> <span class="ident">u32</span>);
 
         <span class="kw">let</span> <span class="ident">cache2</span> <span class="op">=</span> <span class="ident">cache</span>.<span class="ident">clone</span>();
-        <span class="ident">task</span>::<span class="ident">spawn</span>(<span class="number">0</span>, <span class="kw">async</span> <span class="kw">move</span> {
+        <span class="ident">task::spawn</span>(<span class="number">0</span>, <span class="kw">async</span> <span class="kw">move</span> {
             <span class="kw">let</span> <span class="ident">g</span> <span class="op">=</span> <span class="ident">cache2</span>.<span class="ident">disk</span>.<span class="ident">lock</span>().<span class="kw">await</span>;
             <span class="kw">let</span> <span class="ident">sum</span> <span class="op">=</span> <span class="ident">g</span>.<span class="ident">iter</span>().<span class="ident">sum</span>::<span class="op">&lt;</span><span class="ident">u32</span><span class="op">&gt;</span>();
-            <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">sum</span>, <span class="ident">ntask</span> <span class="kw">as</span> <span class="ident">u32</span>);
+            <span class="macro">assert_eq!</span>(<span class="ident">sum</span>, <span class="ident">ntask</span> <span class="kw">as</span> <span class="ident">u32</span>);
         })
         .<span class="ident">unwrap</span>();
-        <span class="ident">task</span>::<span class="ident">run_all</span>();
+        <span class="ident">task::run_all</span>();
     }
 
     <span class="comment">// // May corrupt other testing thread when panic.</span>
@@ -1565,12 +1565,12 @@
         <span class="kw">let</span> <span class="ident">ntask</span> <span class="op">=</span> <span class="number">200</span>;
         <span class="kw">let</span> <span class="ident">ncpu</span> <span class="op">=</span> <span class="number">10</span>;
 
-        <span class="kw">let</span> <span class="ident">cache</span> <span class="op">=</span> <span class="ident">Arc</span>::<span class="ident">new</span>(<span class="ident">MyCache</span>::<span class="op">&lt;</span><span class="ident">CACHESZ</span>, <span class="ident">DISKSZ</span><span class="op">&gt;</span>::<span class="ident">new</span>().<span class="ident">unwrap</span>());
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">rng</span> <span class="op">=</span> <span class="ident">rand</span>::<span class="ident">thread_rng</span>();
+        <span class="kw">let</span> <span class="ident">cache</span> <span class="op">=</span> <span class="ident">Arc::new</span>(<span class="ident">MyCache</span>::<span class="op">&lt;</span><span class="ident">CACHESZ</span>, <span class="ident">DISKSZ</span><span class="op">&gt;</span><span class="ident">::new</span>().<span class="ident">unwrap</span>());
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">rng</span> <span class="op">=</span> <span class="ident">rand::thread_rng</span>();
         <span class="kw">let</span> <span class="ident">idx</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span> <span class="op">=</span> (<span class="number">0</span>..<span class="ident">ntask</span>).<span class="ident">map</span>(<span class="op">|</span><span class="kw">_</span><span class="op">|</span> <span class="ident">rng</span>.<span class="ident">gen_range</span>(<span class="number">0</span>..<span class="ident">DISKSZ</span>)).<span class="ident">collect</span>();
         <span class="kw">for</span> <span class="ident">idx</span> <span class="kw">in</span> <span class="ident">idx</span> {
             <span class="kw">let</span> <span class="ident">cache</span> <span class="op">=</span> <span class="ident">cache</span>.<span class="ident">clone</span>();
-            <span class="ident">task</span>::<span class="ident">spawn</span>(<span class="number">0</span>, <span class="kw">async</span> <span class="kw">move</span> {
+            <span class="ident">task::spawn</span>(<span class="number">0</span>, <span class="kw">async</span> <span class="kw">move</span> {
                 <span class="kw">let</span> <span class="ident">ent</span> <span class="op">=</span> <span class="kw">loop</span> {
                     <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">ent</span>) <span class="op">=</span> <span class="ident">cache</span>.<span class="ident">cache_get</span>(<span class="ident">idx</span>, <span class="bool-val">true</span>).<span class="kw">await</span>.<span class="ident">unwrap</span>() {
                         <span class="kw">break</span> <span class="ident">ent</span>;
@@ -1588,8 +1588,8 @@
 
         <span class="ident">run_multi</span>(<span class="ident">ncpu</span>);
         <span class="kw">let</span> (<span class="ident">refed</span>, <span class="ident">dirty</span>) <span class="op">=</span> <span class="ident">cache_stat</span>(<span class="ident">cache</span>.<span class="ident">deref</span>());
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">refed</span>, <span class="number">0</span>);
-        <span class="macro">assert</span><span class="macro">!</span>(<span class="number">0</span> <span class="op">&lt;</span> <span class="ident">dirty</span> <span class="op">&amp;&amp;</span> <span class="ident">dirty</span> <span class="op">&lt;</span><span class="op">=</span> <span class="ident">ntask</span>);
+        <span class="macro">assert_eq!</span>(<span class="ident">refed</span>, <span class="number">0</span>);
+        <span class="macro">assert!</span>(<span class="number">0</span> <span class="op">&lt;</span> <span class="ident">dirty</span> <span class="op">&amp;&amp;</span> <span class="ident">dirty</span> <span class="op">&lt;</span><span class="op">=</span> <span class="ident">ntask</span>);
     }
 
     <span class="attribute">#[<span class="ident">test</span>]</span>
@@ -1607,5 +1607,5 @@
     }
 }
 </pre></div>
-</section><section id="search" class="content hidden"></section><section class="footer"></section><div id="rustdoc-vars" data-root-path="../../" data-current-crate="kdevice"></div>
-    <script src="../../main.js"></script><script src="../../source-script.js"></script><script src="../../source-files.js"></script><script defer src="../../search-index.js"></script></body></html>
+</section><section id="search" class="content hidden"></section><div id="rustdoc-vars" data-root-path="../../" data-current-crate="kdevice" data-search-index-js="../../search-index.js" data-search-js="../../search.js"></div>
+    <script src="../../main.js"></script><script src="../../source-script.js"></script><script src="../../source-files.js"></script></body></html>

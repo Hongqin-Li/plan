@@ -1,7 +1,7 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `kcore/src/chan.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>chan.rs - source</title><link rel="stylesheet" type="text/css" href="../../normalize.css"><link rel="stylesheet" type="text/css" href="../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../../light.css"  id="themeStyle"><link rel="stylesheet" type="text/css" href="../../dark.css" disabled ><link rel="stylesheet" type="text/css" href="../../ayu.css" disabled ><script id="default-settings"></script><script src="../../storage.js"></script><noscript><link rel="stylesheet" href="../../noscript.css"></noscript><link rel="icon" type="image/svg+xml" href="../../favicon.svg">
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `kcore/src/chan.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>chan.rs - source</title><link rel="stylesheet" type="text/css" href="../../normalize.css"><link rel="stylesheet" type="text/css" href="../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../../light.css"  id="themeStyle"><link rel="stylesheet" type="text/css" href="../../dark.css" disabled ><link rel="stylesheet" type="text/css" href="../../ayu.css" disabled ><script id="default-settings"></script><script src="../../storage.js"></script><script src="../../crates.js"></script><noscript><link rel="stylesheet" href="../../noscript.css"></noscript><link rel="icon" type="image/svg+xml" href="../../favicon.svg">
 <link rel="alternate icon" type="image/png" href="../../favicon-16x16.png">
-<link rel="alternate icon" type="image/png" href="../../favicon-32x32.png"><style type="text/css">#crate-search{background-image:url("../../down-arrow.svg");}</style></head><body class="rustdoc source"><!--[if lte IE 8]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu">&#9776;</div><a href='../../kcore/index.html'><div class='logo-container rust-logo'><img src='../../rust-logo.png' alt='logo'></div></a></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!" aria-haspopup="menu"><img src="../../brush.svg" width="18" alt="Pick another theme!"></button><div id="theme-choices" role="menu"></div></div><script src="../../theme.js"></script><nav class="sub"><form class="search-form"><div class="search-container"><div><select id="crate-search"><option value="All crates">All crates</option></select><input class="search-input" name="search" disabled autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><button type="button" class="help-button">?</button>
-                <a id="settings-menu" href="../../settings.html"><img src="../../wheel.svg" width="18" alt="Change settings"></a></div></form></nav><section id="main" class="content"><pre class="line-numbers"><span id="1">  1</span>
+<link rel="alternate icon" type="image/png" href="../../favicon-32x32.png"><style type="text/css">#crate-search{background-image:url("../../down-arrow.svg");}</style></head><body class="rustdoc source"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu" role="button">&#9776;</div><a href='../../kcore/index.html'><div class='logo-container rust-logo'><img src='../../rust-logo.png' alt='logo'></div></a></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!" aria-haspopup="menu"><img src="../../brush.svg" width="18" height="18" alt="Pick another theme!"></button><div id="theme-choices" role="menu"></div></div><nav class="sub"><form class="search-form"><div class="search-container"><div><select id="crate-search"><option value="All crates">All crates</option></select><input class="search-input" name="search" disabled autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><button type="button" id="help-button">?</button>
+                <a id="settings-menu" href="../../settings.html"><img src="../../wheel.svg" width="18" height="18" alt="Change settings"></a></div></form></nav><section id="main" class="content"><div class="example-wrap"><pre class="line-numbers"><span id="1">  1</span>
 <span id="2">  2</span>
 <span id="3">  3</span>
 <span id="4">  4</span>
@@ -535,22 +535,22 @@
 <span id="532">532</span>
 <span id="533">533</span>
 <span id="534">534</span>
-</pre><div class="example-wrap"><pre class="rust ">
+</pre><pre class="rust">
 <span class="doccomment">//! Channel and mount space.</span>
 
-<span class="kw">use</span> <span class="ident">alloc</span>::<span class="ident">sync</span>::<span class="ident">Weak</span>;
-<span class="kw">use</span> <span class="ident">alloc</span>::<span class="ident">vec</span>::<span class="ident">Vec</span>;
-<span class="kw">use</span> <span class="ident">core</span>::{<span class="ident">cmp</span>::<span class="ident">min</span>, <span class="ident">convert</span>::<span class="ident">TryFrom</span>, <span class="ident">fmt</span>::<span class="ident">Debug</span>, <span class="ident">iter</span>, <span class="ident">mem</span>::<span class="ident">MaybeUninit</span>, <span class="ident">str</span>};
-<span class="kw">use</span> <span class="ident">kalloc</span>::<span class="ident">wrapper</span>::<span class="ident">vec_push</span>;
+<span class="kw">use</span> <span class="ident">alloc::sync::Weak</span>;
+<span class="kw">use</span> <span class="ident">alloc::vec::Vec</span>;
+<span class="kw">use</span> <span class="ident">core</span>::{<span class="ident">cmp::min</span>, <span class="ident">convert::TryFrom</span>, <span class="ident">fmt::Debug</span>, <span class="ident">iter</span>, <span class="ident">mem::MaybeUninit</span>, <span class="ident">str</span>};
+<span class="kw">use</span> <span class="ident">kalloc::wrapper::vec_push</span>;
 <span class="kw">use</span> <span class="ident">ksched</span>::{
     <span class="ident">sync</span>::{<span class="ident">Mutex</span>, <span class="ident">RwLock</span>},
-    <span class="ident">task</span>::<span class="ident">yield_now</span>,
+    <span class="ident">task::yield_now</span>,
 };
 
-<span class="kw">use</span> <span class="ident">alloc</span>::<span class="ident">sync</span>::<span class="ident">Arc</span>;
+<span class="kw">use</span> <span class="ident">alloc::sync::Arc</span>;
 
 <span class="kw">use</span> <span class="kw">crate</span>::{
-    <span class="ident">dev</span>::<span class="ident">Device</span>,
+    <span class="ident">dev::Device</span>,
     <span class="ident">error</span>::{<span class="ident">Error</span>, <span class="prelude-ty">Result</span>},
 };
 
@@ -657,7 +657,7 @@
 }
 
 <span class="kw">impl</span> <span class="ident">Debug</span> <span class="kw">for</span> <span class="ident">ChanKey</span> {
-    <span class="kw">fn</span> <span class="ident">fmt</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">f</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">core</span>::<span class="ident">fmt</span>::<span class="ident">Formatter</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">core</span>::<span class="ident">fmt</span>::<span class="prelude-ty">Result</span> {
+    <span class="kw">fn</span> <span class="ident">fmt</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">f</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">core::fmt::Formatter</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">core::fmt::Result</span> {
         <span class="ident">f</span>.<span class="ident">debug_struct</span>(<span class="string">&quot;ChanKey&quot;</span>)
             .<span class="ident">field</span>(<span class="string">&quot;id&quot;</span>, <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">id</span>)
             .<span class="ident">field</span>(<span class="string">&quot;dropped&quot;</span>, <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">dropped</span>)
@@ -670,7 +670,7 @@
     <span class="doccomment">///</span>
     <span class="doccomment">/// FIXME: How to statically assert some function is unreachable?</span>
     <span class="kw">fn</span> <span class="ident">drop</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>) {
-        <span class="macro">assert</span><span class="macro">!</span>(<span class="self">self</span>.<span class="ident">dropped</span>, <span class="string">&quot;forgot to close: {:?}&quot;</span>, <span class="self">self</span>);
+        <span class="macro">assert!</span>(<span class="self">self</span>.<span class="ident">dropped</span>, <span class="string">&quot;forgot to close: {:?}&quot;</span>, <span class="self">self</span>);
     }
 }
 
@@ -698,34 +698,34 @@
 <span class="kw">impl</span> <span class="ident">Chan</span> {
     <span class="doccomment">/// Create a new mount space from the root of a device.</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">attach</span>(<span class="ident">dev</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">Device</span> <span class="op">+</span> <span class="ident">Send</span> <span class="op">+</span> <span class="ident">Sync</span><span class="op">&gt;</span>, <span class="ident">aname</span>: <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span><span class="op">&gt;</span> {
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">name</span> <span class="op">=</span> <span class="ident">Vec</span>::<span class="ident">new</span>();
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">name</span> <span class="op">=</span> <span class="ident">Vec::new</span>();
         <span class="ident">name</span>.<span class="ident">try_reserve</span>(<span class="ident">aname</span>.<span class="ident">len</span>())<span class="question-mark">?</span>;
         <span class="kw">for</span> <span class="ident">x</span> <span class="kw">in</span> <span class="ident">aname</span> {
             <span class="ident">name</span>.<span class="ident">push</span>(<span class="kw-2">*</span><span class="ident">x</span>);
         }
-        <span class="kw">let</span> <span class="ident">a</span> <span class="op">=</span> <span class="ident">Arc</span>::<span class="op">&lt;</span><span class="ident">Chan</span><span class="op">&gt;</span>::<span class="ident">try_new_uninit</span>()<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">a</span> <span class="op">=</span> <span class="ident">Arc</span>::<span class="op">&lt;</span><span class="ident">Chan</span><span class="op">&gt;</span><span class="ident">::try_new_uninit</span>()<span class="question-mark">?</span>;
         <span class="kw">let</span> <span class="ident">id</span> <span class="op">=</span> <span class="ident">dev</span>.<span class="ident">clone</span>().<span class="ident">attach</span>(<span class="ident">aname</span>)<span class="question-mark">?</span>.<span class="kw">await</span><span class="question-mark">?</span>;
         <span class="kw">let</span> <span class="ident">key</span> <span class="op">=</span> <span class="ident">ChanKey</span> {
             <span class="ident">dev</span>,
             <span class="ident">id</span>,
             <span class="ident">dropped</span>: <span class="bool-val">false</span>,
         };
-        <span class="prelude-val">Ok</span>(<span class="kw">unsafe</span> { <span class="self">Self</span>::<span class="ident">from_key</span>(<span class="ident">key</span>, <span class="ident">a</span>) })
+        <span class="prelude-val">Ok</span>(<span class="kw">unsafe</span> { <span class="self">Self</span><span class="ident">::from_key</span>(<span class="ident">key</span>, <span class="ident">a</span>) })
     }
 
     <span class="doccomment">/// Create a new mount space rooted at a chan.</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">chan</span>: <span class="kw-2">&amp;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Chan</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span><span class="op">&gt;</span> {
-        <span class="kw">let</span> <span class="ident">a</span> <span class="op">=</span> <span class="ident">Arc</span>::<span class="op">&lt;</span><span class="ident">Chan</span><span class="op">&gt;</span>::<span class="ident">try_new_uninit</span>()<span class="question-mark">?</span>;
-        <span class="kw">let</span> <span class="ident">key</span> <span class="op">=</span> <span class="self">Self</span>::<span class="ident">rekey</span>(<span class="kw-2">&amp;</span><span class="ident">chan</span>).<span class="kw">await</span><span class="question-mark">?</span>;
-        <span class="prelude-val">Ok</span>(<span class="kw">unsafe</span> { <span class="self">Self</span>::<span class="ident">from_key</span>(<span class="ident">key</span>, <span class="ident">a</span>) })
+        <span class="kw">let</span> <span class="ident">a</span> <span class="op">=</span> <span class="ident">Arc</span>::<span class="op">&lt;</span><span class="ident">Chan</span><span class="op">&gt;</span><span class="ident">::try_new_uninit</span>()<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">key</span> <span class="op">=</span> <span class="self">Self</span><span class="ident">::rekey</span>(<span class="kw-2">&amp;</span><span class="ident">chan</span>).<span class="kw">await</span><span class="question-mark">?</span>;
+        <span class="prelude-val">Ok</span>(<span class="kw">unsafe</span> { <span class="self">Self</span><span class="ident">::from_key</span>(<span class="ident">key</span>, <span class="ident">a</span>) })
     }
 
     <span class="kw">unsafe</span> <span class="kw">fn</span> <span class="ident">from_key</span>(<span class="ident">key</span>: <span class="ident">ChanKey</span>, <span class="kw-2">mut</span> <span class="ident">a</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">MaybeUninit</span><span class="op">&lt;</span><span class="ident">Chan</span><span class="op">&gt;</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span> {
-        <span class="ident">Arc</span>::<span class="ident">get_mut_unchecked</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">a</span>).<span class="ident">as_mut_ptr</span>().<span class="ident">write</span>(<span class="self">Self</span> {
+        <span class="ident">Arc::get_mut_unchecked</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">a</span>).<span class="ident">as_mut_ptr</span>().<span class="ident">write</span>(<span class="self">Self</span> {
             <span class="ident">parent</span>: <span class="prelude-val">None</span>,
-            <span class="ident">inner</span>: <span class="ident">RwLock</span>::<span class="ident">new</span>(<span class="ident">ChanInner</span>::<span class="ident">default</span>()),
+            <span class="ident">inner</span>: <span class="ident">RwLock::new</span>(<span class="ident">ChanInner::default</span>()),
             <span class="ident">key</span>,
-            <span class="ident">name</span>: <span class="ident">Vec</span>::<span class="ident">new</span>(),
+            <span class="ident">name</span>: <span class="ident">Vec::new</span>(),
         });
         <span class="ident">a</span>.<span class="ident">assume_init</span>()
     }
@@ -734,7 +734,7 @@
     <span class="doccomment">/// May failed(e.g. a removed disk chan).</span>
     <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">rekey</span>(<span class="self">self</span>: <span class="kw-2">&amp;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">ChanKey</span><span class="op">&gt;</span> {
         <span class="self">self</span>.<span class="ident">key</span>.<span class="ident">dev</span>.<span class="ident">open</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">key</span>.<span class="ident">id</span>, <span class="string">b&quot;&quot;</span>, <span class="prelude-val">None</span>)<span class="question-mark">?</span>.<span class="kw">await</span><span class="question-mark">?</span>.<span class="ident">map_or</span>(
-            <span class="prelude-val">Err</span>(<span class="ident">Error</span>::<span class="ident">Gone</span>(<span class="string">&quot;failed to rekey&quot;</span>)),
+            <span class="prelude-val">Err</span>(<span class="ident">Error::Gone</span>(<span class="string">&quot;failed to rekey&quot;</span>)),
             <span class="op">|</span><span class="ident">id</span><span class="op">|</span> {
                 <span class="prelude-val">Ok</span>(<span class="ident">ChanKey</span> {
                     <span class="ident">dev</span>: <span class="self">self</span>.<span class="ident">key</span>.<span class="ident">dev</span>.<span class="ident">clone</span>(),
@@ -748,7 +748,7 @@
     <span class="doccomment">/// Mount directory to this chan.</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">mount</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">old</span>: <span class="kw-2">&amp;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>()<span class="op">&gt;</span> {
         <span class="kw">if</span> <span class="op">!</span>(<span class="self">self</span>.<span class="ident">is_dir</span>() <span class="op">&amp;&amp;</span> <span class="ident">old</span>.<span class="ident">is_dir</span>()) {
-            <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error</span>::<span class="ident">BadRequest</span>(<span class="string">&quot;cannot mount file&quot;</span>));
+            <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error::BadRequest</span>(<span class="string">&quot;cannot mount file&quot;</span>));
         }
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">g</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">write</span>().<span class="kw">await</span>;
         <span class="ident">g</span>.<span class="ident">umnt</span>.<span class="ident">try_reserve</span>(<span class="number">1</span>)<span class="question-mark">?</span>;
@@ -759,7 +759,7 @@
     <span class="doccomment">/// Bind file to this chan.</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">bind</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">old</span>: <span class="kw-2">&amp;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>()<span class="op">&gt;</span> {
         <span class="kw">if</span> <span class="self">self</span>.<span class="ident">is_dir</span>() <span class="op">|</span><span class="op">|</span> <span class="ident">old</span>.<span class="ident">is_dir</span>() {
-            <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error</span>::<span class="ident">BadRequest</span>(<span class="string">&quot;cannot bind dir&quot;</span>));
+            <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error::BadRequest</span>(<span class="string">&quot;cannot bind dir&quot;</span>));
         }
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">g</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">write</span>().<span class="kw">await</span>;
         <span class="kw">if</span> <span class="ident">g</span>.<span class="ident">umnt</span>.<span class="ident">is_empty</span>() {
@@ -779,7 +779,7 @@
         <span class="ident">name</span>: <span class="kw-2">&amp;</span>[<span class="ident">u8</span>],
         <span class="ident">create_dir</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">bool</span><span class="op">&gt;</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Chan</span><span class="op">&gt;</span><span class="op">&gt;</span><span class="op">&gt;</span> {
-        <span class="macro">debug_assert_eq</span><span class="macro">!</span>(<span class="ident">name</span>.<span class="ident">is_empty</span>(), <span class="bool-val">false</span>);
+        <span class="macro">debug_assert_eq!</span>(<span class="ident">name</span>.<span class="ident">is_empty</span>(), <span class="bool-val">false</span>);
         <span class="kw">if</span> <span class="op">!</span><span class="self">self</span>.<span class="ident">is_dir</span>() {
             <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="prelude-val">None</span>);
         }
@@ -793,21 +793,21 @@
         }
 
         <span class="comment">// Pre allocation.</span>
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">names</span> <span class="op">=</span> <span class="ident">Vec</span>::<span class="ident">new</span>();
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">names</span> <span class="op">=</span> <span class="ident">Vec::new</span>();
         <span class="kw">for</span> <span class="ident">x</span> <span class="kw">in</span> <span class="ident">name</span> {
             <span class="ident">vec_push</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">names</span>, <span class="kw-2">*</span><span class="ident">x</span>)<span class="question-mark">?</span>;
         }
         <span class="ident">g</span>.<span class="ident">child</span>.<span class="ident">try_reserve</span>(<span class="number">1</span>)<span class="question-mark">?</span>;
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">a</span> <span class="op">=</span> <span class="ident">Arc</span>::<span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span>::<span class="ident">try_new_uninit</span>()<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">a</span> <span class="op">=</span> <span class="ident">Arc</span>::<span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span><span class="ident">::try_new_uninit</span>()<span class="question-mark">?</span>;
 
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">some_chan</span> <span class="op">=</span> <span class="prelude-val">None</span>;
-        <span class="kw">for</span> <span class="ident">key</span> <span class="kw">in</span> <span class="ident">iter</span>::<span class="ident">once</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">key</span>).<span class="ident">chain</span>(<span class="ident">g</span>.<span class="ident">umnt</span>.<span class="ident">iter</span>()) {
-            <span class="macro">debug_assert_eq</span><span class="macro">!</span>(<span class="ident">key</span>.<span class="ident">id</span>.<span class="ident">ctype</span>, <span class="ident">ChanType</span>::<span class="ident">Dir</span>);
+        <span class="kw">for</span> <span class="ident">key</span> <span class="kw">in</span> <span class="ident">iter::once</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">key</span>).<span class="ident">chain</span>(<span class="ident">g</span>.<span class="ident">umnt</span>.<span class="ident">iter</span>()) {
+            <span class="macro">debug_assert_eq!</span>(<span class="ident">key</span>.<span class="ident">id</span>.<span class="ident">ctype</span>, <span class="ident">ChanType::Dir</span>);
             <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">id</span>) <span class="op">=</span> <span class="ident">key</span>.<span class="ident">dev</span>.<span class="ident">open</span>(<span class="kw-2">&amp;</span><span class="ident">key</span>.<span class="ident">id</span>, <span class="ident">name</span>, <span class="ident">create_dir</span>)<span class="question-mark">?</span>.<span class="kw">await</span><span class="question-mark">?</span> {
                 <span class="kw">let</span> <span class="ident">u</span> <span class="op">=</span> <span class="kw">unsafe</span> {
-                    <span class="ident">Arc</span>::<span class="ident">get_mut_unchecked</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">a</span>).<span class="ident">as_mut_ptr</span>().<span class="ident">write</span>(<span class="self">Self</span> {
+                    <span class="ident">Arc::get_mut_unchecked</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">a</span>).<span class="ident">as_mut_ptr</span>().<span class="ident">write</span>(<span class="self">Self</span> {
                         <span class="ident">parent</span>: <span class="prelude-val">Some</span>(<span class="self">self</span>.<span class="ident">clone</span>()),
-                        <span class="ident">inner</span>: <span class="ident">RwLock</span>::<span class="ident">new</span>(<span class="ident">ChanInner</span>::<span class="ident">default</span>()),
+                        <span class="ident">inner</span>: <span class="ident">RwLock::new</span>(<span class="ident">ChanInner::default</span>()),
                         <span class="ident">key</span>: <span class="ident">ChanKey</span> {
                             <span class="ident">dev</span>: <span class="ident">key</span>.<span class="ident">dev</span>.<span class="ident">clone</span>(),
                             <span class="ident">id</span>,
@@ -822,7 +822,7 @@
             }
         }
         <span class="prelude-val">Ok</span>(<span class="ident">some_chan</span>.<span class="ident">map</span>(<span class="op">|</span><span class="ident">c</span><span class="op">|</span> {
-            <span class="ident">g</span>.<span class="ident">child</span>.<span class="ident">push</span>(<span class="ident">Arc</span>::<span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span>::<span class="ident">downgrade</span>(<span class="kw-2">&amp;</span><span class="ident">c</span>));
+            <span class="ident">g</span>.<span class="ident">child</span>.<span class="ident">push</span>(<span class="ident">Arc</span>::<span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span><span class="ident">::downgrade</span>(<span class="kw-2">&amp;</span><span class="ident">c</span>));
             <span class="ident">c</span>
         }))
     }
@@ -836,7 +836,7 @@
         <span class="ident">path</span>: <span class="kw-2">&amp;</span>[<span class="ident">u8</span>],
         <span class="ident">create_dir</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">bool</span><span class="op">&gt;</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span><span class="op">&gt;</span><span class="op">&gt;</span> {
-        <span class="kw">let</span> <span class="ident">path</span> <span class="op">=</span> <span class="ident">Path</span>::<span class="ident">try_from</span>(<span class="ident">path</span>)<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">path</span> <span class="op">=</span> <span class="ident">Path::try_from</span>(<span class="ident">path</span>)<span class="question-mark">?</span>;
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">cur</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">clone</span>();
         <span class="kw">for</span> <span class="kw">_</span> <span class="kw">in</span> <span class="number">0</span>..<span class="ident">path</span>.<span class="ident">dotdots</span> {
             <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">fa</span>) <span class="op">=</span> <span class="kw-2">&amp;</span><span class="ident">cur</span>.<span class="ident">parent</span> {
@@ -860,7 +860,7 @@
                     <span class="kw">return</span> <span class="kw">if</span> <span class="ident">last</span> {
                         <span class="prelude-val">Ok</span>(<span class="prelude-val">None</span>)
                     } <span class="kw">else</span> {
-                        <span class="prelude-val">Err</span>(<span class="ident">Error</span>::<span class="ident">NotFound</span>(<span class="string">&quot;failed to find intermediate directory&quot;</span>))
+                        <span class="prelude-val">Err</span>(<span class="ident">Error::NotFound</span>(<span class="string">&quot;failed to find intermediate directory&quot;</span>))
                     };
                 }
                 <span class="prelude-val">Err</span>(<span class="ident">e</span>) <span class="op">=</span><span class="op">&gt;</span> {
@@ -885,27 +885,27 @@
         <span class="comment">// Once we have locked this node and its parent, the reference count won&#39;t</span>
         <span class="comment">// decrease(but may be increased by dup) since every close operation also need to</span>
         <span class="comment">// enter this function. And if we are the last one, the reference count won&#39; change.</span>
-        <span class="kw">let</span> <span class="ident">last</span> <span class="op">=</span> <span class="ident">Arc</span>::<span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span>::<span class="ident">strong_count</span>(<span class="kw-2">&amp;</span><span class="ident">u</span>) <span class="op">=</span><span class="op">=</span> <span class="number">1</span>;
+        <span class="kw">let</span> <span class="ident">last</span> <span class="op">=</span> <span class="ident">Arc</span>::<span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span><span class="ident">::strong_count</span>(<span class="kw-2">&amp;</span><span class="ident">u</span>) <span class="op">=</span><span class="op">=</span> <span class="number">1</span>;
 
         <span class="kw">if</span> <span class="ident">last</span> {
-            <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">ug</span>.<span class="ident">child</span>.<span class="ident">len</span>(), <span class="number">0</span>);
+            <span class="macro">assert_eq!</span>(<span class="ident">ug</span>.<span class="ident">child</span>.<span class="ident">len</span>(), <span class="number">0</span>);
             <span class="kw">while</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">ck</span>) <span class="op">=</span> <span class="ident">ug</span>.<span class="ident">umnt</span>.<span class="ident">pop</span>() {
                 <span class="ident">ck</span>.<span class="ident">close</span>().<span class="kw">await</span>;
             }
 
             <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="kw-2">mut</span> <span class="ident">fg</span>) <span class="op">=</span> <span class="ident">fg</span>.<span class="ident">take</span>() {
-                <span class="kw">let</span> <span class="ident">w</span> <span class="op">=</span> <span class="ident">Arc</span>::<span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span>::<span class="ident">downgrade</span>(<span class="kw-2">&amp;</span><span class="ident">u</span>);
+                <span class="kw">let</span> <span class="ident">w</span> <span class="op">=</span> <span class="ident">Arc</span>::<span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span><span class="ident">::downgrade</span>(<span class="kw-2">&amp;</span><span class="ident">u</span>);
                 <span class="kw">let</span> <span class="ident">i</span> <span class="op">=</span> <span class="ident">fg</span>
                     .<span class="ident">child</span>
                     .<span class="ident">iter</span>()
-                    .<span class="ident">position</span>(<span class="op">|</span><span class="ident">x</span><span class="op">|</span> <span class="ident">Weak</span>::<span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span>::<span class="ident">ptr_eq</span>(<span class="kw-2">&amp;</span><span class="ident">w</span>, <span class="ident">x</span>))
+                    .<span class="ident">position</span>(<span class="op">|</span><span class="ident">x</span><span class="op">|</span> <span class="ident">Weak</span>::<span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span><span class="ident">::ptr_eq</span>(<span class="kw-2">&amp;</span><span class="ident">w</span>, <span class="ident">x</span>))
                     .<span class="ident">unwrap</span>();
                 <span class="ident">fg</span>.<span class="ident">child</span>.<span class="ident">swap_remove</span>(<span class="ident">i</span>);
             }
             <span class="ident">drop</span>(<span class="ident">fg</span>);
             <span class="ident">drop</span>(<span class="ident">ug</span>);
 
-            <span class="kw">let</span> <span class="ident">c</span> <span class="op">=</span> <span class="ident">Arc</span>::<span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span>::<span class="ident">try_unwrap</span>(<span class="ident">u</span>).<span class="ident">unwrap</span>();
+            <span class="kw">let</span> <span class="ident">c</span> <span class="op">=</span> <span class="ident">Arc</span>::<span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span><span class="ident">::try_unwrap</span>(<span class="ident">u</span>).<span class="ident">unwrap</span>();
             <span class="ident">c</span>.<span class="ident">key</span>.<span class="ident">close</span>().<span class="kw">await</span>;
             <span class="ident">c</span>.<span class="ident">parent</span>
         } <span class="kw">else</span> {
@@ -916,7 +916,7 @@
     <span class="doccomment">/// Close a file. The async destructor.</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">close</span>(<span class="self">self</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span>) {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">cur</span> <span class="op">=</span> <span class="self">self</span>;
-        <span class="kw">while</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">fa</span>) <span class="op">=</span> <span class="self">Self</span>::<span class="ident">close1</span>(<span class="ident">cur</span>).<span class="kw">await</span> {
+        <span class="kw">while</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">fa</span>) <span class="op">=</span> <span class="self">Self</span><span class="ident">::close1</span>(<span class="ident">cur</span>).<span class="kw">await</span> {
             <span class="ident">cur</span> <span class="op">=</span> <span class="ident">fa</span>;
         }
     }
@@ -929,7 +929,7 @@
     <span class="doccomment">/// Check if this chan is directory.</span>
     <span class="doccomment">/// Chans in umnt are of same type of itself.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">is_dir</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
-        <span class="self">self</span>.<span class="ident">key</span>.<span class="ident">id</span>.<span class="ident">ctype</span> <span class="op">=</span><span class="op">=</span> <span class="ident">ChanType</span>::<span class="ident">Dir</span>
+        <span class="self">self</span>.<span class="ident">key</span>.<span class="ident">id</span>.<span class="ident">ctype</span> <span class="op">=</span><span class="op">=</span> <span class="ident">ChanType::Dir</span>
     }
 
     <span class="doccomment">/// Remove wrapper.</span>
@@ -944,17 +944,17 @@
 
     <span class="doccomment">/// Wstat wrapper.</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">wstat</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">dirent</span>: <span class="kw-2">&amp;</span><span class="ident">Dirent</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>()<span class="op">&gt;</span> {
-        <span class="macro">todo</span><span class="macro">!</span>();
+        <span class="macro">todo!</span>();
         <span class="comment">// self.key.dev.wstat(&amp;self.key.id, dirent)?.await</span>
     }
 
     <span class="doccomment">/// Read wrapper.</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">read</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">buf</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> [<span class="ident">u8</span>], <span class="ident">off</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span> {
         <span class="kw">if</span> <span class="self">self</span>.<span class="ident">is_dir</span>() {
-            <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error</span>::<span class="ident">BadRequest</span>(<span class="string">&quot;read dir&quot;</span>));
+            <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error::BadRequest</span>(<span class="string">&quot;read dir&quot;</span>));
         }
         <span class="ident">off</span>.<span class="ident">checked_add</span>(<span class="ident">buf</span>.<span class="ident">len</span>())
-            .<span class="ident">ok_or</span>(<span class="ident">Error</span>::<span class="ident">BadRequest</span>(<span class="string">&quot;read buffer len overflow&quot;</span>))<span class="question-mark">?</span>;
+            .<span class="ident">ok_or</span>(<span class="ident">Error::BadRequest</span>(<span class="string">&quot;read buffer len overflow&quot;</span>))<span class="question-mark">?</span>;
 
         <span class="kw">let</span> <span class="ident">g</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">read</span>().<span class="kw">await</span>;
         <span class="kw">let</span> <span class="ident">key</span> <span class="op">=</span> <span class="ident">g</span>.<span class="ident">umnt</span>.<span class="ident">first</span>().<span class="ident">unwrap_or</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">key</span>);
@@ -965,10 +965,10 @@
     <span class="doccomment">/// Write wrapper.</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">write</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">buf</span>: <span class="kw-2">&amp;</span>[<span class="ident">u8</span>], <span class="ident">off</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span> {
         <span class="kw">if</span> <span class="self">self</span>.<span class="ident">is_dir</span>() {
-            <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error</span>::<span class="ident">BadRequest</span>(<span class="string">&quot;write dir&quot;</span>));
+            <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error::BadRequest</span>(<span class="string">&quot;write dir&quot;</span>));
         }
         <span class="ident">off</span>.<span class="ident">checked_add</span>(<span class="ident">buf</span>.<span class="ident">len</span>())
-            .<span class="ident">ok_or</span>(<span class="ident">Error</span>::<span class="ident">BadRequest</span>(<span class="string">&quot;write buffer len overflow&quot;</span>))<span class="question-mark">?</span>;
+            .<span class="ident">ok_or</span>(<span class="ident">Error::BadRequest</span>(<span class="string">&quot;write buffer len overflow&quot;</span>))<span class="question-mark">?</span>;
 
         <span class="kw">let</span> <span class="ident">g</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">read</span>().<span class="kw">await</span>;
         <span class="kw">let</span> <span class="ident">key</span> <span class="op">=</span> <span class="ident">g</span>.<span class="ident">umnt</span>.<span class="ident">first</span>().<span class="ident">unwrap_or</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">key</span>);
@@ -980,7 +980,7 @@
     <span class="doccomment">/// Truncate wrapper.</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">truncate</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">size</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span> {
         <span class="kw">if</span> <span class="self">self</span>.<span class="ident">is_dir</span>() {
-            <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error</span>::<span class="ident">BadRequest</span>(<span class="string">&quot;truncate dir&quot;</span>));
+            <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error::BadRequest</span>(<span class="string">&quot;truncate dir&quot;</span>));
         }
         <span class="kw">let</span> <span class="ident">g</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">read</span>().<span class="kw">await</span>;
         <span class="kw">let</span> <span class="ident">key</span> <span class="op">=</span> <span class="ident">g</span>.<span class="ident">umnt</span>.<span class="ident">first</span>().<span class="ident">unwrap_or</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">key</span>);
@@ -1000,9 +1000,9 @@
 
     <span class="kw">fn</span> <span class="ident">try_from</span>(<span class="ident">value</span>: <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> [<span class="ident">u8</span>]) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">path</span>: <span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span>
-            <span class="ident">str</span>::<span class="ident">from_utf8</span>(<span class="ident">value</span>).<span class="ident">map_err</span>(<span class="op">|</span><span class="kw">_</span><span class="op">|</span> <span class="ident">Error</span>::<span class="ident">BadRequest</span>(<span class="string">&quot;path is not valid utf-8&quot;</span>))<span class="question-mark">?</span>;
+            <span class="ident">str::from_utf8</span>(<span class="ident">value</span>).<span class="ident">map_err</span>(<span class="op">|</span><span class="kw">_</span><span class="op">|</span> <span class="ident">Error::BadRequest</span>(<span class="string">&quot;path is not valid utf-8&quot;</span>))<span class="question-mark">?</span>;
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">dotdots</span> <span class="op">=</span> <span class="number">0</span>;
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">names</span> <span class="op">=</span> <span class="ident">Vec</span>::<span class="ident">new</span>();
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">names</span> <span class="op">=</span> <span class="ident">Vec::new</span>();
 
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">eat</span> <span class="op">=</span> <span class="op">|</span><span class="ident">name</span>: <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="ident">str</span><span class="op">|</span> <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>()<span class="op">&gt;</span> {
             <span class="kw">if</span> <span class="ident">name</span> <span class="op">=</span><span class="op">=</span> <span class="string">&quot;..&quot;</span> {
@@ -1033,43 +1033,43 @@
 
     <span class="attribute">#[<span class="ident">test</span>]</span>
     <span class="kw">fn</span> <span class="ident">test_path</span>() {
-        <span class="kw">let</span> <span class="ident">p</span> <span class="op">=</span> <span class="ident">Path</span>::<span class="ident">try_from</span>(<span class="string">&quot;&quot;</span>.<span class="ident">as_bytes</span>()).<span class="ident">unwrap</span>();
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">p</span>.<span class="ident">dotdots</span>, <span class="number">0</span>);
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">p</span>.<span class="ident">names</span>.<span class="ident">is_empty</span>(), <span class="bool-val">true</span>);
+        <span class="kw">let</span> <span class="ident">p</span> <span class="op">=</span> <span class="ident">Path::try_from</span>(<span class="string">&quot;&quot;</span>.<span class="ident">as_bytes</span>()).<span class="ident">unwrap</span>();
+        <span class="macro">assert_eq!</span>(<span class="ident">p</span>.<span class="ident">dotdots</span>, <span class="number">0</span>);
+        <span class="macro">assert_eq!</span>(<span class="ident">p</span>.<span class="ident">names</span>.<span class="ident">is_empty</span>(), <span class="bool-val">true</span>);
 
-        <span class="kw">let</span> <span class="ident">p</span> <span class="op">=</span> <span class="ident">Path</span>::<span class="ident">try_from</span>(<span class="string">&quot;a/b/c&quot;</span>.<span class="ident">as_bytes</span>()).<span class="ident">unwrap</span>();
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">p</span>.<span class="ident">dotdots</span>, <span class="number">0</span>);
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">p</span>.<span class="ident">names</span>, <span class="kw-2">&amp;</span>[<span class="string">&quot;a&quot;</span>, <span class="string">&quot;b&quot;</span>, <span class="string">&quot;c&quot;</span>]);
+        <span class="kw">let</span> <span class="ident">p</span> <span class="op">=</span> <span class="ident">Path::try_from</span>(<span class="string">&quot;a/b/c&quot;</span>.<span class="ident">as_bytes</span>()).<span class="ident">unwrap</span>();
+        <span class="macro">assert_eq!</span>(<span class="ident">p</span>.<span class="ident">dotdots</span>, <span class="number">0</span>);
+        <span class="macro">assert_eq!</span>(<span class="ident">p</span>.<span class="ident">names</span>, <span class="kw-2">&amp;</span>[<span class="string">&quot;a&quot;</span>, <span class="string">&quot;b&quot;</span>, <span class="string">&quot;c&quot;</span>]);
 
-        <span class="kw">let</span> <span class="ident">p</span> <span class="op">=</span> <span class="ident">Path</span>::<span class="ident">try_from</span>(<span class="string">&quot;a/b/c/&quot;</span>.<span class="ident">as_bytes</span>()).<span class="ident">unwrap</span>();
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">p</span>.<span class="ident">dotdots</span>, <span class="number">0</span>);
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">p</span>.<span class="ident">names</span>, <span class="kw-2">&amp;</span>[<span class="string">&quot;a&quot;</span>, <span class="string">&quot;b&quot;</span>, <span class="string">&quot;c&quot;</span>]);
+        <span class="kw">let</span> <span class="ident">p</span> <span class="op">=</span> <span class="ident">Path::try_from</span>(<span class="string">&quot;a/b/c/&quot;</span>.<span class="ident">as_bytes</span>()).<span class="ident">unwrap</span>();
+        <span class="macro">assert_eq!</span>(<span class="ident">p</span>.<span class="ident">dotdots</span>, <span class="number">0</span>);
+        <span class="macro">assert_eq!</span>(<span class="ident">p</span>.<span class="ident">names</span>, <span class="kw-2">&amp;</span>[<span class="string">&quot;a&quot;</span>, <span class="string">&quot;b&quot;</span>, <span class="string">&quot;c&quot;</span>]);
 
-        <span class="kw">let</span> <span class="ident">p</span> <span class="op">=</span> <span class="ident">Path</span>::<span class="ident">try_from</span>(<span class="string">&quot;a/b/c////d&quot;</span>.<span class="ident">as_bytes</span>()).<span class="ident">unwrap</span>();
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">p</span>.<span class="ident">dotdots</span>, <span class="number">0</span>);
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">p</span>.<span class="ident">names</span>, <span class="kw-2">&amp;</span>[<span class="string">&quot;a&quot;</span>, <span class="string">&quot;b&quot;</span>, <span class="string">&quot;c&quot;</span>, <span class="string">&quot;d&quot;</span>]);
+        <span class="kw">let</span> <span class="ident">p</span> <span class="op">=</span> <span class="ident">Path::try_from</span>(<span class="string">&quot;a/b/c////d&quot;</span>.<span class="ident">as_bytes</span>()).<span class="ident">unwrap</span>();
+        <span class="macro">assert_eq!</span>(<span class="ident">p</span>.<span class="ident">dotdots</span>, <span class="number">0</span>);
+        <span class="macro">assert_eq!</span>(<span class="ident">p</span>.<span class="ident">names</span>, <span class="kw-2">&amp;</span>[<span class="string">&quot;a&quot;</span>, <span class="string">&quot;b&quot;</span>, <span class="string">&quot;c&quot;</span>, <span class="string">&quot;d&quot;</span>]);
 
-        <span class="kw">let</span> <span class="ident">p</span> <span class="op">=</span> <span class="ident">Path</span>::<span class="ident">try_from</span>(<span class="string">&quot;a/./b/c&quot;</span>.<span class="ident">as_bytes</span>()).<span class="ident">unwrap</span>();
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">p</span>.<span class="ident">dotdots</span>, <span class="number">0</span>);
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">p</span>.<span class="ident">names</span>, <span class="kw-2">&amp;</span>[<span class="string">&quot;a&quot;</span>, <span class="string">&quot;b&quot;</span>, <span class="string">&quot;c&quot;</span>]);
+        <span class="kw">let</span> <span class="ident">p</span> <span class="op">=</span> <span class="ident">Path::try_from</span>(<span class="string">&quot;a/./b/c&quot;</span>.<span class="ident">as_bytes</span>()).<span class="ident">unwrap</span>();
+        <span class="macro">assert_eq!</span>(<span class="ident">p</span>.<span class="ident">dotdots</span>, <span class="number">0</span>);
+        <span class="macro">assert_eq!</span>(<span class="ident">p</span>.<span class="ident">names</span>, <span class="kw-2">&amp;</span>[<span class="string">&quot;a&quot;</span>, <span class="string">&quot;b&quot;</span>, <span class="string">&quot;c&quot;</span>]);
 
-        <span class="kw">let</span> <span class="ident">p</span> <span class="op">=</span> <span class="ident">Path</span>::<span class="ident">try_from</span>(<span class="string">&quot;a/b/../c&quot;</span>.<span class="ident">as_bytes</span>()).<span class="ident">unwrap</span>();
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">p</span>.<span class="ident">dotdots</span>, <span class="number">0</span>);
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">p</span>.<span class="ident">names</span>, <span class="kw-2">&amp;</span>[<span class="string">&quot;a&quot;</span>, <span class="string">&quot;c&quot;</span>]);
+        <span class="kw">let</span> <span class="ident">p</span> <span class="op">=</span> <span class="ident">Path::try_from</span>(<span class="string">&quot;a/b/../c&quot;</span>.<span class="ident">as_bytes</span>()).<span class="ident">unwrap</span>();
+        <span class="macro">assert_eq!</span>(<span class="ident">p</span>.<span class="ident">dotdots</span>, <span class="number">0</span>);
+        <span class="macro">assert_eq!</span>(<span class="ident">p</span>.<span class="ident">names</span>, <span class="kw-2">&amp;</span>[<span class="string">&quot;a&quot;</span>, <span class="string">&quot;c&quot;</span>]);
 
-        <span class="kw">let</span> <span class="ident">p</span> <span class="op">=</span> <span class="ident">Path</span>::<span class="ident">try_from</span>(<span class="string">&quot;../a../b/c&quot;</span>.<span class="ident">as_bytes</span>()).<span class="ident">unwrap</span>();
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">p</span>.<span class="ident">dotdots</span>, <span class="number">1</span>);
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">p</span>.<span class="ident">names</span>, <span class="kw-2">&amp;</span>[<span class="string">&quot;a..&quot;</span>, <span class="string">&quot;b&quot;</span>, <span class="string">&quot;c&quot;</span>]);
+        <span class="kw">let</span> <span class="ident">p</span> <span class="op">=</span> <span class="ident">Path::try_from</span>(<span class="string">&quot;../a../b/c&quot;</span>.<span class="ident">as_bytes</span>()).<span class="ident">unwrap</span>();
+        <span class="macro">assert_eq!</span>(<span class="ident">p</span>.<span class="ident">dotdots</span>, <span class="number">1</span>);
+        <span class="macro">assert_eq!</span>(<span class="ident">p</span>.<span class="ident">names</span>, <span class="kw-2">&amp;</span>[<span class="string">&quot;a..&quot;</span>, <span class="string">&quot;b&quot;</span>, <span class="string">&quot;c&quot;</span>]);
 
-        <span class="kw">let</span> <span class="ident">p</span> <span class="op">=</span> <span class="ident">Path</span>::<span class="ident">try_from</span>(<span class="string">&quot;../a/b/c&quot;</span>.<span class="ident">as_bytes</span>()).<span class="ident">unwrap</span>();
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">p</span>.<span class="ident">dotdots</span>, <span class="number">1</span>);
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">p</span>.<span class="ident">names</span>, <span class="kw-2">&amp;</span>[<span class="string">&quot;a&quot;</span>, <span class="string">&quot;b&quot;</span>, <span class="string">&quot;c&quot;</span>]);
+        <span class="kw">let</span> <span class="ident">p</span> <span class="op">=</span> <span class="ident">Path::try_from</span>(<span class="string">&quot;../a/b/c&quot;</span>.<span class="ident">as_bytes</span>()).<span class="ident">unwrap</span>();
+        <span class="macro">assert_eq!</span>(<span class="ident">p</span>.<span class="ident">dotdots</span>, <span class="number">1</span>);
+        <span class="macro">assert_eq!</span>(<span class="ident">p</span>.<span class="ident">names</span>, <span class="kw-2">&amp;</span>[<span class="string">&quot;a&quot;</span>, <span class="string">&quot;b&quot;</span>, <span class="string">&quot;c&quot;</span>]);
 
-        <span class="kw">let</span> <span class="ident">p</span> <span class="op">=</span> <span class="ident">Path</span>::<span class="ident">try_from</span>(<span class="string">&quot;../a/b/../../c&quot;</span>.<span class="ident">as_bytes</span>()).<span class="ident">unwrap</span>();
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">p</span>.<span class="ident">dotdots</span>, <span class="number">1</span>);
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">p</span>.<span class="ident">names</span>, <span class="kw-2">&amp;</span>[<span class="string">&quot;c&quot;</span>]);
+        <span class="kw">let</span> <span class="ident">p</span> <span class="op">=</span> <span class="ident">Path::try_from</span>(<span class="string">&quot;../a/b/../../c&quot;</span>.<span class="ident">as_bytes</span>()).<span class="ident">unwrap</span>();
+        <span class="macro">assert_eq!</span>(<span class="ident">p</span>.<span class="ident">dotdots</span>, <span class="number">1</span>);
+        <span class="macro">assert_eq!</span>(<span class="ident">p</span>.<span class="ident">names</span>, <span class="kw-2">&amp;</span>[<span class="string">&quot;c&quot;</span>]);
     }
 }
 </pre></div>
-</section><section id="search" class="content hidden"></section><section class="footer"></section><div id="rustdoc-vars" data-root-path="../../" data-current-crate="kcore"></div>
-    <script src="../../main.js"></script><script src="../../source-script.js"></script><script src="../../source-files.js"></script><script defer src="../../search-index.js"></script></body></html>
+</section><section id="search" class="content hidden"></section><div id="rustdoc-vars" data-root-path="../../" data-current-crate="kcore" data-search-index-js="../../search-index.js" data-search-js="../../search.js"></div>
+    <script src="../../main.js"></script><script src="../../source-script.js"></script><script src="../../source-files.js"></script></body></html>

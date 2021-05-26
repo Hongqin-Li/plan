@@ -1,7 +1,7 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `kdevice/src/fat/fname.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>fname.rs - source</title><link rel="stylesheet" type="text/css" href="../../../normalize.css"><link rel="stylesheet" type="text/css" href="../../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../../../light.css"  id="themeStyle"><link rel="stylesheet" type="text/css" href="../../../dark.css" disabled ><link rel="stylesheet" type="text/css" href="../../../ayu.css" disabled ><script id="default-settings"></script><script src="../../../storage.js"></script><noscript><link rel="stylesheet" href="../../../noscript.css"></noscript><link rel="icon" type="image/svg+xml" href="../../../favicon.svg">
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `kdevice/src/fat/fname.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>fname.rs - source</title><link rel="stylesheet" type="text/css" href="../../../normalize.css"><link rel="stylesheet" type="text/css" href="../../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../../../light.css"  id="themeStyle"><link rel="stylesheet" type="text/css" href="../../../dark.css" disabled ><link rel="stylesheet" type="text/css" href="../../../ayu.css" disabled ><script id="default-settings"></script><script src="../../../storage.js"></script><script src="../../../crates.js"></script><noscript><link rel="stylesheet" href="../../../noscript.css"></noscript><link rel="icon" type="image/svg+xml" href="../../../favicon.svg">
 <link rel="alternate icon" type="image/png" href="../../../favicon-16x16.png">
-<link rel="alternate icon" type="image/png" href="../../../favicon-32x32.png"><style type="text/css">#crate-search{background-image:url("../../../down-arrow.svg");}</style></head><body class="rustdoc source"><!--[if lte IE 8]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu">&#9776;</div><a href='../../../kdevice/index.html'><div class='logo-container rust-logo'><img src='../../../rust-logo.png' alt='logo'></div></a></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!" aria-haspopup="menu"><img src="../../../brush.svg" width="18" alt="Pick another theme!"></button><div id="theme-choices" role="menu"></div></div><script src="../../../theme.js"></script><nav class="sub"><form class="search-form"><div class="search-container"><div><select id="crate-search"><option value="All crates">All crates</option></select><input class="search-input" name="search" disabled autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><button type="button" class="help-button">?</button>
-                <a id="settings-menu" href="../../../settings.html"><img src="../../../wheel.svg" width="18" alt="Change settings"></a></div></form></nav><section id="main" class="content"><pre class="line-numbers"><span id="1">  1</span>
+<link rel="alternate icon" type="image/png" href="../../../favicon-32x32.png"><style type="text/css">#crate-search{background-image:url("../../../down-arrow.svg");}</style></head><body class="rustdoc source"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu" role="button">&#9776;</div><a href='../../../kdevice/index.html'><div class='logo-container rust-logo'><img src='../../../rust-logo.png' alt='logo'></div></a></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!" aria-haspopup="menu"><img src="../../../brush.svg" width="18" height="18" alt="Pick another theme!"></button><div id="theme-choices" role="menu"></div></div><nav class="sub"><form class="search-form"><div class="search-container"><div><select id="crate-search"><option value="All crates">All crates</option></select><input class="search-input" name="search" disabled autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><button type="button" id="help-button">?</button>
+                <a id="settings-menu" href="../../../settings.html"><img src="../../../wheel.svg" width="18" height="18" alt="Change settings"></a></div></form></nav><section id="main" class="content"><div class="example-wrap"><pre class="line-numbers"><span id="1">  1</span>
 <span id="2">  2</span>
 <span id="3">  3</span>
 <span id="4">  4</span>
@@ -501,19 +501,19 @@
 <span id="498">498</span>
 <span id="499">499</span>
 <span id="500">500</span>
-</pre><div class="example-wrap"><pre class="rust ">
+</pre><pre class="rust">
 <span class="doccomment">//! Directory entry parser of FAT32.</span>
 
-<span class="kw">use</span> <span class="kw">crate</span>::<span class="ident">from_bytes</span>;
+<span class="kw">use</span> <span class="kw">crate</span><span class="ident">::from_bytes</span>;
 <span class="kw">use</span> <span class="ident">core</span>::{
     <span class="ident">cmp</span>,
     <span class="ident">convert</span>::{<span class="ident">TryFrom</span>, <span class="ident">TryInto</span>},
     <span class="ident">num</span>, <span class="ident">str</span>,
 };
 
-<span class="kw">use</span> <span class="ident">alloc</span>::<span class="ident">vec</span>::<span class="ident">Vec</span>;
-<span class="kw">use</span> <span class="ident">kalloc</span>::<span class="ident">wrapper</span>::<span class="ident">vec_push</span>;
-<span class="kw">use</span> <span class="ident">kcore</span>::<span class="ident">error</span>::{<span class="ident">Error</span>, <span class="prelude-ty">Result</span>};
+<span class="kw">use</span> <span class="ident">alloc::vec::Vec</span>;
+<span class="kw">use</span> <span class="ident">kalloc::wrapper::vec_push</span>;
+<span class="kw">use</span> <span class="ident">kcore::error</span>::{<span class="ident">Error</span>, <span class="prelude-ty">Result</span>};
 
 <span class="kw">const</span> <span class="ident">SPACE</span>: <span class="ident">u8</span> <span class="op">=</span> <span class="number">0x20</span>;
 
@@ -538,7 +538,7 @@
 
 <span class="doccomment">/// Get the 8.3-style file name.</span>
 <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sfn_name</span>(<span class="ident">buf</span>: <span class="kw-2">&amp;</span>[<span class="ident">u8</span>; <span class="ident">DIRENTSZ</span>]) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">u16</span><span class="op">&gt;</span><span class="op">&gt;</span> {
-    <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">name</span> <span class="op">=</span> <span class="ident">Vec</span>::<span class="ident">new</span>();
+    <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">name</span> <span class="op">=</span> <span class="ident">Vec::new</span>();
     <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">has_dot</span> <span class="op">=</span> <span class="bool-val">false</span>;
     <span class="kw">for</span> <span class="ident">i</span> <span class="kw">in</span> (<span class="number">0</span>..<span class="number">8</span>).<span class="ident">take_while</span>(<span class="op">|</span><span class="ident">i</span><span class="op">|</span> <span class="ident">buf</span>[<span class="ident">i</span>.<span class="ident">clone</span>()] <span class="op">!</span><span class="op">=</span> <span class="ident">SPACE</span>) {
         <span class="ident">vec_push</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">name</span>, <span class="ident">buf</span>[<span class="ident">i</span>] <span class="kw">as</span> <span class="ident">u16</span>)<span class="question-mark">?</span>;
@@ -559,7 +559,7 @@
 
 <span class="doccomment">/// Get the file size in bytes.</span>
 <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sfn_size</span>(<span class="ident">buf</span>: <span class="kw-2">&amp;</span>[<span class="ident">u8</span>; <span class="ident">DIRENTSZ</span>]) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">u32</span> {
-    <span class="macro">from_bytes</span><span class="macro">!</span>(<span class="ident">u32</span>, <span class="ident">buf</span>[<span class="number">28</span>..<span class="number">32</span>])
+    <span class="macro">from_bytes!</span>(<span class="ident">u32</span>, <span class="ident">buf</span>[<span class="number">28</span>..<span class="number">32</span>])
 }
 <span class="doccomment">/// Alter the file size field of a sfn entry.</span>
 <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sfn_set_size</span>(<span class="ident">buf</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> [<span class="ident">u8</span>; <span class="ident">DIRENTSZ</span>], <span class="ident">sz</span>: <span class="ident">u32</span>) {
@@ -568,8 +568,8 @@
 
 <span class="doccomment">/// Get the cluster number of the file.</span>
 <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sfn_cno</span>(<span class="ident">buf</span>: <span class="kw-2">&amp;</span>[<span class="ident">u8</span>; <span class="ident">DIRENTSZ</span>]) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">u32</span> {
-    <span class="kw">let</span> <span class="ident">hi</span> <span class="op">=</span> <span class="macro">from_bytes</span><span class="macro">!</span>(<span class="ident">u16</span>, <span class="ident">buf</span>[<span class="number">20</span>..<span class="number">22</span>]) <span class="kw">as</span> <span class="ident">u32</span>;
-    <span class="kw">let</span> <span class="ident">lo</span> <span class="op">=</span> <span class="macro">from_bytes</span><span class="macro">!</span>(<span class="ident">u16</span>, <span class="ident">buf</span>[<span class="number">26</span>..<span class="number">28</span>]) <span class="kw">as</span> <span class="ident">u32</span>;
+    <span class="kw">let</span> <span class="ident">hi</span> <span class="op">=</span> <span class="macro">from_bytes!</span>(<span class="ident">u16</span>, <span class="ident">buf</span>[<span class="number">20</span>..<span class="number">22</span>]) <span class="kw">as</span> <span class="ident">u32</span>;
+    <span class="kw">let</span> <span class="ident">lo</span> <span class="op">=</span> <span class="macro">from_bytes!</span>(<span class="ident">u16</span>, <span class="ident">buf</span>[<span class="number">26</span>..<span class="number">28</span>]) <span class="kw">as</span> <span class="ident">u32</span>;
     (<span class="ident">hi</span> <span class="op">&lt;</span><span class="op">&lt;</span> <span class="number">16</span>) <span class="op">|</span> <span class="ident">lo</span>
 }
 
@@ -593,14 +593,14 @@
 
 <span class="doccomment">/// Get name from a LFN entry.</span>
 <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">lfn_name</span>(<span class="ident">buf</span>: <span class="kw-2">&amp;</span>[<span class="ident">u8</span>; <span class="ident">DIRENTSZ</span>]) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">u16</span><span class="op">&gt;</span><span class="op">&gt;</span> {
-    <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">name</span> <span class="op">=</span> <span class="ident">Vec</span>::<span class="ident">new</span>();
+    <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">name</span> <span class="op">=</span> <span class="ident">Vec::new</span>();
     <span class="kw">let</span> <span class="ident">range</span> <span class="op">=</span> [(<span class="number">1</span>..<span class="number">11</span>), (<span class="number">14</span>..<span class="number">26</span>), (<span class="number">28</span>..<span class="number">32</span>)];
     <span class="kw">for</span> <span class="ident">rg</span> <span class="kw">in</span> <span class="ident">range</span>.<span class="ident">iter</span>() {
         <span class="kw">for</span> <span class="ident">i</span> <span class="kw">in</span> <span class="ident">rg</span>.<span class="ident">clone</span>().<span class="ident">step_by</span>(<span class="number">2</span>) {
             <span class="kw">if</span> <span class="ident">buf</span>[<span class="ident">i</span>] <span class="op">=</span><span class="op">=</span> <span class="number">0</span> <span class="op">&amp;&amp;</span> <span class="ident">buf</span>[<span class="ident">i</span> <span class="op">+</span> <span class="number">1</span>] <span class="op">=</span><span class="op">=</span> <span class="number">0</span> {
                 <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="ident">name</span>);
             }
-            <span class="ident">vec_push</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">name</span>, <span class="macro">from_bytes</span><span class="macro">!</span>(<span class="ident">u16</span>, <span class="ident">buf</span>[<span class="ident">i</span>..<span class="ident">i</span> <span class="op">+</span> <span class="number">2</span>]))<span class="question-mark">?</span>;
+            <span class="ident">vec_push</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">name</span>, <span class="macro">from_bytes!</span>(<span class="ident">u16</span>, <span class="ident">buf</span>[<span class="ident">i</span>..<span class="ident">i</span> <span class="op">+</span> <span class="number">2</span>]))<span class="question-mark">?</span>;
         }
     }
     <span class="prelude-val">Ok</span>(<span class="ident">name</span>)
@@ -647,8 +647,8 @@
 
 <span class="doccomment">/// Convert utf-8 bytes to utf-16.</span>
 <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">utf8_to_utf16</span>(<span class="ident">bytes</span>: <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">u16</span><span class="op">&gt;</span><span class="op">&gt;</span> {
-    <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">ret</span> <span class="op">=</span> <span class="ident">Vec</span>::<span class="ident">new</span>();
-    <span class="kw">let</span> <span class="ident">str</span> <span class="op">=</span> <span class="ident">str</span>::<span class="ident">from_utf8</span>(<span class="ident">bytes</span>).<span class="ident">map_err</span>(<span class="op">|</span><span class="kw">_</span><span class="op">|</span> <span class="ident">Error</span>::<span class="ident">BadRequest</span>(<span class="string">&quot;utf8 to utf16 failed&quot;</span>))<span class="question-mark">?</span>;
+    <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">ret</span> <span class="op">=</span> <span class="ident">Vec::new</span>();
+    <span class="kw">let</span> <span class="ident">str</span> <span class="op">=</span> <span class="ident">str::from_utf8</span>(<span class="ident">bytes</span>).<span class="ident">map_err</span>(<span class="op">|</span><span class="kw">_</span><span class="op">|</span> <span class="ident">Error::BadRequest</span>(<span class="string">&quot;utf8 to utf16 failed&quot;</span>))<span class="question-mark">?</span>;
     <span class="kw">for</span> <span class="ident">c</span> <span class="kw">in</span> <span class="ident">str</span>.<span class="ident">chars</span>() {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">buf</span> <span class="op">=</span> [<span class="number">0u16</span>; <span class="number">2</span>];
         <span class="kw">let</span> <span class="ident">buf</span> <span class="op">=</span> <span class="ident">c</span>.<span class="ident">encode_utf16</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">buf</span>);
@@ -684,10 +684,10 @@
 <span class="kw">impl</span> <span class="ident">Filename</span> {
     <span class="doccomment">/// Compute the checksum of SFN.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">checksum</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">u8</span> {
-        <span class="macro">debug_assert_eq</span><span class="macro">!</span>(<span class="self">self</span>.<span class="ident">is_sfn</span>, <span class="bool-val">true</span>);
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">chksum</span> <span class="op">=</span> <span class="ident">num</span>::<span class="ident">Wrapping</span>(<span class="number">0_u8</span>);
+        <span class="macro">debug_assert_eq!</span>(<span class="self">self</span>.<span class="ident">is_sfn</span>, <span class="bool-val">true</span>);
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">chksum</span> <span class="op">=</span> <span class="ident">num::Wrapping</span>(<span class="number">0_u8</span>);
         <span class="kw">for</span> <span class="ident">x</span> <span class="kw">in</span> <span class="self">self</span>.<span class="ident">data</span>.<span class="ident">iter</span>().<span class="ident">map</span>(<span class="op">|</span><span class="ident">x</span><span class="op">|</span> <span class="kw-2">*</span><span class="ident">x</span> <span class="kw">as</span> <span class="ident">u8</span>) {
-            <span class="ident">chksum</span> <span class="op">=</span> (<span class="ident">chksum</span> <span class="op">&lt;</span><span class="op">&lt;</span> <span class="number">7</span>) <span class="op">+</span> (<span class="ident">chksum</span> <span class="op">&gt;</span><span class="op">&gt;</span> <span class="number">1</span>) <span class="op">+</span> <span class="ident">num</span>::<span class="ident">Wrapping</span>(<span class="ident">x</span>);
+            <span class="ident">chksum</span> <span class="op">=</span> (<span class="ident">chksum</span> <span class="op">&lt;</span><span class="op">&lt;</span> <span class="number">7</span>) <span class="op">+</span> (<span class="ident">chksum</span> <span class="op">&gt;</span><span class="op">&gt;</span> <span class="number">1</span>) <span class="op">+</span> <span class="ident">num::Wrapping</span>(<span class="ident">x</span>);
         }
         <span class="ident">chksum</span>.<span class="number">0</span>
     }
@@ -702,12 +702,12 @@
     }
     <span class="doccomment">/// Generate SFN from LFN.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">gen_sfn</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="kw-2">mut</span> <span class="ident">i</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span> {
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="self">self</span>.<span class="ident">is_sfn</span>, <span class="bool-val">false</span>);
-        <span class="macro">debug_assert</span><span class="macro">!</span>(<span class="number">1</span> <span class="op">&lt;</span><span class="op">=</span> <span class="ident">i</span> <span class="op">&amp;&amp;</span> <span class="ident">i</span> <span class="op">&lt;</span><span class="op">=</span> <span class="ident">MAX_NUMERIC_TAIL</span>);
+        <span class="macro">assert_eq!</span>(<span class="self">self</span>.<span class="ident">is_sfn</span>, <span class="bool-val">false</span>);
+        <span class="macro">debug_assert!</span>(<span class="number">1</span> <span class="op">&lt;</span><span class="op">=</span> <span class="ident">i</span> <span class="op">&amp;&amp;</span> <span class="ident">i</span> <span class="op">&lt;</span><span class="op">=</span> <span class="ident">MAX_NUMERIC_TAIL</span>);
 
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">data</span> <span class="op">=</span> <span class="ident">Vec</span>::<span class="ident">new</span>();
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">data</span> <span class="op">=</span> <span class="ident">Vec::new</span>();
         <span class="ident">data</span>.<span class="ident">try_reserve</span>(<span class="number">8</span>)<span class="question-mark">?</span>;
-        <span class="kw">for</span> <span class="ident">c</span> <span class="kw">in</span> <span class="self">self</span>.<span class="ident">data</span>[<span class="number">0</span>..<span class="ident">cmp</span>::<span class="ident">min</span>(<span class="number">8</span>, <span class="self">self</span>.<span class="ident">data</span>.<span class="ident">len</span>())].<span class="ident">iter</span>() {
+        <span class="kw">for</span> <span class="ident">c</span> <span class="kw">in</span> <span class="self">self</span>.<span class="ident">data</span>[<span class="number">0</span>..<span class="ident">cmp::min</span>(<span class="number">8</span>, <span class="self">self</span>.<span class="ident">data</span>.<span class="ident">len</span>())].<span class="ident">iter</span>() {
             <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">c</span> <span class="op">=</span> <span class="kw">if</span> <span class="kw-2">*</span><span class="ident">c</span> <span class="op">&gt;</span> <span class="number">0xFF</span> { <span class="string">&#39;_&#39;</span> } <span class="kw">else</span> { <span class="kw-2">*</span><span class="ident">c</span> <span class="kw">as</span> <span class="ident">u8</span> <span class="kw">as</span> <span class="ident">char</span> };
             <span class="kw">if</span> <span class="op">!</span><span class="ident">valid_sfn_char</span>(<span class="kw-2">&amp;</span><span class="ident">c</span>) <span class="op">|</span><span class="op">|</span> <span class="ident">c</span> <span class="op">=</span><span class="op">=</span> <span class="string">&#39;.&#39;</span> {
                 <span class="ident">c</span> <span class="op">=</span> <span class="string">&#39;_&#39;</span>;
@@ -740,8 +740,8 @@
 
     <span class="doccomment">/// Dump SFN to buffer.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">dump_sfn</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">buf</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> [<span class="ident">u8</span>; <span class="number">11</span>]) {
-        <span class="macro">debug_assert_eq</span><span class="macro">!</span>(<span class="self">self</span>.<span class="ident">is_sfn</span>, <span class="bool-val">true</span>);
-        <span class="macro">debug_assert</span><span class="macro">!</span>(<span class="self">self</span>.<span class="ident">base_len</span> <span class="op">&lt;</span><span class="op">=</span> <span class="number">8</span> <span class="op">&amp;&amp;</span> <span class="self">self</span>.<span class="ident">ext_len</span> <span class="op">&lt;</span><span class="op">=</span> <span class="number">3</span>);
+        <span class="macro">debug_assert_eq!</span>(<span class="self">self</span>.<span class="ident">is_sfn</span>, <span class="bool-val">true</span>);
+        <span class="macro">debug_assert!</span>(<span class="self">self</span>.<span class="ident">base_len</span> <span class="op">&lt;</span><span class="op">=</span> <span class="number">8</span> <span class="op">&amp;&amp;</span> <span class="self">self</span>.<span class="ident">ext_len</span> <span class="op">&lt;</span><span class="op">=</span> <span class="number">3</span>);
         <span class="kw">for</span> <span class="ident">b</span> <span class="kw">in</span> <span class="ident">buf</span>.<span class="ident">iter_mut</span>() {
             <span class="kw-2">*</span><span class="ident">b</span> <span class="op">=</span> <span class="string">b&#39; &#39;</span>;
         }
@@ -766,14 +766,14 @@
     <span class="kw">type</span> <span class="ident">Error</span> <span class="op">=</span> <span class="ident">Error</span>;
     <span class="doccomment">/// The rule for LFN is slightly different from FAT32 specification.</span>
     <span class="doccomment">/// We allow any bytes in LFN.</span>
-    <span class="kw">fn</span> <span class="ident">try_from</span>(<span class="ident">bytes</span>: <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">core</span>::<span class="ident">result</span>::<span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="self">Self</span>, <span class="self">Self</span>::<span class="ident">Error</span><span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">try_from</span>(<span class="ident">bytes</span>: <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">core::result::Result</span><span class="op">&lt;</span><span class="self">Self</span>, <span class="self">Self</span><span class="ident">::Error</span><span class="op">&gt;</span> {
         <span class="kw">if</span> <span class="ident">bytes</span>.<span class="ident">len</span>() <span class="op">&gt;</span> <span class="number">0</span> <span class="op">&amp;&amp;</span> (<span class="ident">bytes</span>[<span class="number">0</span>] <span class="op">=</span><span class="op">=</span> <span class="number">0</span> <span class="op">|</span><span class="op">|</span> <span class="ident">bytes</span>[<span class="number">0</span>] <span class="op">=</span><span class="op">=</span> <span class="number">0xE5</span>) {
-            <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error</span>::<span class="ident">BadRequest</span>(<span class="string">&quot;empty file name&quot;</span>));
+            <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error::BadRequest</span>(<span class="string">&quot;empty file name&quot;</span>));
         }
 
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">data</span> <span class="op">=</span> <span class="ident">Vec</span>::<span class="ident">new</span>();
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">data</span> <span class="op">=</span> <span class="ident">Vec::new</span>();
         <span class="kw">let</span> <span class="ident">str</span>: <span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span>
-            <span class="ident">str</span>::<span class="ident">from_utf8</span>(<span class="ident">bytes</span>).<span class="ident">map_err</span>(<span class="op">|</span><span class="kw">_</span><span class="op">|</span> <span class="ident">Error</span>::<span class="ident">BadRequest</span>(<span class="string">&quot;filename invalid utf-8&quot;</span>))<span class="question-mark">?</span>;
+            <span class="ident">str::from_utf8</span>(<span class="ident">bytes</span>).<span class="ident">map_err</span>(<span class="op">|</span><span class="kw">_</span><span class="op">|</span> <span class="ident">Error::BadRequest</span>(<span class="string">&quot;filename invalid utf-8&quot;</span>))<span class="question-mark">?</span>;
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">is_sfn</span> <span class="op">=</span> <span class="bool-val">true</span>;
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">nperiod</span> <span class="op">=</span> <span class="number">0</span>;
         <span class="kw">for</span> <span class="ident">c</span> <span class="kw">in</span> <span class="ident">str</span>.<span class="ident">chars</span>() {
@@ -799,7 +799,7 @@
         }
 
         <span class="kw">if</span> <span class="ident">data</span>.<span class="ident">is_empty</span>() <span class="op">|</span><span class="op">|</span> <span class="ident">data</span>.<span class="ident">len</span>() <span class="op">&gt;</span> <span class="number">255</span> {
-            <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error</span>::<span class="ident">BadRequest</span>(<span class="string">&quot;file name is empty or too long&quot;</span>));
+            <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error::BadRequest</span>(<span class="string">&quot;file name is empty or too long&quot;</span>));
         }
 
         <span class="kw">let</span> <span class="ident">last_period</span> <span class="op">=</span> <span class="ident">data</span>.<span class="ident">iter</span>().<span class="ident">enumerate</span>().<span class="ident">rfind</span>(<span class="op">|</span>(<span class="ident">i</span>, <span class="ident">c</span>)<span class="op">|</span> <span class="kw-2">*</span><span class="kw-2">*</span><span class="ident">c</span> <span class="op">=</span><span class="op">=</span> <span class="string">&#39;.&#39;</span> <span class="kw">as</span> <span class="ident">u16</span>);
@@ -814,7 +814,7 @@
         }
         <span class="kw">if</span> <span class="ident">is_sfn</span> {
             <span class="kw">for</span> <span class="ident">x</span> <span class="kw">in</span> <span class="ident">data</span>.<span class="ident">iter_mut</span>() {
-                <span class="macro">debug_assert</span><span class="macro">!</span>(<span class="kw-2">*</span><span class="ident">x</span> <span class="op">&lt;</span><span class="op">=</span> <span class="number">0xFF</span>);
+                <span class="macro">debug_assert!</span>(<span class="kw-2">*</span><span class="ident">x</span> <span class="op">&lt;</span><span class="op">=</span> <span class="number">0xFF</span>);
                 <span class="kw-2">*</span><span class="ident">x</span> <span class="op">=</span> (<span class="kw-2">*</span><span class="ident">x</span> <span class="kw">as</span> <span class="ident">u8</span>).<span class="ident">to_ascii_uppercase</span>() <span class="kw">as</span> <span class="ident">u16</span>;
             }
         }
@@ -839,149 +839,149 @@
             <span class="number">0x11</span>, <span class="number">0xB8</span>, <span class="number">0x2C</span>, <span class="number">0x3B</span>, <span class="number">0x2C</span>, <span class="number">0x3B</span>, <span class="number">0</span>, <span class="number">0</span>, <span class="number">0x29</span>, <span class="number">0xB8</span>, <span class="number">0x2C</span>, <span class="number">0x3B</span>, <span class="number">0x03</span>, <span class="number">0</span>, <span class="number">0xC8</span>, <span class="number">0x07</span>,
             <span class="number">0</span>, <span class="number">0</span>,
         ];
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">sfn_size</span>(<span class="kw-2">&amp;</span><span class="ident">ent</span>), <span class="number">1992</span>);
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">sfn_cno</span>(<span class="kw-2">&amp;</span><span class="ident">ent</span>), <span class="number">3</span>);
+        <span class="macro">assert_eq!</span>(<span class="ident">sfn_size</span>(<span class="kw-2">&amp;</span><span class="ident">ent</span>), <span class="number">1992</span>);
+        <span class="macro">assert_eq!</span>(<span class="ident">sfn_cno</span>(<span class="kw-2">&amp;</span><span class="ident">ent</span>), <span class="number">3</span>);
     }
 
     <span class="attribute">#[<span class="ident">test</span>]</span>
     <span class="kw">fn</span> <span class="ident">test_invalid_filename</span>() {
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">Filename</span>::<span class="ident">try_from</span>(<span class="string">b&quot;&quot;</span> <span class="kw">as</span> <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]).<span class="ident">is_err</span>(), <span class="bool-val">true</span>);
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">Filename</span>::<span class="ident">try_from</span>(<span class="string">b&quot;\0&quot;</span> <span class="kw">as</span> <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]).<span class="ident">is_err</span>(), <span class="bool-val">true</span>);
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">Filename</span>::<span class="ident">try_from</span>(<span class="string">b&quot;\xE5&quot;</span> <span class="kw">as</span> <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]).<span class="ident">is_err</span>(), <span class="bool-val">true</span>);
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">Filename</span>::<span class="ident">try_from</span>(<span class="string">b&quot;\xFF\xFF\xFF&quot;</span> <span class="kw">as</span> <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]).<span class="ident">is_err</span>(), <span class="bool-val">true</span>);
+        <span class="macro">assert_eq!</span>(<span class="ident">Filename::try_from</span>(<span class="string">b&quot;&quot;</span> <span class="kw">as</span> <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]).<span class="ident">is_err</span>(), <span class="bool-val">true</span>);
+        <span class="macro">assert_eq!</span>(<span class="ident">Filename::try_from</span>(<span class="string">b&quot;\0&quot;</span> <span class="kw">as</span> <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]).<span class="ident">is_err</span>(), <span class="bool-val">true</span>);
+        <span class="macro">assert_eq!</span>(<span class="ident">Filename::try_from</span>(<span class="string">b&quot;\xE5&quot;</span> <span class="kw">as</span> <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]).<span class="ident">is_err</span>(), <span class="bool-val">true</span>);
+        <span class="macro">assert_eq!</span>(<span class="ident">Filename::try_from</span>(<span class="string">b&quot;\xFF\xFF\xFF&quot;</span> <span class="kw">as</span> <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]).<span class="ident">is_err</span>(), <span class="bool-val">true</span>);
     }
 
     <span class="attribute">#[<span class="ident">test</span>]</span>
     <span class="kw">fn</span> <span class="ident">test_to_sfn</span>() {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">buf</span> <span class="op">=</span> [<span class="number">0u8</span>; <span class="number">11</span>];
 
-        <span class="kw">let</span> <span class="ident">fname</span> <span class="op">=</span> <span class="ident">Filename</span>::<span class="ident">try_from</span>(<span class="string">b&quot;foo.bar&quot;</span> <span class="kw">as</span> <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]).<span class="ident">unwrap</span>();
+        <span class="kw">let</span> <span class="ident">fname</span> <span class="op">=</span> <span class="ident">Filename::try_from</span>(<span class="string">b&quot;foo.bar&quot;</span> <span class="kw">as</span> <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]).<span class="ident">unwrap</span>();
         <span class="ident">fname</span>.<span class="ident">dump_sfn</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">buf</span>);
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="kw-2">&amp;</span><span class="ident">buf</span>, <span class="string">b&quot;FOO     BAR&quot;</span>);
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">fname</span>.<span class="ident">is_sfn</span>, <span class="bool-val">true</span>);
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">fname</span>.<span class="ident">has_period</span>, <span class="bool-val">true</span>);
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">fname</span>.<span class="ident">base_len</span>, <span class="number">3</span>);
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">fname</span>.<span class="ident">ext_len</span>, <span class="number">3</span>);
+        <span class="macro">assert_eq!</span>(<span class="kw-2">&amp;</span><span class="ident">buf</span>, <span class="string">b&quot;FOO     BAR&quot;</span>);
+        <span class="macro">assert_eq!</span>(<span class="ident">fname</span>.<span class="ident">is_sfn</span>, <span class="bool-val">true</span>);
+        <span class="macro">assert_eq!</span>(<span class="ident">fname</span>.<span class="ident">has_period</span>, <span class="bool-val">true</span>);
+        <span class="macro">assert_eq!</span>(<span class="ident">fname</span>.<span class="ident">base_len</span>, <span class="number">3</span>);
+        <span class="macro">assert_eq!</span>(<span class="ident">fname</span>.<span class="ident">ext_len</span>, <span class="number">3</span>);
 
-        <span class="kw">let</span> <span class="ident">fname</span> <span class="op">=</span> <span class="ident">Filename</span>::<span class="ident">try_from</span>(<span class="string">b&quot;foo\0.bar&quot;</span> <span class="kw">as</span> <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]).<span class="ident">unwrap</span>();
+        <span class="kw">let</span> <span class="ident">fname</span> <span class="op">=</span> <span class="ident">Filename::try_from</span>(<span class="string">b&quot;foo\0.bar&quot;</span> <span class="kw">as</span> <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]).<span class="ident">unwrap</span>();
         <span class="ident">fname</span>.<span class="ident">dump_sfn</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">buf</span>);
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="kw-2">&amp;</span><span class="ident">buf</span>, <span class="string">b&quot;FOO        &quot;</span>);
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">fname</span>.<span class="ident">is_sfn</span>, <span class="bool-val">true</span>);
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">fname</span>.<span class="ident">has_period</span>, <span class="bool-val">false</span>);
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">fname</span>.<span class="ident">base_len</span>, <span class="number">3</span>);
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">fname</span>.<span class="ident">ext_len</span>, <span class="number">0</span>);
+        <span class="macro">assert_eq!</span>(<span class="kw-2">&amp;</span><span class="ident">buf</span>, <span class="string">b&quot;FOO        &quot;</span>);
+        <span class="macro">assert_eq!</span>(<span class="ident">fname</span>.<span class="ident">is_sfn</span>, <span class="bool-val">true</span>);
+        <span class="macro">assert_eq!</span>(<span class="ident">fname</span>.<span class="ident">has_period</span>, <span class="bool-val">false</span>);
+        <span class="macro">assert_eq!</span>(<span class="ident">fname</span>.<span class="ident">base_len</span>, <span class="number">3</span>);
+        <span class="macro">assert_eq!</span>(<span class="ident">fname</span>.<span class="ident">ext_len</span>, <span class="number">0</span>);
 
-        <span class="kw">let</span> <span class="ident">fname</span> <span class="op">=</span> <span class="ident">Filename</span>::<span class="ident">try_from</span>(<span class="string">b&quot;Foo.Bar&quot;</span> <span class="kw">as</span> <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]).<span class="ident">unwrap</span>();
+        <span class="kw">let</span> <span class="ident">fname</span> <span class="op">=</span> <span class="ident">Filename::try_from</span>(<span class="string">b&quot;Foo.Bar&quot;</span> <span class="kw">as</span> <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]).<span class="ident">unwrap</span>();
         <span class="ident">fname</span>.<span class="ident">dump_sfn</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">buf</span>);
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="kw-2">&amp;</span><span class="ident">buf</span>, <span class="string">b&quot;FOO     BAR&quot;</span>);
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">fname</span>.<span class="ident">is_sfn</span>, <span class="bool-val">true</span>);
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">fname</span>.<span class="ident">has_period</span>, <span class="bool-val">true</span>);
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">fname</span>.<span class="ident">base_len</span>, <span class="number">3</span>);
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">fname</span>.<span class="ident">ext_len</span>, <span class="number">3</span>);
+        <span class="macro">assert_eq!</span>(<span class="kw-2">&amp;</span><span class="ident">buf</span>, <span class="string">b&quot;FOO     BAR&quot;</span>);
+        <span class="macro">assert_eq!</span>(<span class="ident">fname</span>.<span class="ident">is_sfn</span>, <span class="bool-val">true</span>);
+        <span class="macro">assert_eq!</span>(<span class="ident">fname</span>.<span class="ident">has_period</span>, <span class="bool-val">true</span>);
+        <span class="macro">assert_eq!</span>(<span class="ident">fname</span>.<span class="ident">base_len</span>, <span class="number">3</span>);
+        <span class="macro">assert_eq!</span>(<span class="ident">fname</span>.<span class="ident">ext_len</span>, <span class="number">3</span>);
 
-        <span class="kw">let</span> <span class="ident">fname</span> <span class="op">=</span> <span class="ident">Filename</span>::<span class="ident">try_from</span>(<span class="string">b&quot;foo&quot;</span> <span class="kw">as</span> <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]).<span class="ident">unwrap</span>();
+        <span class="kw">let</span> <span class="ident">fname</span> <span class="op">=</span> <span class="ident">Filename::try_from</span>(<span class="string">b&quot;foo&quot;</span> <span class="kw">as</span> <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]).<span class="ident">unwrap</span>();
         <span class="ident">fname</span>.<span class="ident">dump_sfn</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">buf</span>);
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="kw-2">&amp;</span><span class="ident">buf</span>, <span class="string">b&quot;FOO        &quot;</span>);
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">fname</span>.<span class="ident">is_sfn</span>, <span class="bool-val">true</span>);
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">fname</span>.<span class="ident">has_period</span>, <span class="bool-val">false</span>);
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">fname</span>.<span class="ident">base_len</span>, <span class="number">3</span>);
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">fname</span>.<span class="ident">ext_len</span>, <span class="number">0</span>);
+        <span class="macro">assert_eq!</span>(<span class="kw-2">&amp;</span><span class="ident">buf</span>, <span class="string">b&quot;FOO        &quot;</span>);
+        <span class="macro">assert_eq!</span>(<span class="ident">fname</span>.<span class="ident">is_sfn</span>, <span class="bool-val">true</span>);
+        <span class="macro">assert_eq!</span>(<span class="ident">fname</span>.<span class="ident">has_period</span>, <span class="bool-val">false</span>);
+        <span class="macro">assert_eq!</span>(<span class="ident">fname</span>.<span class="ident">base_len</span>, <span class="number">3</span>);
+        <span class="macro">assert_eq!</span>(<span class="ident">fname</span>.<span class="ident">ext_len</span>, <span class="number">0</span>);
 
-        <span class="kw">let</span> <span class="ident">fname</span> <span class="op">=</span> <span class="ident">Filename</span>::<span class="ident">try_from</span>(<span class="string">b&quot;foo.&quot;</span> <span class="kw">as</span> <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]).<span class="ident">unwrap</span>();
+        <span class="kw">let</span> <span class="ident">fname</span> <span class="op">=</span> <span class="ident">Filename::try_from</span>(<span class="string">b&quot;foo.&quot;</span> <span class="kw">as</span> <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]).<span class="ident">unwrap</span>();
         <span class="ident">fname</span>.<span class="ident">dump_sfn</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">buf</span>);
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="kw-2">&amp;</span><span class="ident">buf</span>, <span class="string">b&quot;FOO        &quot;</span>);
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">fname</span>.<span class="ident">is_sfn</span>, <span class="bool-val">true</span>);
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">fname</span>.<span class="ident">has_period</span>, <span class="bool-val">true</span>);
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">fname</span>.<span class="ident">base_len</span>, <span class="number">3</span>);
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">fname</span>.<span class="ident">ext_len</span>, <span class="number">0</span>);
+        <span class="macro">assert_eq!</span>(<span class="kw-2">&amp;</span><span class="ident">buf</span>, <span class="string">b&quot;FOO        &quot;</span>);
+        <span class="macro">assert_eq!</span>(<span class="ident">fname</span>.<span class="ident">is_sfn</span>, <span class="bool-val">true</span>);
+        <span class="macro">assert_eq!</span>(<span class="ident">fname</span>.<span class="ident">has_period</span>, <span class="bool-val">true</span>);
+        <span class="macro">assert_eq!</span>(<span class="ident">fname</span>.<span class="ident">base_len</span>, <span class="number">3</span>);
+        <span class="macro">assert_eq!</span>(<span class="ident">fname</span>.<span class="ident">ext_len</span>, <span class="number">0</span>);
 
-        <span class="kw">let</span> <span class="ident">fname</span> <span class="op">=</span> <span class="ident">Filename</span>::<span class="ident">try_from</span>(<span class="string">b&quot;PICKLE.A&quot;</span> <span class="kw">as</span> <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]).<span class="ident">unwrap</span>();
+        <span class="kw">let</span> <span class="ident">fname</span> <span class="op">=</span> <span class="ident">Filename::try_from</span>(<span class="string">b&quot;PICKLE.A&quot;</span> <span class="kw">as</span> <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]).<span class="ident">unwrap</span>();
         <span class="ident">fname</span>.<span class="ident">dump_sfn</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">buf</span>);
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="kw-2">&amp;</span><span class="ident">buf</span>, <span class="string">b&quot;PICKLE  A  &quot;</span>);
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">fname</span>.<span class="ident">is_sfn</span>, <span class="bool-val">true</span>);
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">fname</span>.<span class="ident">has_period</span>, <span class="bool-val">true</span>);
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">fname</span>.<span class="ident">base_len</span>, <span class="number">6</span>);
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">fname</span>.<span class="ident">ext_len</span>, <span class="number">1</span>);
+        <span class="macro">assert_eq!</span>(<span class="kw-2">&amp;</span><span class="ident">buf</span>, <span class="string">b&quot;PICKLE  A  &quot;</span>);
+        <span class="macro">assert_eq!</span>(<span class="ident">fname</span>.<span class="ident">is_sfn</span>, <span class="bool-val">true</span>);
+        <span class="macro">assert_eq!</span>(<span class="ident">fname</span>.<span class="ident">has_period</span>, <span class="bool-val">true</span>);
+        <span class="macro">assert_eq!</span>(<span class="ident">fname</span>.<span class="ident">base_len</span>, <span class="number">6</span>);
+        <span class="macro">assert_eq!</span>(<span class="ident">fname</span>.<span class="ident">ext_len</span>, <span class="number">1</span>);
 
-        <span class="kw">let</span> <span class="ident">fname</span> <span class="op">=</span> <span class="ident">Filename</span>::<span class="ident">try_from</span>(<span class="string">b&quot;prettybg.big&quot;</span> <span class="kw">as</span> <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]).<span class="ident">unwrap</span>();
+        <span class="kw">let</span> <span class="ident">fname</span> <span class="op">=</span> <span class="ident">Filename::try_from</span>(<span class="string">b&quot;prettybg.big&quot;</span> <span class="kw">as</span> <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]).<span class="ident">unwrap</span>();
         <span class="ident">fname</span>.<span class="ident">dump_sfn</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">buf</span>);
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="kw-2">&amp;</span><span class="ident">buf</span>, <span class="string">b&quot;PRETTYBGBIG&quot;</span>);
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">fname</span>.<span class="ident">is_sfn</span>, <span class="bool-val">true</span>);
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">fname</span>.<span class="ident">has_period</span>, <span class="bool-val">true</span>);
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">fname</span>.<span class="ident">base_len</span>, <span class="number">8</span>);
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">fname</span>.<span class="ident">ext_len</span>, <span class="number">3</span>);
+        <span class="macro">assert_eq!</span>(<span class="kw-2">&amp;</span><span class="ident">buf</span>, <span class="string">b&quot;PRETTYBGBIG&quot;</span>);
+        <span class="macro">assert_eq!</span>(<span class="ident">fname</span>.<span class="ident">is_sfn</span>, <span class="bool-val">true</span>);
+        <span class="macro">assert_eq!</span>(<span class="ident">fname</span>.<span class="ident">has_period</span>, <span class="bool-val">true</span>);
+        <span class="macro">assert_eq!</span>(<span class="ident">fname</span>.<span class="ident">base_len</span>, <span class="number">8</span>);
+        <span class="macro">assert_eq!</span>(<span class="ident">fname</span>.<span class="ident">ext_len</span>, <span class="number">3</span>);
     }
 
     <span class="attribute">#[<span class="ident">test</span>]</span>
     <span class="kw">fn</span> <span class="ident">test_to_lfn</span>() {
-        <span class="kw">let</span> <span class="ident">fname</span> <span class="op">=</span> <span class="ident">Filename</span>::<span class="ident">try_from</span>(<span class="string">b&quot;.big&quot;</span> <span class="kw">as</span> <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]).<span class="ident">unwrap</span>();
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">fname</span>.<span class="ident">is_sfn</span>, <span class="bool-val">false</span>);
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">fname</span>.<span class="ident">base_len</span>, <span class="number">0</span>);
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">fname</span>.<span class="ident">ext_len</span>, <span class="number">3</span>);
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">fname</span>.<span class="ident">has_period</span>, <span class="bool-val">true</span>);
-        <span class="macro">assert_eq</span><span class="macro">!</span>(
+        <span class="kw">let</span> <span class="ident">fname</span> <span class="op">=</span> <span class="ident">Filename::try_from</span>(<span class="string">b&quot;.big&quot;</span> <span class="kw">as</span> <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]).<span class="ident">unwrap</span>();
+        <span class="macro">assert_eq!</span>(<span class="ident">fname</span>.<span class="ident">is_sfn</span>, <span class="bool-val">false</span>);
+        <span class="macro">assert_eq!</span>(<span class="ident">fname</span>.<span class="ident">base_len</span>, <span class="number">0</span>);
+        <span class="macro">assert_eq!</span>(<span class="ident">fname</span>.<span class="ident">ext_len</span>, <span class="number">3</span>);
+        <span class="macro">assert_eq!</span>(<span class="ident">fname</span>.<span class="ident">has_period</span>, <span class="bool-val">true</span>);
+        <span class="macro">assert_eq!</span>(
             <span class="ident">fname</span>.<span class="ident">gen_sfn</span>(<span class="number">1</span>).<span class="ident">unwrap</span>().<span class="ident">data</span>,
-            <span class="ident">Filename</span>::<span class="ident">try_from</span>(<span class="string">b&quot;_big__~1&quot;</span> <span class="kw">as</span> <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]).<span class="ident">unwrap</span>().<span class="ident">data</span>
+            <span class="ident">Filename::try_from</span>(<span class="string">b&quot;_big__~1&quot;</span> <span class="kw">as</span> <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]).<span class="ident">unwrap</span>().<span class="ident">data</span>
         );
 
-        <span class="kw">let</span> <span class="ident">fname</span> <span class="op">=</span> <span class="ident">Filename</span>::<span class="ident">try_from</span>(<span class="string">b&quot;foo.bar1&quot;</span> <span class="kw">as</span> <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]).<span class="ident">unwrap</span>();
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">fname</span>.<span class="ident">is_sfn</span>, <span class="bool-val">false</span>);
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">fname</span>.<span class="ident">base_len</span>, <span class="number">3</span>);
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">fname</span>.<span class="ident">ext_len</span>, <span class="number">4</span>);
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">fname</span>.<span class="ident">has_period</span>, <span class="bool-val">true</span>);
-        <span class="macro">assert_eq</span><span class="macro">!</span>(
+        <span class="kw">let</span> <span class="ident">fname</span> <span class="op">=</span> <span class="ident">Filename::try_from</span>(<span class="string">b&quot;foo.bar1&quot;</span> <span class="kw">as</span> <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]).<span class="ident">unwrap</span>();
+        <span class="macro">assert_eq!</span>(<span class="ident">fname</span>.<span class="ident">is_sfn</span>, <span class="bool-val">false</span>);
+        <span class="macro">assert_eq!</span>(<span class="ident">fname</span>.<span class="ident">base_len</span>, <span class="number">3</span>);
+        <span class="macro">assert_eq!</span>(<span class="ident">fname</span>.<span class="ident">ext_len</span>, <span class="number">4</span>);
+        <span class="macro">assert_eq!</span>(<span class="ident">fname</span>.<span class="ident">has_period</span>, <span class="bool-val">true</span>);
+        <span class="macro">assert_eq!</span>(
             <span class="ident">fname</span>.<span class="ident">gen_sfn</span>(<span class="number">1</span>).<span class="ident">unwrap</span>().<span class="ident">data</span>,
-            <span class="ident">Filename</span>::<span class="ident">try_from</span>(<span class="string">b&quot;foo_ba~1&quot;</span> <span class="kw">as</span> <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]).<span class="ident">unwrap</span>().<span class="ident">data</span>
+            <span class="ident">Filename::try_from</span>(<span class="string">b&quot;foo_ba~1&quot;</span> <span class="kw">as</span> <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]).<span class="ident">unwrap</span>().<span class="ident">data</span>
         );
 
-        <span class="kw">let</span> <span class="ident">fname</span> <span class="op">=</span> <span class="ident">Filename</span>::<span class="ident">try_from</span>(<span class="string">b&quot;foo.bar.&quot;</span> <span class="kw">as</span> <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]).<span class="ident">unwrap</span>();
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">fname</span>.<span class="ident">is_sfn</span>, <span class="bool-val">false</span>);
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">fname</span>.<span class="ident">base_len</span>, <span class="number">7</span>);
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">fname</span>.<span class="ident">ext_len</span>, <span class="number">0</span>);
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">fname</span>.<span class="ident">has_period</span>, <span class="bool-val">true</span>);
-        <span class="macro">assert_eq</span><span class="macro">!</span>(
+        <span class="kw">let</span> <span class="ident">fname</span> <span class="op">=</span> <span class="ident">Filename::try_from</span>(<span class="string">b&quot;foo.bar.&quot;</span> <span class="kw">as</span> <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]).<span class="ident">unwrap</span>();
+        <span class="macro">assert_eq!</span>(<span class="ident">fname</span>.<span class="ident">is_sfn</span>, <span class="bool-val">false</span>);
+        <span class="macro">assert_eq!</span>(<span class="ident">fname</span>.<span class="ident">base_len</span>, <span class="number">7</span>);
+        <span class="macro">assert_eq!</span>(<span class="ident">fname</span>.<span class="ident">ext_len</span>, <span class="number">0</span>);
+        <span class="macro">assert_eq!</span>(<span class="ident">fname</span>.<span class="ident">has_period</span>, <span class="bool-val">true</span>);
+        <span class="macro">assert_eq!</span>(
             <span class="ident">fname</span>.<span class="ident">gen_sfn</span>(<span class="number">2</span>).<span class="ident">unwrap</span>().<span class="ident">data</span>,
-            <span class="ident">Filename</span>::<span class="ident">try_from</span>(<span class="string">b&quot;foo_ba~2&quot;</span> <span class="kw">as</span> <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]).<span class="ident">unwrap</span>().<span class="ident">data</span>
+            <span class="ident">Filename::try_from</span>(<span class="string">b&quot;foo_ba~2&quot;</span> <span class="kw">as</span> <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]).<span class="ident">unwrap</span>().<span class="ident">data</span>
         );
 
-        <span class="kw">let</span> <span class="ident">fname</span> <span class="op">=</span> <span class="ident">Filename</span>::<span class="ident">try_from</span>(<span class="string">b&quot;f.bar.x&quot;</span> <span class="kw">as</span> <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]).<span class="ident">unwrap</span>();
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">fname</span>.<span class="ident">is_sfn</span>, <span class="bool-val">false</span>);
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">fname</span>.<span class="ident">base_len</span>, <span class="number">5</span>);
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">fname</span>.<span class="ident">ext_len</span>, <span class="number">1</span>);
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">fname</span>.<span class="ident">has_period</span>, <span class="bool-val">true</span>);
-        <span class="macro">assert_eq</span><span class="macro">!</span>(
+        <span class="kw">let</span> <span class="ident">fname</span> <span class="op">=</span> <span class="ident">Filename::try_from</span>(<span class="string">b&quot;f.bar.x&quot;</span> <span class="kw">as</span> <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]).<span class="ident">unwrap</span>();
+        <span class="macro">assert_eq!</span>(<span class="ident">fname</span>.<span class="ident">is_sfn</span>, <span class="bool-val">false</span>);
+        <span class="macro">assert_eq!</span>(<span class="ident">fname</span>.<span class="ident">base_len</span>, <span class="number">5</span>);
+        <span class="macro">assert_eq!</span>(<span class="ident">fname</span>.<span class="ident">ext_len</span>, <span class="number">1</span>);
+        <span class="macro">assert_eq!</span>(<span class="ident">fname</span>.<span class="ident">has_period</span>, <span class="bool-val">true</span>);
+        <span class="macro">assert_eq!</span>(
             <span class="ident">fname</span>.<span class="ident">gen_sfn</span>(<span class="number">2</span>).<span class="ident">unwrap</span>().<span class="ident">data</span>,
-            <span class="ident">Filename</span>::<span class="ident">try_from</span>(<span class="string">b&quot;f_bar_~2&quot;</span> <span class="kw">as</span> <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]).<span class="ident">unwrap</span>().<span class="ident">data</span>
+            <span class="ident">Filename::try_from</span>(<span class="string">b&quot;f_bar_~2&quot;</span> <span class="kw">as</span> <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]).<span class="ident">unwrap</span>().<span class="ident">data</span>
         );
 
-        <span class="kw">let</span> <span class="ident">fname</span> <span class="op">=</span> <span class="ident">Filename</span>::<span class="ident">try_from</span>(<span class="string">b&quot;foo bar&quot;</span> <span class="kw">as</span> <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]).<span class="ident">unwrap</span>();
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">fname</span>.<span class="ident">is_sfn</span>, <span class="bool-val">false</span>);
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">fname</span>.<span class="ident">base_len</span>, <span class="number">7</span>);
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">fname</span>.<span class="ident">ext_len</span>, <span class="number">0</span>);
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">fname</span>.<span class="ident">has_period</span>, <span class="bool-val">false</span>);
-        <span class="macro">assert_eq</span><span class="macro">!</span>(
+        <span class="kw">let</span> <span class="ident">fname</span> <span class="op">=</span> <span class="ident">Filename::try_from</span>(<span class="string">b&quot;foo bar&quot;</span> <span class="kw">as</span> <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]).<span class="ident">unwrap</span>();
+        <span class="macro">assert_eq!</span>(<span class="ident">fname</span>.<span class="ident">is_sfn</span>, <span class="bool-val">false</span>);
+        <span class="macro">assert_eq!</span>(<span class="ident">fname</span>.<span class="ident">base_len</span>, <span class="number">7</span>);
+        <span class="macro">assert_eq!</span>(<span class="ident">fname</span>.<span class="ident">ext_len</span>, <span class="number">0</span>);
+        <span class="macro">assert_eq!</span>(<span class="ident">fname</span>.<span class="ident">has_period</span>, <span class="bool-val">false</span>);
+        <span class="macro">assert_eq!</span>(
             <span class="ident">fname</span>.<span class="ident">gen_sfn</span>(<span class="number">2</span>).<span class="ident">unwrap</span>().<span class="ident">data</span>,
-            <span class="ident">Filename</span>::<span class="ident">try_from</span>(<span class="string">b&quot;foo_ba~2&quot;</span> <span class="kw">as</span> <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]).<span class="ident">unwrap</span>().<span class="ident">data</span>
+            <span class="ident">Filename::try_from</span>(<span class="string">b&quot;foo_ba~2&quot;</span> <span class="kw">as</span> <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]).<span class="ident">unwrap</span>().<span class="ident">data</span>
         );
 
-        <span class="kw">let</span> <span class="ident">fname</span> <span class="op">=</span> <span class="ident">Filename</span>::<span class="ident">try_from</span>(<span class="string">b&quot; &quot;</span> <span class="kw">as</span> <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]).<span class="ident">unwrap</span>();
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">fname</span>.<span class="ident">is_sfn</span>, <span class="bool-val">false</span>);
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">fname</span>.<span class="ident">base_len</span>, <span class="number">1</span>);
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">fname</span>.<span class="ident">ext_len</span>, <span class="number">0</span>);
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">fname</span>.<span class="ident">has_period</span>, <span class="bool-val">false</span>);
-        <span class="macro">assert_eq</span><span class="macro">!</span>(
+        <span class="kw">let</span> <span class="ident">fname</span> <span class="op">=</span> <span class="ident">Filename::try_from</span>(<span class="string">b&quot; &quot;</span> <span class="kw">as</span> <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]).<span class="ident">unwrap</span>();
+        <span class="macro">assert_eq!</span>(<span class="ident">fname</span>.<span class="ident">is_sfn</span>, <span class="bool-val">false</span>);
+        <span class="macro">assert_eq!</span>(<span class="ident">fname</span>.<span class="ident">base_len</span>, <span class="number">1</span>);
+        <span class="macro">assert_eq!</span>(<span class="ident">fname</span>.<span class="ident">ext_len</span>, <span class="number">0</span>);
+        <span class="macro">assert_eq!</span>(<span class="ident">fname</span>.<span class="ident">has_period</span>, <span class="bool-val">false</span>);
+        <span class="macro">assert_eq!</span>(
             <span class="ident">fname</span>.<span class="ident">gen_sfn</span>(<span class="number">100</span>).<span class="ident">unwrap</span>().<span class="ident">data</span>,
-            <span class="ident">Filename</span>::<span class="ident">try_from</span>(<span class="string">b&quot;____~100&quot;</span> <span class="kw">as</span> <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]).<span class="ident">unwrap</span>().<span class="ident">data</span>
+            <span class="ident">Filename::try_from</span>(<span class="string">b&quot;____~100&quot;</span> <span class="kw">as</span> <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]).<span class="ident">unwrap</span>().<span class="ident">data</span>
         );
 
-        <span class="kw">let</span> <span class="ident">fname</span> <span class="op">=</span> <span class="ident">Filename</span>::<span class="ident">try_from</span>(<span class="string">b&quot;\x10&quot;</span> <span class="kw">as</span> <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]).<span class="ident">unwrap</span>();
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">fname</span>.<span class="ident">is_sfn</span>, <span class="bool-val">false</span>);
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">fname</span>.<span class="ident">base_len</span>, <span class="number">1</span>);
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">fname</span>.<span class="ident">ext_len</span>, <span class="number">0</span>);
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">fname</span>.<span class="ident">has_period</span>, <span class="bool-val">false</span>);
-        <span class="macro">assert_eq</span><span class="macro">!</span>(
+        <span class="kw">let</span> <span class="ident">fname</span> <span class="op">=</span> <span class="ident">Filename::try_from</span>(<span class="string">b&quot;\x10&quot;</span> <span class="kw">as</span> <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]).<span class="ident">unwrap</span>();
+        <span class="macro">assert_eq!</span>(<span class="ident">fname</span>.<span class="ident">is_sfn</span>, <span class="bool-val">false</span>);
+        <span class="macro">assert_eq!</span>(<span class="ident">fname</span>.<span class="ident">base_len</span>, <span class="number">1</span>);
+        <span class="macro">assert_eq!</span>(<span class="ident">fname</span>.<span class="ident">ext_len</span>, <span class="number">0</span>);
+        <span class="macro">assert_eq!</span>(<span class="ident">fname</span>.<span class="ident">has_period</span>, <span class="bool-val">false</span>);
+        <span class="macro">assert_eq!</span>(
             <span class="ident">fname</span>.<span class="ident">gen_sfn</span>(<span class="number">999999</span>).<span class="ident">unwrap</span>().<span class="ident">data</span>,
-            <span class="ident">Filename</span>::<span class="ident">try_from</span>(<span class="string">b&quot;_~999999&quot;</span> <span class="kw">as</span> <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]).<span class="ident">unwrap</span>().<span class="ident">data</span>
+            <span class="ident">Filename::try_from</span>(<span class="string">b&quot;_~999999&quot;</span> <span class="kw">as</span> <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]).<span class="ident">unwrap</span>().<span class="ident">data</span>
         );
     }
 
@@ -993,15 +993,15 @@
 
         <span class="ident">lfn_set_name</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">buf</span>, <span class="kw-2">&amp;</span><span class="ident">name2</span>);
         <span class="kw">let</span> <span class="ident">lname</span> <span class="op">=</span> <span class="ident">lfn_name</span>(<span class="kw-2">&amp;</span><span class="ident">buf</span>).<span class="ident">unwrap</span>();
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">name2</span>, <span class="ident">lname</span>);
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="kw-2">&amp;</span><span class="ident">buf</span>[<span class="number">1</span>..<span class="number">11</span>], <span class="kw-2">&amp;</span>[<span class="string">b&#39;f&#39;</span>, <span class="number">0</span>, <span class="string">b&#39;o&#39;</span>, <span class="number">0</span>, <span class="string">b&#39;o&#39;</span>, <span class="number">0</span>, <span class="string">b&#39;-&#39;</span>, <span class="number">0</span>, <span class="string">b&#39;b&#39;</span>, <span class="number">0</span>]);
-        <span class="macro">assert_eq</span><span class="macro">!</span>(
+        <span class="macro">assert_eq!</span>(<span class="ident">name2</span>, <span class="ident">lname</span>);
+        <span class="macro">assert_eq!</span>(<span class="kw-2">&amp;</span><span class="ident">buf</span>[<span class="number">1</span>..<span class="number">11</span>], <span class="kw-2">&amp;</span>[<span class="string">b&#39;f&#39;</span>, <span class="number">0</span>, <span class="string">b&#39;o&#39;</span>, <span class="number">0</span>, <span class="string">b&#39;o&#39;</span>, <span class="number">0</span>, <span class="string">b&#39;-&#39;</span>, <span class="number">0</span>, <span class="string">b&#39;b&#39;</span>, <span class="number">0</span>]);
+        <span class="macro">assert_eq!</span>(
             <span class="kw-2">&amp;</span><span class="ident">buf</span>[<span class="number">14</span>..<span class="number">26</span>],
             <span class="kw-2">&amp;</span>[<span class="string">b&#39;a&#39;</span>, <span class="number">0</span>, <span class="string">b&#39;r&#39;</span>, <span class="number">0</span>, <span class="string">b&#39;-&#39;</span>, <span class="number">0</span>, <span class="string">b&#39;1&#39;</span>, <span class="number">0</span>, <span class="string">b&#39;2&#39;</span>, <span class="number">0</span>, <span class="string">b&#39;3&#39;</span>, <span class="number">0</span>]
         );
-        <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="kw-2">&amp;</span><span class="ident">buf</span>[<span class="number">28</span>..<span class="number">32</span>], <span class="kw-2">&amp;</span>[<span class="number">0</span>, <span class="number">0</span>, <span class="number">0xFF</span>, <span class="number">0xFF</span>]);
+        <span class="macro">assert_eq!</span>(<span class="kw-2">&amp;</span><span class="ident">buf</span>[<span class="number">28</span>..<span class="number">32</span>], <span class="kw-2">&amp;</span>[<span class="number">0</span>, <span class="number">0</span>, <span class="number">0xFF</span>, <span class="number">0xFF</span>]);
     }
 }
 </pre></div>
-</section><section id="search" class="content hidden"></section><section class="footer"></section><div id="rustdoc-vars" data-root-path="../../../" data-current-crate="kdevice"></div>
-    <script src="../../../main.js"></script><script src="../../../source-script.js"></script><script src="../../../source-files.js"></script><script defer src="../../../search-index.js"></script></body></html>
+</section><section id="search" class="content hidden"></section><div id="rustdoc-vars" data-root-path="../../../" data-current-crate="kdevice" data-search-index-js="../../../search-index.js" data-search-js="../../../search.js"></div>
+    <script src="../../../main.js"></script><script src="../../../source-script.js"></script><script src="../../../source-files.js"></script></body></html>
