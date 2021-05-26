@@ -10,7 +10,8 @@
 #![feature(type_alias_impl_trait)]
 #![feature(concat_idents)]
 #![feature(new_uninit)]
-#![feature(const_fn)]
+#![feature(const_fn_trait_bound)]
+#![feature(min_type_alias_impl_trait)]
 
 extern crate alloc;
 

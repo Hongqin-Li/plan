@@ -1,11 +1,11 @@
 //! # Bare-metal memory allocator for kernel development.
 #![deny(missing_docs)]
 #![no_std]
-#![feature(const_fn)]
 #![feature(associated_type_defaults)]
 #![feature(allocator_api)]
 #![feature(dropck_eyepatch)]
 #![feature(try_reserve)]
+#![feature(const_fn_trait_bound)]
 
 // So that we can use std when testing.
 #[cfg(test)]

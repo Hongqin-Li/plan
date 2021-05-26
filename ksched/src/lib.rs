@@ -6,9 +6,9 @@
 #![feature(box_into_pin)]
 #![feature(const_panic)]
 #![feature(const_generics)]
-#![feature(const_fn)]
 #![feature(associated_type_bounds)]
 #![feature(shrink_to)]
+#![feature(const_fn_trait_bound)]
 
 // So that we can use std when testing.
 #[cfg(test)]

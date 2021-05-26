@@ -17,7 +17,7 @@
 #![feature(new_uninit)]
 #![feature(const_fn_fn_ptr_basics)]
 #![feature(const_mut_refs)]
-#![feature(const_fn)]
+#![feature(const_fn_trait_bound)]
 
 extern crate alloc;
 
