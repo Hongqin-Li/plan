@@ -32,19 +32,19 @@ pub const MAX_NUMERIC_TAIL: usize = 999999;
 /// Each directory entry in FAT32 is of 32 bytes.
 pub const DIRENTSZ: usize = 32;
 
-/// Get the 8.3-style file name.
+/// Get the 8.3-style file name, convert to lowercase.
 pub fn sfn_name(buf: &[u8; DIRENTSZ]) -> Result<Vec<u16>> {
     let mut name = Vec::new();
     let mut has_dot = false;
     for i in (0..8).take_while(|i| buf[i.clone()] != SPACE) {
-        vec_push(&mut name, buf[i] as u16)?;
+        vec_push(&mut name, buf[i].to_ascii_lowercase() as u16)?;
     }
     for i in (8..11).take_while(|i| buf[i.clone()] != SPACE) {
         if !has_dot {
             vec_push(&mut name, b'.' as u16)?;
             has_dot = true;
         }
-        vec_push(&mut name, buf[i] as u16)?;
+        vec_push(&mut name, buf[i].to_ascii_lowercase() as u16)?;
     }
     Ok(name)
 }
@@ -253,7 +253,7 @@ impl Filename {
                     8 + i - self.base_len
                 };
             }
-            buf[i] = *b as u8;
+            buf[i] = (*b as u8).to_ascii_uppercase();
         }
     }
 }
@@ -307,12 +307,6 @@ impl TryFrom<&[u8]> for Filename {
 
         if base_len == 0 || base_len > 8 || ext_len > 3 {
             is_sfn = false;
-        }
-        if is_sfn {
-            for x in data.iter_mut() {
-                debug_assert!(*x <= 0xFF);
-                *x = (*x as u8).to_ascii_uppercase() as u16;
-            }
         }
         Ok(Self {
             base_len,
@@ -417,7 +411,7 @@ mod tests {
         assert_eq!(fname.has_period, true);
         assert_eq!(
             fname.gen_sfn(1).unwrap().data,
-            Filename::try_from(b"_big__~1" as &[u8]).unwrap().data
+            Filename::try_from(b"_BIG__~1" as &[u8]).unwrap().data
         );
 
         let fname = Filename::try_from(b"foo.bar1" as &[u8]).unwrap();
@@ -427,7 +421,7 @@ mod tests {
         assert_eq!(fname.has_period, true);
         assert_eq!(
             fname.gen_sfn(1).unwrap().data,
-            Filename::try_from(b"foo_ba~1" as &[u8]).unwrap().data
+            Filename::try_from(b"FOO_BA~1" as &[u8]).unwrap().data
         );
 
         let fname = Filename::try_from(b"foo.bar." as &[u8]).unwrap();
@@ -437,17 +431,17 @@ mod tests {
         assert_eq!(fname.has_period, true);
         assert_eq!(
             fname.gen_sfn(2).unwrap().data,
-            Filename::try_from(b"foo_ba~2" as &[u8]).unwrap().data
+            Filename::try_from(b"FOO_BA~2" as &[u8]).unwrap().data
         );
 
-        let fname = Filename::try_from(b"f.bar.x" as &[u8]).unwrap();
+        let fname = Filename::try_from(b"F.BAR.X" as &[u8]).unwrap();
         assert_eq!(fname.is_sfn, false);
         assert_eq!(fname.base_len, 5);
         assert_eq!(fname.ext_len, 1);
         assert_eq!(fname.has_period, true);
         assert_eq!(
             fname.gen_sfn(2).unwrap().data,
-            Filename::try_from(b"f_bar_~2" as &[u8]).unwrap().data
+            Filename::try_from(b"F_BAR_~2" as &[u8]).unwrap().data
         );
 
         let fname = Filename::try_from(b"foo bar" as &[u8]).unwrap();
@@ -457,7 +451,7 @@ mod tests {
         assert_eq!(fname.has_period, false);
         assert_eq!(
             fname.gen_sfn(2).unwrap().data,
-            Filename::try_from(b"foo_ba~2" as &[u8]).unwrap().data
+            Filename::try_from(b"FOO_BA~2" as &[u8]).unwrap().data
         );
 
         let fname = Filename::try_from(b" " as &[u8]).unwrap();

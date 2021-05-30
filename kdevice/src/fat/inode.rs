@@ -566,7 +566,29 @@ impl FAT {
             if ent.name == [b'.' as u16] || ent.name == [b'.' as u16, b'.' as u16] {
                 continue;
             }
-            if ent.name == fname.data {
+
+            let mut matched = true;
+            if ent.nent == 1 {
+                // SFN is case-insensitive.
+                if ent.name.len() != fname.data.len() {
+                    matched = false;
+                } else {
+                    for i in 0..ent.name.len() {
+                        debug_assert_eq!(ent.name[i] & 0xFF, ent.name[i]);
+                        let enti = ent.name[i] as u8;
+                        debug_assert_eq!(enti.to_ascii_lowercase(), enti);
+                        if enti != (fname.data[i] as u8).to_ascii_lowercase() {
+                            matched = false;
+                            break;
+                        }
+                    }
+                }
+            } else {
+                // LFN is case-sensitive.
+                matched = ent.name == fname.data
+            };
+
+            if matched {
                 let key = InodeKey {
                     cno: self.valid_cno(ent.cno)?,
                     doff: ent.doff,
@@ -949,6 +971,8 @@ impl<'a> DirIter<'a> {
                         // Ignore SFN if previous LFN exists.
                         if names.is_empty() {
                             vec_push(&mut names, sfn_name(&ebuf)?)?;
+                        } else {
+                            vec_push(&mut names, Vec::new())?;
                         }
                         cno = sfn_cno(&ebuf);
                         return Ok(Some(false));
