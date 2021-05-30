@@ -1198,7 +1198,7 @@
     <span class="doccomment">/// Initialize a new FAT from a virtual disk.</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// `ninodes` is the maximum active inode, `nbuf` is the number of cached buffer.</span>
-    <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">ninodes</span>: <span class="ident">usize</span>, <span class="ident">nbuf</span>: <span class="ident">usize</span>, <span class="ident">disk</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Chan</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">ninodes</span>: <span class="ident">usize</span>, <span class="ident">nbuf</span>: <span class="ident">usize</span>, <span class="ident">disk</span>: <span class="kw-2">&amp;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Chan</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">buf</span> <span class="op">=</span> <span class="kw">unsafe</span> { <span class="ident">Box</span>::<span class="op">&lt;</span>[<span class="ident">u8</span>; <span class="ident">BSIZE</span>]<span class="op">&gt;</span><span class="ident">::try_new_uninit</span>()<span class="question-mark">?</span>.<span class="ident">assume_init</span>() };
         <span class="ident">disk</span>.<span class="ident">read</span>(<span class="ident">buf</span>.<span class="ident">as_mut</span>(), <span class="number">0</span>).<span class="kw">await</span><span class="question-mark">?</span>;
 
@@ -1237,7 +1237,7 @@
         <span class="comment">// The count of data clusters starting at cluster 2.</span>
         <span class="kw">let</span> <span class="ident">data_clust</span> <span class="op">=</span> <span class="ident">data_sect</span> <span class="op">/</span> <span class="ident">spc</span> <span class="kw">as</span> <span class="ident">u32</span>;
 
-        <span class="kw">if</span> <span class="ident">root</span> <span class="op">!</span><span class="op">=</span> <span class="number">2</span> <span class="op">|</span><span class="op">|</span> <span class="ident">bps</span> <span class="op">!</span><span class="op">=</span> <span class="ident">BSIZE</span> <span class="op">|</span><span class="op">|</span> <span class="ident">data_clust</span> <span class="op">&lt;</span> <span class="number">65525</span> {
+        <span class="kw">if</span> <span class="ident">root</span> <span class="op">!</span><span class="op">=</span> <span class="number">2</span> <span class="op">|</span><span class="op">|</span> <span class="ident">bps</span> <span class="op">!</span><span class="op">=</span> <span class="ident">BSIZE</span> {
             <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">Error::NotImplemented</span>(<span class="string">&quot;FAT meta&quot;</span>));
         }
 
@@ -1303,7 +1303,7 @@
 
         <span class="prelude-val">Ok</span>(<span class="self">Self</span> {
             <span class="ident">meta</span>,
-            <span class="ident">log</span>: <span class="ident">Log::new</span>(<span class="ident">nbuf</span>, <span class="ident">log_bno</span>, <span class="ident">disk</span>).<span class="kw">await</span><span class="question-mark">?</span>,
+            <span class="ident">log</span>: <span class="ident">Log::new</span>(<span class="ident">nbuf</span>, <span class="ident">log_bno</span>, <span class="ident">disk</span>.<span class="ident">dup</span>()).<span class="kw">await</span><span class="question-mark">?</span>,
             <span class="ident">icache</span>: <span class="self">Self</span><span class="ident">::new_cache</span>(<span class="ident">ninodes</span>, <span class="op">|</span><span class="op">|</span> <span class="prelude-val">Ok</span>(<span class="ident">Inode::default</span>()))<span class="question-mark">?</span>,
         })
     }
