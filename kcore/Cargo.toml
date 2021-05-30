@@ -13,7 +13,7 @@ ksched = { path = "../ksched" }
 static_assertions = "1.1.0"
 hashbrown = "0.11"
 intrusive-collections = "0.9.0"
-async-trait = { git = "https://github.com/Hongqin-Li/async-trait" }
+async-trait = { git = "git://github.com/Hongqin-Li/async-trait" }
 
 [dev-dependencies]
 rand = "0.8.3"

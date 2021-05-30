@@ -10,6 +10,6 @@ edition = "2018"
 kalloc = { path = "../kalloc" }
 kcore = { path = "../kcore" }
 ksched = { path = "../ksched" }
-async-trait = { git = "https://github.com/Hongqin-Li/async-trait" }
+async-trait = { git = "git://github.com/Hongqin-Li/async-trait" }
 rand = "0.8.3"
 tempfile = "3.2.0"

@@ -7,7 +7,7 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-mcs = { git = "https://github.com/Hongqin-Li/mcs-rs" }
+mcs = { git = "git://github.com/Hongqin-Li/mcs-rs" }
 typenum = "1.13.0"
 hashbrown = "0.11"
 
