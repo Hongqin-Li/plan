@@ -36,10 +36,10 @@ fn prepare_crud(
 
     task::spawn(0, async move {
         let disk = Arc::new(fs::FileDisk::new(img_path));
-        let fs = FAT::new(ntask + 10, 100, Chan::attach(disk, b"").await.unwrap())
-            .await
-            .unwrap();
-
+        let disk_root = Chan::attach(disk, b"").await.unwrap();
+        let fs = FAT::new(ntask + 10, 100, &disk_root).await.unwrap();
+        disk_root.close().await;
+        
         println!("{:?}", fs);
         ktest::fs::crud(fs, req).await;
     })

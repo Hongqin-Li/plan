@@ -175,7 +175,7 @@ impl FAT {
     /// Initialize a new FAT from a virtual disk.
     ///
     /// `ninodes` is the maximum active inode, `nbuf` is the number of cached buffer.
-    pub async fn new(ninodes: usize, nbuf: usize, disk: Arc<Chan>) -> Result<Self> {
+    pub async fn new(ninodes: usize, nbuf: usize, disk: &Arc<Chan>) -> Result<Self> {
         let mut buf = unsafe { Box::<[u8; BSIZE]>::try_new_uninit()?.assume_init() };
         disk.read(buf.as_mut(), 0).await?;
 
@@ -214,7 +214,7 @@ impl FAT {
         // The count of data clusters starting at cluster 2.
         let data_clust = data_sect / spc as u32;
 
-        if root != 2 || bps != BSIZE || data_clust < 65525 {
+        if root != 2 || bps != BSIZE {
             return Err(Error::NotImplemented("FAT meta"));
         }
 
@@ -280,7 +280,7 @@ impl FAT {
 
         Ok(Self {
             meta,
-            log: Log::new(nbuf, log_bno, disk).await?,
+            log: Log::new(nbuf, log_bno, disk.dup()).await?,
             icache: Self::new_cache(ninodes, || Ok(Inode::default()))?,
         })
     }

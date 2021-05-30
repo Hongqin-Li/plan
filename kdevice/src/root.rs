@@ -118,12 +118,9 @@ mod tests {
             root2.close().await;
 
             let root_dev = root.open(b"dev", None).await.unwrap().unwrap();
-
-            let fs = Arc::new(
-                FAT::new(50, 100, Chan::attach(disk, b"").await.unwrap())
-                    .await
-                    .unwrap(),
-            );
+            let disk_root = Chan::attach(disk, b"").await.unwrap();
+            let fs = Arc::new(FAT::new(50, 100, &disk_root).await.unwrap());
+            disk_root.close().await;
 
             // Mount fs to root.
             let fs_root = Chan::attach(fs.clone(), b"").await.unwrap();
