@@ -187,16 +187,6 @@ impl FAT {
         let fat_sect = from_bytes!(u32, buf[36..40]);
         let root = from_bytes!(u32, buf[44..48]) as u32;
 
-        if !([512, 1024, 2048, 4096].contains(&bps)
-            && [1, 2, 4, 8, 16, 32, 64, 128].contains(&spc)
-            && reserved_sect != 0
-            && nfat == 2
-            && totsect != 0
-            && &buf[82..90] == b"FAT32   ")
-        {
-            return Err(Error::NotImplemented("FAT meta"));
-        }
-
         // NOTE: Customized, not in FAT32.
         let mut log_cno = from_bytes!(u32, buf[52..56]) as usize;
 
