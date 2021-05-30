@@ -187,6 +187,17 @@ impl FAT {
         let fat_sect = from_bytes!(u32, buf[36..40]);
         let root = from_bytes!(u32, buf[44..48]) as u32;
 
+        if !([512, 1024, 2048, 4096].contains(&bps) && [1, 2, 4, 8, 16, 32, 64, 128].contains(&spc))
+        {
+            return Err(Error::NotImplemented("FAT meta bsp and spc"));
+        }
+        if !(reserved_sect != 0) {
+            return Err(Error::NotImplemented("FAT reserved sector is zero"));
+        }
+        if totsect == 0 {
+            return Err(Error::NotImplemented("total sector is zero"));
+        }
+
         // NOTE: Customized, not in FAT32.
         let mut log_cno = from_bytes!(u32, buf[52..56]) as usize;
 
