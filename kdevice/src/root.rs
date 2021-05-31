@@ -43,7 +43,9 @@ impl Device for Root {
         if name.is_empty() {
             Ok(Some(dir.clone()))
         } else if create_dir.is_some() {
-            Err(Error::BadRequest("create in devroot"))
+            // FIXME:
+            Ok(None)
+            // Err(Error::BadRequest("create in devroot"))
         } else if dir.path != 0 {
             Ok(None)
         } else {
@@ -108,10 +110,10 @@ mod tests {
             let root = Chan::attach(devroot, b"").await.unwrap();
 
             // Cannot create directories.
-            assert!(root.open(b"dev", Some(true)).await.is_err());
-            assert!(root.open(b"dev", Some(false)).await.is_err());
-            assert!(root.open(b"x", Some(true)).await.is_err());
-            assert!(root.open(b"x", Some(false)).await.is_err());
+            assert!(root.open(b"dev", Some(true)).await.unwrap().is_none());
+            assert!(root.open(b"dev", Some(false)).await.unwrap().is_none());
+            assert!(root.open(b"x", Some(true)).await.unwrap().is_none());
+            assert!(root.open(b"x", Some(false)).await.unwrap().is_none());
 
             // Can open itself.
             let root2 = root.open(b"", None).await.unwrap().unwrap();
