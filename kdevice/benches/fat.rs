@@ -39,7 +39,7 @@ fn prepare_crud(
         let disk_root = Chan::attach(disk, b"").await.unwrap();
         let fs = FAT::new(ntask + 10, 100, &disk_root).await.unwrap();
         disk_root.close().await;
-        
+
         println!("{:?}", fs);
         ktest::fs::crud(fs, req).await;
     })

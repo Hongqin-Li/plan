@@ -59,6 +59,7 @@ fn buddy_idx(i: usize) -> usize {
 ///                                    |      
 ///                    page_begin is a multiple of P
 /// ```
+#[repr(C)]
 pub struct BuddySystem<P> {
     /// Should be less than 32.
     max_order: usize,
@@ -119,6 +120,8 @@ impl<P: Unsigned + PowerOfTwo> BuddySystem<P> {
     /// and `self` is a static variable.
     pub unsafe fn build(mut begin: usize, end: usize) -> Result<&'static mut Self, ()> {
         assert!(P::to_usize() >= mem::size_of::<Rawlist>());
+        begin = round_up(begin, mem::align_of::<Self>());
+
         let b = &mut (*(begin as *mut Self));
         begin += size_of::<Self>();
         if begin >= end {
@@ -559,6 +562,18 @@ pub mod tests {
                 b.dealloc(ptr, layout);
                 b.check();
             }
+        }
+    }
+
+    #[test]
+    fn test_misaligned_build() {
+        // x86 won't fail even if misaligned.
+        let buf = [0u8; NBUF];
+        let mem_begin = buf.as_ptr() as usize;
+        let mem_end = buf.as_ptr() as usize + NBUF;
+        for i in 0..8 {
+            let mut b: MultiBuddySystem<PGSIZE> = MultiBuddySystem::new();
+            unsafe { b.add_zone(mem_begin + i, mem_end) }
         }
     }
 

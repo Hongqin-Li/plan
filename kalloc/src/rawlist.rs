@@ -1,4 +1,5 @@
 #[derive(Copy, Clone, Debug)]
+#[repr(C)]
 pub struct Rawlist {
     pub prev: *mut Rawlist,
     pub next: *mut Rawlist,
