@@ -147,6 +147,8 @@
 <span id="144">144</span>
 <span id="145">145</span>
 <span id="146">146</span>
+<span id="147">147</span>
+<span id="148">148</span>
 </pre><pre class="rust">
 <span class="doccomment">//! The root file system.</span>
 <span class="kw">use</span> <span class="ident">core::usize</span>;
@@ -193,7 +195,9 @@
         <span class="kw">if</span> <span class="ident">name</span>.<span class="ident">is_empty</span>() {
             <span class="prelude-val">Ok</span>(<span class="prelude-val">Some</span>(<span class="ident">dir</span>.<span class="ident">clone</span>()))
         } <span class="kw">else</span> <span class="kw">if</span> <span class="ident">create_dir</span>.<span class="ident">is_some</span>() {
-            <span class="prelude-val">Err</span>(<span class="ident">Error::BadRequest</span>(<span class="string">&quot;create in devroot&quot;</span>))
+            <span class="comment">// FIXME:</span>
+            <span class="prelude-val">Ok</span>(<span class="prelude-val">None</span>)
+            <span class="comment">// Err(Error::BadRequest(&quot;create in devroot&quot;))</span>
         } <span class="kw">else</span> <span class="kw">if</span> <span class="ident">dir</span>.<span class="ident">path</span> <span class="op">!</span><span class="op">=</span> <span class="number">0</span> {
             <span class="prelude-val">Ok</span>(<span class="prelude-val">None</span>)
         } <span class="kw">else</span> {
@@ -258,10 +262,10 @@
             <span class="kw">let</span> <span class="ident">root</span> <span class="op">=</span> <span class="ident">Chan::attach</span>(<span class="ident">devroot</span>, <span class="string">b&quot;&quot;</span>).<span class="kw">await</span>.<span class="ident">unwrap</span>();
 
             <span class="comment">// Cannot create directories.</span>
-            <span class="macro">assert!</span>(<span class="ident">root</span>.<span class="ident">open</span>(<span class="string">b&quot;dev&quot;</span>, <span class="prelude-val">Some</span>(<span class="bool-val">true</span>)).<span class="kw">await</span>.<span class="ident">is_err</span>());
-            <span class="macro">assert!</span>(<span class="ident">root</span>.<span class="ident">open</span>(<span class="string">b&quot;dev&quot;</span>, <span class="prelude-val">Some</span>(<span class="bool-val">false</span>)).<span class="kw">await</span>.<span class="ident">is_err</span>());
-            <span class="macro">assert!</span>(<span class="ident">root</span>.<span class="ident">open</span>(<span class="string">b&quot;x&quot;</span>, <span class="prelude-val">Some</span>(<span class="bool-val">true</span>)).<span class="kw">await</span>.<span class="ident">is_err</span>());
-            <span class="macro">assert!</span>(<span class="ident">root</span>.<span class="ident">open</span>(<span class="string">b&quot;x&quot;</span>, <span class="prelude-val">Some</span>(<span class="bool-val">false</span>)).<span class="kw">await</span>.<span class="ident">is_err</span>());
+            <span class="macro">assert!</span>(<span class="ident">root</span>.<span class="ident">open</span>(<span class="string">b&quot;dev&quot;</span>, <span class="prelude-val">Some</span>(<span class="bool-val">true</span>)).<span class="kw">await</span>.<span class="ident">unwrap</span>().<span class="ident">is_none</span>());
+            <span class="macro">assert!</span>(<span class="ident">root</span>.<span class="ident">open</span>(<span class="string">b&quot;dev&quot;</span>, <span class="prelude-val">Some</span>(<span class="bool-val">false</span>)).<span class="kw">await</span>.<span class="ident">unwrap</span>().<span class="ident">is_none</span>());
+            <span class="macro">assert!</span>(<span class="ident">root</span>.<span class="ident">open</span>(<span class="string">b&quot;x&quot;</span>, <span class="prelude-val">Some</span>(<span class="bool-val">true</span>)).<span class="kw">await</span>.<span class="ident">unwrap</span>().<span class="ident">is_none</span>());
+            <span class="macro">assert!</span>(<span class="ident">root</span>.<span class="ident">open</span>(<span class="string">b&quot;x&quot;</span>, <span class="prelude-val">Some</span>(<span class="bool-val">false</span>)).<span class="kw">await</span>.<span class="ident">unwrap</span>().<span class="ident">is_none</span>());
 
             <span class="comment">// Can open itself.</span>
             <span class="kw">let</span> <span class="ident">root2</span> <span class="op">=</span> <span class="ident">root</span>.<span class="ident">open</span>(<span class="string">b&quot;&quot;</span>, <span class="prelude-val">None</span>).<span class="kw">await</span>.<span class="ident">unwrap</span>().<span class="ident">unwrap</span>();
