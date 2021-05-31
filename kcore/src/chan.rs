@@ -2,6 +2,7 @@
 
 use alloc::sync::Weak;
 use alloc::vec::Vec;
+use core::hint::unreachable_unchecked;
 use core::{cmp::min, convert::TryFrom, fmt::Debug, iter, mem::MaybeUninit, str};
 use kalloc::wrapper::vec_push;
 use ksched::{
@@ -173,6 +174,32 @@ impl Chan {
             dropped: false,
         };
         Ok(unsafe { Self::from_key(key, a) })
+    }
+
+    /// Get the absolute path string of this chan.
+    pub async fn path(self: &Arc<Chan>) -> Result<Vec<u8>> {
+        let name1 = |u: &Arc<Chan>| -> Result<Vec<u8>> {
+            let mut buf = Vec::new();
+            for b in &u.name {
+                vec_push(&mut buf, *b)?;
+            }
+            // if u.is_dir() {
+            //     vec_push(&mut buf, b'/')?;
+            // }
+            Ok(buf)
+        };
+        let mut u = self.clone();
+        let mut ret = Vec::new();
+        while let Some(fa) = &u.parent {
+            let name = name1(&u)?;
+            for b in name.iter().rev() {
+                vec_push(&mut ret, *b)?;
+            }
+            u = fa.clone();
+        }
+        vec_push(&mut ret, b'/')?;
+        ret.reverse();
+        Ok(ret)
     }
 
     /// Create a new mount space rooted at a chan.
