@@ -108,6 +108,7 @@ mod tests {
         task::spawn(0, async move {
             let devroot = Arc::new(Root::default());
             let root = Chan::attach(devroot, b"").await.unwrap();
+            assert_eq!(root.path().await.unwrap(), b"/");
 
             // Cannot create directories.
             assert!(root.open(b"dev", Some(true)).await.unwrap().is_none());
@@ -120,6 +121,8 @@ mod tests {
             root2.close().await;
 
             let root_dev = root.open(b"dev", None).await.unwrap().unwrap();
+            assert_eq!(root_dev.path().await.unwrap(), b"/dev");
+
             let disk_root = Chan::attach(disk, b"").await.unwrap();
             let fs = Arc::new(FAT::new(50, 100, &disk_root).await.unwrap());
             disk_root.close().await;
@@ -133,6 +136,7 @@ mod tests {
 
             // Can open file in mounted fs.
             let src_dir = root.open(b"src", None).await.unwrap().unwrap();
+            assert_eq!(src_dir.path().await.unwrap(), b"/src");
             src_dir.close().await;
 
             root.close().await;
