@@ -141,6 +141,15 @@ pub fn lfn_set_name(buf: &mut [u8; DIRENTSZ], name: &[u16]) {
     }
 }
 
+/// Compute the checksum of SFN.
+pub fn checksum(buf: &[u8]) -> u8 {
+    let mut chksum = num::Wrapping(0_u8);
+    for x in buf.iter() {
+        chksum = (chksum << 7) + (chksum >> 1) + num::Wrapping(*x);
+    }
+    chksum.0
+}
+
 /// Convert utf-8 bytes to utf-16.
 pub fn utf8_to_utf16(bytes: &[u8]) -> Result<Vec<u16>> {
     let mut ret = Vec::new();
@@ -178,16 +187,6 @@ pub struct Filename {
 }
 
 impl Filename {
-    /// Compute the checksum of SFN.
-    pub fn checksum(&self) -> u8 {
-        debug_assert_eq!(self.is_sfn, true);
-        let mut chksum = num::Wrapping(0_u8);
-        for x in self.data.iter().map(|x| *x as u8) {
-            chksum = (chksum << 7) + (chksum >> 1) + num::Wrapping(x);
-        }
-        chksum.0
-    }
-
     /// Number of required entries to store this file name.
     pub fn nent(&self) -> usize {
         if self.is_sfn {

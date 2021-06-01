@@ -18,7 +18,9 @@ use super::fname::{
 use crate::{
     block::BSIZE,
     cache::{CEntry, CGuard, CNodePtr, Cache, CacheData},
-    cache_impl, from_bytes,
+    cache_impl,
+    fat::fname::checksum,
+    from_bytes,
     log::{Log, LOGMAGIC, LOGSIZE},
 };
 
@@ -615,7 +617,16 @@ impl FAT {
         cno: Option<u32>,
         dir: bool,
     ) -> Result<Option<InodeKey>> {
-        debug_assert_eq!(dp.key().is_dir(), true);
+        // debug_assert_eq!(dp.key().is_dir(), true);
+        debug_assert_eq!(
+            dp.key().is_dir(),
+            true,
+            "name: {:?}, dp: {:?}, dir: {}",
+            name,
+            dp,
+            dir,
+        );
+
         let fname = Filename::try_from(name)?;
         let empty_ent = max(2, fname.nent());
         let mut resize = true;
@@ -735,7 +746,8 @@ impl FAT {
             self.writei(dp, &buf, ent.ioff).await?;
 
             if let Some(sfn) = fake_sfn {
-                lfn_init(&mut buf, sfn.checksum());
+                let chksum = checksum(&buf[0..11]);
+                lfn_init(&mut buf, chksum);
                 for i in 1..ent.nent {
                     let ord = if i == ent.nent - 1 { i | 0x40 } else { i } as u8;
                     buf[0] = ord;

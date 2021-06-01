@@ -101,7 +101,9 @@ impl Device for FAT {
                 if new_dir {
                     // Create "." and ".." for new dir.
                     let (ip_cno, dp_cno) = (ip.key().cno, dp.key().cno);
+                    debug_assert!(ip.key().is_dir(), "{:?}, {:?}", key, ip.key());
                     let mut g = ip.lock().await.unwrap();
+                    // FIXME: Currently this two will be created as LFN.
                     result = self.dirlink(&mut g, b".", Some(ip_cno), true).await;
                     if result.is_ok() {
                         result = self.dirlink(&mut g, b"..", Some(dp_cno), true).await;
