@@ -494,7 +494,6 @@
 <span id="491">491</span>
 <span id="492">492</span>
 <span id="493">493</span>
-<span id="494">494</span>
 </pre><pre class="rust">
 <span class="doccomment">//! Directory entry parser of FAT32.</span>
 
@@ -639,6 +638,15 @@
     }
 }
 
+<span class="doccomment">/// Compute the checksum of SFN.</span>
+<span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">checksum</span>(<span class="ident">buf</span>: <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">u8</span> {
+    <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">chksum</span> <span class="op">=</span> <span class="ident">num::Wrapping</span>(<span class="number">0_u8</span>);
+    <span class="kw">for</span> <span class="ident">x</span> <span class="kw">in</span> <span class="ident">buf</span>.<span class="ident">iter</span>() {
+        <span class="ident">chksum</span> <span class="op">=</span> (<span class="ident">chksum</span> <span class="op">&lt;</span><span class="op">&lt;</span> <span class="number">7</span>) <span class="op">+</span> (<span class="ident">chksum</span> <span class="op">&gt;</span><span class="op">&gt;</span> <span class="number">1</span>) <span class="op">+</span> <span class="ident">num::Wrapping</span>(<span class="kw-2">*</span><span class="ident">x</span>);
+    }
+    <span class="ident">chksum</span>.<span class="number">0</span>
+}
+
 <span class="doccomment">/// Convert utf-8 bytes to utf-16.</span>
 <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">utf8_to_utf16</span>(<span class="ident">bytes</span>: <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">u16</span><span class="op">&gt;</span><span class="op">&gt;</span> {
     <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">ret</span> <span class="op">=</span> <span class="ident">Vec::new</span>();
@@ -676,16 +684,6 @@
 }
 
 <span class="kw">impl</span> <span class="ident">Filename</span> {
-    <span class="doccomment">/// Compute the checksum of SFN.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">checksum</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">u8</span> {
-        <span class="macro">debug_assert_eq!</span>(<span class="self">self</span>.<span class="ident">is_sfn</span>, <span class="bool-val">true</span>);
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">chksum</span> <span class="op">=</span> <span class="ident">num::Wrapping</span>(<span class="number">0_u8</span>);
-        <span class="kw">for</span> <span class="ident">x</span> <span class="kw">in</span> <span class="self">self</span>.<span class="ident">data</span>.<span class="ident">iter</span>().<span class="ident">map</span>(<span class="op">|</span><span class="ident">x</span><span class="op">|</span> <span class="kw-2">*</span><span class="ident">x</span> <span class="kw">as</span> <span class="ident">u8</span>) {
-            <span class="ident">chksum</span> <span class="op">=</span> (<span class="ident">chksum</span> <span class="op">&lt;</span><span class="op">&lt;</span> <span class="number">7</span>) <span class="op">+</span> (<span class="ident">chksum</span> <span class="op">&gt;</span><span class="op">&gt;</span> <span class="number">1</span>) <span class="op">+</span> <span class="ident">num::Wrapping</span>(<span class="ident">x</span>);
-        }
-        <span class="ident">chksum</span>.<span class="number">0</span>
-    }
-
     <span class="doccomment">/// Number of required entries to store this file name.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">nent</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">usize</span> {
         <span class="kw">if</span> <span class="self">self</span>.<span class="ident">is_sfn</span> {

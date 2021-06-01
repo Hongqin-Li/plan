@@ -642,6 +642,8 @@
 <span id="639">639</span>
 <span id="640">640</span>
 <span id="641">641</span>
+<span id="642">642</span>
+<span id="643">643</span>
 </pre><pre class="rust">
 <span class="doccomment">//! Transaction-safe FAT32 file system by RCU FAT list.</span>
 <span class="doccomment">//!</span>
@@ -746,7 +748,9 @@
                 <span class="kw">if</span> <span class="ident">new_dir</span> {
                     <span class="comment">// Create &quot;.&quot; and &quot;..&quot; for new dir.</span>
                     <span class="kw">let</span> (<span class="ident">ip_cno</span>, <span class="ident">dp_cno</span>) <span class="op">=</span> (<span class="ident">ip</span>.<span class="ident">key</span>().<span class="ident">cno</span>, <span class="ident">dp</span>.<span class="ident">key</span>().<span class="ident">cno</span>);
+                    <span class="macro">debug_assert!</span>(<span class="ident">ip</span>.<span class="ident">key</span>().<span class="ident">is_dir</span>(), <span class="string">&quot;{:?}, {:?}&quot;</span>, <span class="ident">key</span>, <span class="ident">ip</span>.<span class="ident">key</span>());
                     <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">g</span> <span class="op">=</span> <span class="ident">ip</span>.<span class="ident">lock</span>().<span class="kw">await</span>.<span class="ident">unwrap</span>();
+                    <span class="comment">// FIXME: Currently this two will be created as LFN.</span>
                     <span class="ident">result</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">dirlink</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">g</span>, <span class="string">b&quot;.&quot;</span>, <span class="prelude-val">Some</span>(<span class="ident">ip_cno</span>), <span class="bool-val">true</span>).<span class="kw">await</span>;
                     <span class="kw">if</span> <span class="ident">result</span>.<span class="ident">is_ok</span>() {
                         <span class="ident">result</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">dirlink</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">g</span>, <span class="string">b&quot;..&quot;</span>, <span class="prelude-val">Some</span>(<span class="ident">dp_cno</span>), <span class="bool-val">true</span>).<span class="kw">await</span>;
