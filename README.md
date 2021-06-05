@@ -30,10 +30,12 @@ Platform-agnostic operating system building blocks in Rust, inspired by <a href=
   - [ ] Online deadlock detection by wait-for graph: inspired by [parking-lot](https://github.com/Amanieu/parking_lot)
 - [x] Address space: inspired by [plan9](https://github.com/0intro/plan9)
 - [x] Namespace: inspired by [plan9](https://github.com/0intro/plan9)
-- [ ] File system
+- [ ] File system and device driver
   - [x] O(1) generic LRU cache
   - [x] Log with read-committed isolation level
   - [x] Transaction-safe FAT32
+  - [x] Root/block/pipe driver
+  - [ ] Get directory entry
   - [ ] More FS
 
 ## Project structure

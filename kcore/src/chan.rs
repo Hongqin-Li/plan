@@ -19,7 +19,7 @@ use crate::{
 
 /// File type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ChanType {
+pub enum ChanKind {
     /// Directory.
     Dir,
     /// Plain file.
@@ -71,7 +71,7 @@ pub struct ChanId {
     /// to maintain cache coherency between clients and servers.
     pub version: u32,
     /// Type of the file.
-    pub ctype: ChanType,
+    pub kind: ChanKind,
 }
 
 /// A key representing one client handle of the file.
@@ -96,14 +96,17 @@ impl ChanKey {
         }
     }
 
-    /// SAFETY: Your need to guarantee that the original key won't dropped
-    /// when borrowed.
-    unsafe fn borrow(&self) -> Self {
-        Self {
-            dev: self.dev.clone(),
-            id: self.id,
-            dropped: true,
-        }
+    async fn dup(&self) -> Result<ChanKey> {
+        self.dev.open(&self.id, b"", None)?.await?.map_or(
+            Err(Error::Gone("failed to rekey")),
+            |id| {
+                Ok(ChanKey {
+                    dev: self.dev.clone(),
+                    id,
+                    dropped: false,
+                })
+            },
+        )
     }
 
     /// FIXME: pre-allocate the future on creation.
@@ -141,7 +144,7 @@ impl Drop for ChanKey {
 #[derive(Debug, Default)]
 pub struct ChanInner {
     /// Union mount point that derives Chan.
-    /// Use qid instead of Chan to avoid cycle in the graph.
+    /// Use ChanKey instead of Chan to avoid cycle in the graph.
     umnt: Vec<ChanKey>,
     /// The weak pointer must be able to upgrade.
     child: Vec<Weak<Chan>>,
@@ -205,7 +208,7 @@ impl Chan {
     /// Create a new mount space rooted at a chan.
     pub async fn new(chan: &Arc<Chan>) -> Result<Arc<Self>> {
         let a = Arc::<Chan>::try_new_uninit()?;
-        let key = Self::rekey(&chan).await?;
+        let key = chan.key.dup().await?;
         Ok(unsafe { Self::from_key(key, a) })
     }
 
@@ -219,33 +222,42 @@ impl Chan {
         a.assume_init()
     }
 
-    /// Retrieve key by reopening this chan.
-    /// May failed(e.g. a removed disk chan).
-    async fn rekey(self: &Arc<Self>) -> Result<ChanKey> {
-        self.key.dev.open(&self.key.id, b"", None)?.await?.map_or(
-            Err(Error::Gone("failed to rekey")),
-            |id| {
-                Ok(ChanKey {
-                    dev: self.key.dev.clone(),
-                    id,
-                    dropped: false,
-                })
-            },
-        )
-    }
-
     /// Mount directory to this chan.
+    ///
+    /// This will mount all union directories from old to this chan.
     pub async fn mount(&self, old: &Arc<Self>) -> Result<()> {
         if !(self.is_dir() && old.is_dir()) {
             return Err(Error::BadRequest("cannot mount file"));
         }
-        let mut g = self.inner.write().await;
-        g.umnt.try_reserve(1)?;
-        let key = old.rekey().await?;
-        Ok(g.umnt.push(key))
+
+        let mut umnt = Vec::new();
+        let result = async {
+            let g = old.inner.read().await;
+            umnt.try_reserve(g.umnt.len() + 1)?;
+            for key in iter::once(&old.key).chain(g.umnt.iter()) {
+                umnt.push(key.dup().await?);
+            }
+            drop(g);
+
+            let mut g = self.inner.write().await;
+            g.umnt.try_reserve(umnt.len())?;
+            umnt.reverse();
+            while let Some(k) = umnt.pop() {
+                g.umnt.push(k);
+            }
+            Ok(())
+        }
+        .await;
+
+        while let Some(key) = umnt.pop() {
+            key.close().await;
+        }
+        result
     }
 
     /// Bind file to this chan.
+    ///
+    /// Drop any previously bound chan.
     pub async fn bind(&self, old: &Arc<Self>) -> Result<()> {
         if self.is_dir() || old.is_dir() {
             return Err(Error::BadRequest("cannot bind dir"));
@@ -254,11 +266,12 @@ impl Chan {
         if g.umnt.is_empty() {
             g.umnt.try_reserve(1)?;
         }
-        let key = old.rekey().await?;
+        let key = old.key.dup().await?;
         if let Some(key) = g.umnt.pop() {
             key.close().await;
         }
         g.umnt.push(key);
+        debug_assert_eq!(g.umnt.len(), 1);
         Ok(())
     }
 
@@ -291,7 +304,7 @@ impl Chan {
 
         let mut some_chan = None;
         for key in iter::once(&self.key).chain(g.umnt.iter()) {
-            debug_assert_eq!(key.id.ctype, ChanType::Dir);
+            debug_assert_eq!(key.id.kind, ChanKind::Dir);
             if let Some(id) = key.dev.open(&key.id, name, create_dir)?.await? {
                 let u = unsafe {
                     Arc::get_mut_unchecked(&mut a).as_mut_ptr().write(Self {
@@ -418,7 +431,7 @@ impl Chan {
     /// Check if this chan is directory.
     /// Chans in umnt are of same type of itself.
     pub fn is_dir(&self) -> bool {
-        self.key.id.ctype == ChanType::Dir
+        self.key.id.kind == ChanKind::Dir
     }
 
     /// Remove wrapper.
@@ -428,13 +441,12 @@ impl Chan {
 
     /// Stat wrapper.
     pub async fn stat(&self) -> Result<Dirent> {
-        self.key.dev.stat(&self.key.id)?.await
+        todo!()
     }
 
     /// Wstat wrapper.
     pub async fn wstat(&self, dirent: &Dirent) -> Result<()> {
-        todo!();
-        // self.key.dev.wstat(&self.key.id, dirent)?.await
+        todo!()
     }
 
     /// Read wrapper.
