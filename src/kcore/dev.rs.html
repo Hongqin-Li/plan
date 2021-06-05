@@ -234,7 +234,7 @@
 <span class="kw">use</span> <span class="ident">core::ops::Deref</span>;
 
 <span class="kw">use</span> <span class="kw">crate</span>::{
-    <span class="ident">chan</span>::{<span class="ident">Chan</span>, <span class="ident">ChanId</span>, <span class="ident">ChanKey</span>, <span class="ident">ChanType</span>, <span class="ident">Dirent</span>, <span class="ident">Perm</span>},
+    <span class="ident">chan</span>::{<span class="ident">Chan</span>, <span class="ident">ChanId</span>, <span class="ident">ChanKey</span>, <span class="ident">ChanKind</span>, <span class="ident">Dirent</span>, <span class="ident">Perm</span>},
     <span class="ident">error</span>::{<span class="ident">Error</span>, <span class="prelude-ty">Result</span>},
 };
 
@@ -326,7 +326,7 @@
     <span class="kw">use</span> <span class="kw">super</span>::<span class="kw-2">*</span>;
 
     <span class="kw">use</span> <span class="kw">crate</span><span class="ident">::chan::ChanInner</span>;
-    <span class="kw">use</span> <span class="kw">crate</span><span class="ident">::chan::ChanType</span>;
+    <span class="kw">use</span> <span class="kw">crate</span><span class="ident">::chan::ChanKind</span>;
     <span class="kw">use</span> <span class="ident">alloc::sync::Weak</span>;
     <span class="kw">use</span> <span class="ident">ksched::sync::Mutex</span>;
 

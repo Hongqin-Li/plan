@@ -160,7 +160,7 @@
 <span class="kw">use</span> <span class="ident">alloc::boxed::Box</span>;
 
 <span class="kw">use</span> <span class="ident">kcore</span>::{
-    <span class="ident">chan</span>::{<span class="ident">ChanId</span>, <span class="ident">ChanType</span>, <span class="ident">Dirent</span>},
+    <span class="ident">chan</span>::{<span class="ident">ChanId</span>, <span class="ident">ChanKind</span>, <span class="ident">Dirent</span>},
     <span class="ident">dev::Device</span>,
     <span class="ident">error</span>::{<span class="ident">Error</span>, <span class="prelude-ty">Result</span>},
 };
@@ -186,7 +186,7 @@
         <span class="prelude-val">Ok</span>(<span class="ident">ChanId</span> {
             <span class="ident">path</span>: <span class="number">0</span>,
             <span class="ident">version</span>: <span class="string">b&#39;/&#39;</span> <span class="kw">as</span> <span class="ident">u32</span>,
-            <span class="ident">ctype</span>: <span class="ident">ChanType::Dir</span>,
+            <span class="ident">kind</span>: <span class="ident">ChanKind::Dir</span>,
         })
     }
 
@@ -205,7 +205,7 @@
         } <span class="kw">else</span> <span class="kw">if</span> <span class="ident">dir</span>.<span class="ident">path</span> <span class="op">!</span><span class="op">=</span> <span class="number">0</span> {
             <span class="prelude-val">Ok</span>(<span class="prelude-val">None</span>)
         } <span class="kw">else</span> {
-            <span class="macro">debug_assert_eq!</span>(<span class="ident">dir</span>.<span class="ident">ctype</span>, <span class="ident">ChanType::Dir</span>);
+            <span class="macro">debug_assert_eq!</span>(<span class="ident">dir</span>.<span class="ident">kind</span>, <span class="ident">ChanKind::Dir</span>);
             <span class="macro">debug_assert_eq!</span>(<span class="ident">dir</span>.<span class="ident">path</span>, <span class="number">0</span>);
             <span class="prelude-val">Ok</span>(<span class="ident">ROOT_DIRS</span>
                 .<span class="ident">iter</span>()
@@ -214,7 +214,7 @@
                 .<span class="ident">map</span>(<span class="op">|</span>(<span class="ident">i</span>, <span class="ident">s</span>)<span class="op">|</span> <span class="ident">ChanId</span> {
                     <span class="ident">path</span>: <span class="ident">i</span> <span class="kw">as</span> <span class="ident">u64</span> <span class="op">+</span> <span class="number">1</span>,
                     <span class="ident">version</span>: <span class="number">0</span>,
-                    <span class="ident">ctype</span>: <span class="ident">ChanType::Dir</span>,
+                    <span class="ident">kind</span>: <span class="ident">ChanKind::Dir</span>,
                 }))
         }
     }
@@ -227,7 +227,7 @@
     }
 
     <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">truncate</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">c</span>: <span class="kw-2">&amp;</span><span class="ident">ChanId</span>, <span class="ident">size</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span> {
-        <span class="prelude-val">Err</span>(<span class="ident">Error::BadRequest</span>(<span class="string">&quot;truncate file of devroot&quot;</span>))
+        <span class="macro">unimplemented!</span>()
     }
 
     <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">stat</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">c</span>: <span class="kw-2">&amp;</span><span class="ident">ChanId</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Dirent</span><span class="op">&gt;</span> {
@@ -239,11 +239,11 @@
     }
 
     <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">read</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">c</span>: <span class="kw-2">&amp;</span><span class="ident">ChanId</span>, <span class="ident">buf</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> [<span class="ident">u8</span>], <span class="ident">off</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span> {
-        <span class="macro">todo!</span>()
+        <span class="macro">unimplemented!</span>()
     }
 
     <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">write</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">c</span>: <span class="kw-2">&amp;</span><span class="ident">ChanId</span>, <span class="ident">buf</span>: <span class="kw-2">&amp;</span>[<span class="ident">u8</span>], <span class="ident">off</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span> {
-        <span class="macro">unreachable!</span>()
+        <span class="macro">unimplemented!</span>()
     }
 }
 

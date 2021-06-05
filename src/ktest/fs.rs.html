@@ -359,7 +359,7 @@
 <span class="kw">use</span> <span class="ident">alloc</span>::{<span class="ident">sync::Arc</span>, <span class="ident">vec::Vec</span>};
 <span class="kw">use</span> <span class="ident">core</span>::{<span class="ident">convert::TryInto</span>, <span class="ident">fmt</span>, <span class="ident">ops::Range</span>};
 <span class="kw">use</span> <span class="ident">kcore</span>::{
-    <span class="ident">chan</span>::{<span class="ident">Chan</span>, <span class="ident">ChanId</span>, <span class="ident">ChanType</span>},
+    <span class="ident">chan</span>::{<span class="ident">Chan</span>, <span class="ident">ChanId</span>, <span class="ident">ChanKind</span>},
     <span class="ident">dev::Device</span>,
     <span class="ident">error::Result</span>,
 };
@@ -411,7 +411,7 @@
         <span class="prelude-val">Ok</span>(<span class="ident">ChanId</span> {
             <span class="ident">path</span>: <span class="number">0</span>,
             <span class="ident">version</span>: <span class="number">0</span>,
-            <span class="ident">ctype</span>: <span class="ident">ChanType::File</span>,
+            <span class="ident">kind</span>: <span class="ident">ChanKind::File</span>,
         })
     }
 
@@ -486,7 +486,7 @@
         <span class="prelude-val">Ok</span>(<span class="ident">ChanId</span> {
             <span class="ident">path</span>: <span class="number">0</span>,
             <span class="ident">version</span>: <span class="number">0</span>,
-            <span class="ident">ctype</span>: <span class="ident">ChanType::File</span>,
+            <span class="ident">kind</span>: <span class="ident">ChanKind::File</span>,
         })
     }
 
