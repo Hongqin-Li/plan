@@ -25,6 +25,7 @@ pub mod log;
 
 pub mod block;
 pub mod fat;
+pub mod pipe;
 pub mod root;
 
 mod utils;

@@ -18,7 +18,7 @@ use alloc::boxed::Box;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use kcore::{
-    chan::{Chan, ChanId, ChanType, Dirent},
+    chan::{Chan, ChanId, ChanKind, Dirent},
     dev::Device,
     error::{Error, Result},
 };
@@ -56,7 +56,7 @@ impl Device for FAT {
         Ok(ChanId {
             path,
             version: 0,
-            ctype: ChanType::Dir,
+            kind: ChanKind::Dir,
         })
     }
 
@@ -129,15 +129,15 @@ impl Device for FAT {
                 drop(op);
                 return Err(Error::InternalError("rollback"));
             }
-            let ctype = if ip.key().is_dir() {
-                ChanType::Dir
+            let kind = if ip.key().is_dir() {
+                ChanKind::Dir
             } else {
-                ChanType::File
+                ChanKind::File
             };
             Ok(Some(ChanId {
                 path: self.to_path(ip),
                 version: 0,
-                ctype,
+                kind,
             }))
         } else {
             let committed = self.log.end_op(result.is_err(), false).await.committed;
@@ -238,10 +238,7 @@ impl Device for FAT {
 
     async fn truncate(&self, c: &ChanId, size: usize) -> Result<usize> {
         let ip = self.to_inode(c.path);
-
-        if ip.key().is_dir() {
-            return Err(Error::BadRequest("resize dir"));
-        }
+        debug_assert_eq!(ip.key().is_dir(), false);
 
         // Each resize of step will modify at most resv blocks (1 SFN + 2 FAT).
         // let resv = 1 + 5 + 1;

@@ -4,7 +4,7 @@ use core::usize;
 use alloc::boxed::Box;
 
 use kcore::{
-    chan::{ChanId, ChanType, Dirent},
+    chan::{ChanId, ChanKind, Dirent},
     dev::Device,
     error::{Error, Result},
 };
@@ -30,7 +30,7 @@ impl Device for Root {
         Ok(ChanId {
             path: 0,
             version: b'/' as u32,
-            ctype: ChanType::Dir,
+            kind: ChanKind::Dir,
         })
     }
 
@@ -49,7 +49,7 @@ impl Device for Root {
         } else if dir.path != 0 {
             Ok(None)
         } else {
-            debug_assert_eq!(dir.ctype, ChanType::Dir);
+            debug_assert_eq!(dir.kind, ChanKind::Dir);
             debug_assert_eq!(dir.path, 0);
             Ok(ROOT_DIRS
                 .iter()
@@ -58,7 +58,7 @@ impl Device for Root {
                 .map(|(i, s)| ChanId {
                     path: i as u64 + 1,
                     version: 0,
-                    ctype: ChanType::Dir,
+                    kind: ChanKind::Dir,
                 }))
         }
     }
@@ -71,7 +71,7 @@ impl Device for Root {
     }
 
     async fn truncate(&self, c: &ChanId, size: usize) -> Result<usize> {
-        Err(Error::BadRequest("truncate file of devroot"))
+        unimplemented!()
     }
 
     async fn stat(&self, c: &ChanId) -> Result<Dirent> {
@@ -83,11 +83,11 @@ impl Device for Root {
     }
 
     async fn read(&self, c: &ChanId, buf: &mut [u8], off: usize) -> Result<usize> {
-        todo!()
+        unimplemented!()
     }
 
     async fn write(&self, c: &ChanId, buf: &[u8], off: usize) -> Result<usize> {
-        unreachable!()
+        unimplemented!()
     }
 }
 

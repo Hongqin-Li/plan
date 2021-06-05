@@ -24,7 +24,7 @@ use bitflags::bitflags;
 use core::ops::Deref;
 
 use crate::{
-    chan::{Chan, ChanId, ChanKey, ChanType, Dirent, Perm},
+    chan::{Chan, ChanId, ChanKey, ChanKind, Dirent, Perm},
     error::{Error, Result},
 };
 
@@ -116,7 +116,7 @@ mod tests {
     use super::*;
 
     use crate::chan::ChanInner;
-    use crate::chan::ChanType;
+    use crate::chan::ChanKind;
     use alloc::sync::Weak;
     use ksched::sync::Mutex;
 

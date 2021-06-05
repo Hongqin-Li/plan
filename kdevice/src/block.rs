@@ -1,12 +1,12 @@
 //! Block device driver.
 
 use crate::from_bytes;
-use alloc::{boxed::Box, string::String};
-use core::{cmp::min, convert::TryInto, ops::Range};
+use alloc::boxed::Box;
+use core::{convert::TryInto, ops::Range};
 
 use kcore::{
     async_trait,
-    chan::{ChanId, ChanType, Dirent},
+    chan::{ChanId, ChanKind, Dirent},
     dev::Device,
     error::{Error, Result},
     utils::intersect,
@@ -166,7 +166,7 @@ impl<const N: usize> Device for Blocks<N> {
         Ok(ChanId {
             path: 0,
             version: b'b' as u32,
-            ctype: ChanType::Dir,
+            kind: ChanKind::Dir,
         })
     }
     async fn open(
@@ -176,14 +176,14 @@ impl<const N: usize> Device for Blocks<N> {
         create_dir: Option<bool>,
     ) -> Result<Option<ChanId>> {
         if name.is_empty() {
-            if dir.ctype == ChanType::Dir {
+            if dir.kind == ChanKind::Dir {
                 return Ok(Some(dir.clone()));
             } else {
                 // Since devices and their partitions are opened exclusively.
                 return Err(Error::Conflict("dup of block file"));
             }
         }
-        debug_assert_eq!(dir.ctype, ChanType::Dir);
+        debug_assert_eq!(dir.kind, ChanKind::Dir);
         if let Some(create_dir) = create_dir {
             if !create_dir {
                 // Create a block device file by probing.
@@ -201,7 +201,7 @@ impl<const N: usize> Device for Blocks<N> {
                         return Ok(Some(ChanId {
                             path: to_path(i, None, 0),
                             version: g.version,
-                            ctype: ChanType::File,
+                            kind: ChanKind::File,
                         }));
                     }
                 }
@@ -212,7 +212,7 @@ impl<const N: usize> Device for Blocks<N> {
         for (i, slot) in self.0.iter().enumerate() {
             if name.starts_with(slot.name.as_bytes()) {
                 let mut g = slot.inner.lock().await;
-                let ctype = ChanType::File;
+                let kind = ChanKind::File;
                 let version = g.version as u32;
                 if let Some(part) = &mut g.part {
                     if name.len() == slot.name.len() {
@@ -227,7 +227,7 @@ impl<const N: usize> Device for Blocks<N> {
                         return Ok(Some(ChanId {
                             path: to_path(i, None, 0),
                             version,
-                            ctype,
+                            kind,
                         }));
                     } else if name.len() == slot.name.len() + 1 {
                         if let Some(pi) = name.last().unwrap().checked_sub(b'1') {
@@ -241,7 +241,7 @@ impl<const N: usize> Device for Blocks<N> {
                                 return Ok(Some(ChanId {
                                     path: to_path(i, Some(pi as usize), 0),
                                     version,
-                                    ctype,
+                                    kind,
                                 }));
                             }
                         }
@@ -252,7 +252,7 @@ impl<const N: usize> Device for Blocks<N> {
         Ok(None)
     }
     async fn close(&self, c: ChanId) {
-        if c.ctype == ChanType::Dir {
+        if c.kind == ChanKind::Dir {
             return;
         }
 
@@ -274,7 +274,7 @@ impl<const N: usize> Device for Blocks<N> {
     /// Remove a block device.
     /// Active partition within device are not allowed to be removed.
     async fn remove(&self, c: &ChanId) -> Result<bool> {
-        if c.ctype == ChanType::Dir {
+        if c.kind == ChanKind::Dir {
             return Err(Error::BadRequest("remove block root dir"));
         }
         let mut g = match self.get_slot(&c).await {
@@ -289,7 +289,22 @@ impl<const N: usize> Device for Blocks<N> {
     }
 
     async fn truncate(&self, c: &ChanId, size: usize) -> Result<usize> {
-        Err(Error::BadRequest("resize file of devblock"))
+        debug_assert_eq!(c.kind, ChanKind::File);
+        let g = self.0[path_slot(c.path)].inner.lock().await;
+        if c.version != g.version || g.part.is_none() {
+            return Err(Error::Gone("truncate removed slot"));
+        }
+        let part = g.part.as_ref().unwrap();
+        let oldsz = if let Some(pi) = path_part(c.path) {
+            part[pi].range.len()
+        } else {
+            0
+        };
+        if size >= oldsz {
+            Ok(oldsz)
+        } else {
+            Err(Error::BadRequest("resize file of devblock"))
+        }
     }
 
     async fn stat(&self, c: &ChanId) -> Result<Dirent> {
@@ -301,9 +316,7 @@ impl<const N: usize> Device for Blocks<N> {
     }
 
     async fn read(&self, c: &ChanId, buf: &mut [u8], off: usize) -> Result<usize> {
-        if c.ctype == ChanType::Dir {
-            todo!();
-        }
+        debug_assert_eq!(c.kind, ChanKind::File);
 
         // TODO: Allow any block address.
         if off % BSIZE != 0 || buf.len() % BSIZE != 0 {
@@ -340,9 +353,7 @@ impl<const N: usize> Device for Blocks<N> {
     }
 
     async fn write(&self, c: &ChanId, buf: &[u8], off: usize) -> Result<usize> {
-        if c.ctype == ChanType::Dir {
-            todo!();
-        }
+        debug_assert_eq!(c.kind, ChanKind::File);
 
         // TODO: Allow any block address.
         if off % BSIZE != 0 || buf.len() % BSIZE != 0 {

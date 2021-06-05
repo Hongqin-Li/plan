@@ -2,7 +2,7 @@ use crate::{rand_int, rand_str, run_multi};
 use alloc::{sync::Arc, vec::Vec};
 use core::{convert::TryInto, fmt, ops::Range};
 use kcore::{
-    chan::{Chan, ChanId, ChanType},
+    chan::{Chan, ChanId, ChanKind},
     dev::Device,
     error::Result,
 };
@@ -54,7 +54,7 @@ impl Device for FileDisk {
         Ok(ChanId {
             path: 0,
             version: 0,
-            ctype: ChanType::File,
+            kind: ChanKind::File,
         })
     }
 
@@ -129,7 +129,7 @@ impl Device for MemDisk {
         Ok(ChanId {
             path: 0,
             version: 0,
-            ctype: ChanType::File,
+            kind: ChanKind::File,
         })
     }
 
