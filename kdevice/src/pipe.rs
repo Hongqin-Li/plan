@@ -1,4 +1,8 @@
-//! The Pipe file system.
+//! The pipe device.
+//!
+//! An attach of this device allocates two new streams joined
+//! at the device end.
+//!
 //! FIXME: The proc cannot be killed when blocking now.
 use alloc::boxed::Box;
 use alloc::vec::Vec;
@@ -21,30 +25,20 @@ fn parse_path<'a>(path: u64) -> (u64, usize, &'a mut Node) {
     (raw_path, node_id, node)
 }
 
-/// The Pipe device driver.
+/// The pipe device driver.
 #[derive(Default)]
-pub struct Pipe(Mutex<PipeInner>);
-
-#[derive(Default)]
-struct PipeInner {
-    nxtid: usize,
-    list: LinkedList<NodeAdapter>,
-}
+pub struct Pipe(Mutex<LinkedList<NodeAdapter>>);
 
 #[repr(align(8))]
 struct Node {
-    id: usize,
     nref: usize,
     dref: [usize; 2],
     cvar: [Condvar; 2],
-    /// Each vector in the data list is from one sender.
     data: [List<Vec<u8>>; 2],
     link: LinkedListLink,
 }
 
 intrusive_adapter!(NodeAdapter = Box<Node>: Node { link: LinkedListLink });
-
-struct NodePtr(*mut Node);
 
 #[async_trait::async_trait_try]
 impl Device for Pipe {
@@ -60,7 +54,6 @@ impl Device for Pipe {
     {
         let mut g = self.0.lock().await;
         let node = Box::try_new(Node {
-            id: g.nxtid,
             nref: 1,
             dref: [0; 2],
             cvar: [Condvar::new(), Condvar::new()],
@@ -69,8 +62,7 @@ impl Device for Pipe {
         })?;
         let path = node.as_ref() as *const _ as u64;
         debug_assert_eq!(path % 8, 0);
-        g.list.push_back(node);
-        g.nxtid += 1;
+        g.push_back(node);
 
         Ok(ChanId {
             path,
@@ -137,7 +129,7 @@ impl Device for Pipe {
 
         if node.nref == 0 {
             debug_assert_eq!(node.dref, [0, 0]);
-            let mut cur = unsafe { g.list.cursor_mut_from_ptr(node) };
+            let mut cur = unsafe { g.cursor_mut_from_ptr(node) };
             cur.remove();
         }
         drop(g);

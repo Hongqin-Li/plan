@@ -457,6 +457,46 @@ mod tests {
         drop(dir);
     }
 
+    #[test]
+    fn test_remove_icache() {
+        let (dir, img_path) = gen_fat32img();
+        let disk = Arc::new(FileDisk::new(img_path));
+        let ntask = 100;
+        let ncpu = 10;
+        let (name_len, data_len) = (1..20, 0..1);
+
+        task::spawn(0, async move {
+            let disk_root = Chan::attach(disk, b"").await.unwrap();
+            let fs = Arc::new(FAT::new(2 * ntask + 10, 100, &disk_root).await.unwrap());
+            let fs_root = Chan::attach(fs.clone(), b"").await.unwrap();
+            let file = fs_root
+                .open(b"test-123456789", Some(false))
+                .await
+                .unwrap()
+                .unwrap();
+
+            file.remove().await.unwrap();
+            file.close().await;
+
+            let dir = fs_root
+                .open(b"test-123456789", Some(true))
+                .await
+                .unwrap()
+                .unwrap();
+            dir.close().await;
+
+            fs_root.close().await;
+            let fs = Arc::try_unwrap(fs).unwrap();
+            fs.shutdown().unwrap().await;
+            disk_root.close().await;
+            // ktest::fs::create_dir(fs, req).await;
+        })
+        .unwrap();
+
+        run_multi(ncpu);
+        drop(dir);
+    }
+
     fn multi_crud(ncpu: usize, ntask: usize, name_len: Range<usize>, data_len: Range<usize>) {
         let (dir, img_path) = gen_fat32img();
         let disk = Arc::new(FileDisk::new(img_path));
@@ -527,11 +567,12 @@ mod tests {
                     task::spawn(0, async move {
                         let root = Chan::attach(fs.clone(), b"").await.unwrap();
 
-                        // Create a file with random name.
+                        // Create a file/dir with random name.
                         let name = format!("old-{}-{}", i, rand_str(rand_int(name_len)));
+                        let isdir = rand_int(0..2) == 0;
                         names.lock().push(name.clone());
                         let file = root
-                            .open(name.as_bytes(), Some(false))
+                            .open(name.as_bytes(), Some(isdir))
                             .await
                             .unwrap()
                             .unwrap();
@@ -585,11 +626,11 @@ mod tests {
                     };
                     drop(g);
 
-                    // Create a new file or remove an old one.
+                    // Create a new file/dir or remove an old one.
                     if rm {
                         let file = root.open(name.as_bytes(), None).await.unwrap().unwrap();
 
-                        // Remove the old file.
+                        // Remove the old one.
                         assert_eq!(file.remove().await.unwrap(), true);
                         file.close().await;
 
@@ -599,8 +640,9 @@ mod tests {
                         );
                         println!("file '{}' removed", name);
                     } else {
+                        let isdir = rand_int(0..2) == 0;
                         let file = root
-                            .open(name.as_bytes(), Some(false))
+                            .open(name.as_bytes(), Some(isdir))
                             .await
                             .unwrap()
                             .unwrap();

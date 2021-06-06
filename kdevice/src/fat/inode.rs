@@ -111,7 +111,7 @@ pub struct FATMeta {
 
 /// The actual key is just inum. The whole struct is passed as key when looking up into the icache.
 /// This struct is assumed to be immutable as long as the file exists.
-#[derive(Debug, Default, Clone, Copy)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct InodeKey {
     /// Cluster number. Guarded by icache's spinlock.
     pub cno: u32,
@@ -134,19 +134,6 @@ impl InodeKey {
     /// If this inode is a directory.
     pub fn is_dir(&self) -> bool {
         self.attr & ATTR_DIRECTORY != 0
-    }
-}
-
-impl Eq for InodeKey {}
-impl PartialEq for InodeKey {
-    fn eq(&self, other: &Self) -> bool {
-        self.cno.eq(&other.cno) && self.doff.eq(&other.doff)
-    }
-}
-impl Hash for InodeKey {
-    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
-        self.cno.hash(state);
-        self.doff.hash(state);
     }
 }
 
