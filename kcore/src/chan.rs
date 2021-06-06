@@ -140,16 +140,6 @@ impl Drop for ChanKey {
     }
 }
 
-/// Mutable part of [Chan].
-#[derive(Debug, Default)]
-pub struct ChanInner {
-    /// Union mount point that derives Chan.
-    /// Use ChanKey instead of Chan to avoid cycle in the graph.
-    umnt: Vec<ChanKey>,
-    /// The weak pointer must be able to upgrade.
-    child: Vec<Weak<Chan>>,
-}
-
 /// Channel represents a virtual file from kernel's perspective.
 #[derive(Debug)]
 pub struct Chan {
@@ -157,8 +147,11 @@ pub struct Chan {
     parent: Option<Arc<Chan>>,
     name: Vec<u8>,
 
-    /// Inner mutable data.
-    inner: RwLock<ChanInner>,
+    /// Union mount point that derives Chan.
+    /// Use ChanKey instead of Chan to avoid cycle in the graph.
+    umnt: RwLock<Vec<ChanKey>>,
+    /// The weak pointer must be able to upgrade.
+    child: Mutex<Vec<Weak<Chan>>>,
 }
 
 impl Chan {
@@ -186,9 +179,6 @@ impl Chan {
             for b in &u.name {
                 vec_push(&mut buf, *b)?;
             }
-            // if u.is_dir() {
-            //     vec_push(&mut buf, b'/')?;
-            // }
             Ok(buf)
         };
         let mut u = self.clone();
@@ -215,7 +205,8 @@ impl Chan {
     unsafe fn from_key(key: ChanKey, mut a: Arc<MaybeUninit<Chan>>) -> Arc<Self> {
         Arc::get_mut_unchecked(&mut a).as_mut_ptr().write(Self {
             parent: None,
-            inner: RwLock::new(ChanInner::default()),
+            umnt: RwLock::new(Vec::new()),
+            child: Mutex::new(Vec::new()),
             key,
             name: Vec::new(),
         });
@@ -232,18 +223,18 @@ impl Chan {
 
         let mut umnt = Vec::new();
         let result = async {
-            let g = old.inner.read().await;
-            umnt.try_reserve(g.umnt.len() + 1)?;
-            for key in iter::once(&old.key).chain(g.umnt.iter()) {
+            let g = old.umnt.read().await;
+            umnt.try_reserve(g.len() + 1)?;
+            for key in iter::once(&old.key).chain(g.iter()) {
                 umnt.push(key.dup().await?);
             }
             drop(g);
 
-            let mut g = self.inner.write().await;
-            g.umnt.try_reserve(umnt.len())?;
+            let mut g = self.umnt.write().await;
+            g.try_reserve(umnt.len())?;
             umnt.reverse();
             while let Some(k) = umnt.pop() {
-                g.umnt.push(k);
+                g.push(k);
             }
             Ok(())
         }
@@ -262,17 +253,25 @@ impl Chan {
         if self.is_dir() || old.is_dir() {
             return Err(Error::BadRequest("cannot bind dir"));
         }
-        let mut g = self.inner.write().await;
-        if g.umnt.is_empty() {
-            g.umnt.try_reserve(1)?;
+        let mut g = self.umnt.write().await;
+        if g.is_empty() {
+            g.try_reserve(1)?;
         }
         let key = old.key.dup().await?;
-        if let Some(key) = g.umnt.pop() {
+        if let Some(key) = g.pop() {
             key.close().await;
         }
-        g.umnt.push(key);
-        debug_assert_eq!(g.umnt.len(), 1);
+        g.push(key);
+        debug_assert_eq!(g.len(), 1);
         Ok(())
+    }
+
+    /// Remove all mount point of this chan.
+    pub async fn clear_mount(&self) {
+        let mut g = self.umnt.write().await;
+        while let Some(key) = g.pop() {
+            key.close().await;
+        }
     }
 
     /// Caller should guarantee `name` is non-empty.
@@ -286,8 +285,8 @@ impl Chan {
             return Ok(None);
         }
 
-        let mut g = self.inner.write().await;
-        for u in g.child.iter() {
+        let mut child = self.child.lock().await;
+        for u in child.iter() {
             let u = u.upgrade().unwrap();
             if u.name == name {
                 return Ok(Some(u.clone()));
@@ -299,17 +298,19 @@ impl Chan {
         for x in name {
             vec_push(&mut names, *x)?;
         }
-        g.child.try_reserve(1)?;
+        child.try_reserve(1)?;
         let mut a = Arc::<Self>::try_new_uninit()?;
 
         let mut some_chan = None;
-        for key in iter::once(&self.key).chain(g.umnt.iter()) {
+        let g = self.umnt.read().await;
+        for key in iter::once(&self.key).chain(g.iter()) {
             debug_assert_eq!(key.id.kind, ChanKind::Dir);
             if let Some(id) = key.dev.open(&key.id, name, create_dir)?.await? {
                 let u = unsafe {
                     Arc::get_mut_unchecked(&mut a).as_mut_ptr().write(Self {
                         parent: Some(self.clone()),
-                        inner: RwLock::new(ChanInner::default()),
+                        umnt: RwLock::new(Vec::new()),
+                        child: Mutex::new(Vec::new()),
                         key: ChanKey {
                             dev: key.dev.clone(),
                             id,
@@ -324,7 +325,7 @@ impl Chan {
             }
         }
         Ok(some_chan.map(|c| {
-            g.child.push(Arc::<Self>::downgrade(&c));
+            child.push(Arc::<Self>::downgrade(&c));
             c
         }))
     }
@@ -378,31 +379,27 @@ impl Chan {
     async fn close1(u: Arc<Self>) -> Option<Arc<Self>> {
         let fa = &u.parent;
 
-        let mut ug = u.inner.write().await;
+        let ug = u.child.lock().await;
         let mut fg = if let Some(fa) = fa {
-            Some(fa.inner.write().await)
+            Some(fa.child.lock().await)
         } else {
             None
         };
         // Once we have locked this node and its parent, the reference count won't
         // decrease(but may be increased by dup) since every close operation also need to
-        // enter this function. And if we are the last one, the reference count won' change.
+        // enter this function. And if we are the last one, the reference count won't change.
         let last = Arc::<Self>::strong_count(&u) == 1;
 
         if last {
-            assert_eq!(ug.child.len(), 0);
-            while let Some(ck) = ug.umnt.pop() {
+            assert_eq!(ug.len(), 0);
+            while let Some(ck) = u.umnt.try_write().unwrap().pop() {
                 ck.close().await;
             }
 
             if let Some(mut fg) = fg.take() {
                 let w = Arc::<Self>::downgrade(&u);
-                let i = fg
-                    .child
-                    .iter()
-                    .position(|x| Weak::<Self>::ptr_eq(&w, x))
-                    .unwrap();
-                fg.child.swap_remove(i);
+                let i = fg.iter().position(|x| Weak::<Self>::ptr_eq(&w, x)).unwrap();
+                fg.swap_remove(i);
             }
             drop(fg);
             drop(ug);
@@ -457,10 +454,10 @@ impl Chan {
         off.checked_add(buf.len())
             .ok_or(Error::BadRequest("read buffer len overflow"))?;
 
-        let g = self.inner.read().await;
-        let key = g.umnt.first().unwrap_or(&self.key);
+        let umnt = self.umnt.read().await;
+        let key = umnt.first().unwrap_or(&self.key);
         let ret = key.dev.read(&key.id, buf, off)?.await;
-        drop(g);
+        drop(umnt);
         ret
     }
     /// Write wrapper.
@@ -471,10 +468,10 @@ impl Chan {
         off.checked_add(buf.len())
             .ok_or(Error::BadRequest("write buffer len overflow"))?;
 
-        let g = self.inner.read().await;
-        let key = g.umnt.first().unwrap_or(&self.key);
+        let umnt = self.umnt.read().await;
+        let key = umnt.first().unwrap_or(&self.key);
         let ret = key.dev.write(&key.id, buf, off)?.await;
-        drop(g);
+        drop(umnt);
         ret
     }
 
@@ -483,10 +480,10 @@ impl Chan {
         if self.is_dir() {
             return Err(Error::BadRequest("truncate dir"));
         }
-        let g = self.inner.read().await;
-        let key = g.umnt.first().unwrap_or(&self.key);
+        let umnt = self.umnt.read().await;
+        let key = umnt.first().unwrap_or(&self.key);
         let ret = key.dev.truncate(&key.id, size)?.await;
-        drop(g);
+        drop(umnt);
         ret
     }
 }

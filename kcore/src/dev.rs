@@ -111,14 +111,8 @@ pub trait Device {
 
 #[cfg(test)]
 mod tests {
-    use ksched::task;
-
     use super::*;
-
-    use crate::chan::ChanInner;
-    use crate::chan::ChanKind;
-    use alloc::sync::Weak;
-    use ksched::sync::Mutex;
+    use ksched::task;
 
     struct A<T>(T);
 
