@@ -783,7 +783,7 @@ mod tests {
         run_multi(ncpu);
         let (refed, dirty) = cache_stat(cache.deref());
         assert_eq!(refed, 0);
-        assert!(0 < dirty && dirty <= ntask);
+        assert!(dirty <= ntask);
     }
 
     #[test]
