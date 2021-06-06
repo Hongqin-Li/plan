@@ -317,16 +317,12 @@
 <span id="314">314</span>
 <span id="315">315</span>
 <span id="316">316</span>
-<span id="317">317</span>
-<span id="318">318</span>
-<span id="319">319</span>
-<span id="320">320</span>
-<span id="321">321</span>
-<span id="322">322</span>
-<span id="323">323</span>
-<span id="324">324</span>
 </pre><pre class="rust">
-<span class="doccomment">//! The Pipe file system.</span>
+<span class="doccomment">//! The pipe device.</span>
+<span class="doccomment">//!</span>
+<span class="doccomment">//! An attach of this device allocates two new streams joined</span>
+<span class="doccomment">//! at the device end.</span>
+<span class="doccomment">//!</span>
 <span class="doccomment">//! FIXME: The proc cannot be killed when blocking now.</span>
 <span class="kw">use</span> <span class="ident">alloc::boxed::Box</span>;
 <span class="kw">use</span> <span class="ident">alloc::vec::Vec</span>;
@@ -349,30 +345,20 @@
     (<span class="ident">raw_path</span>, <span class="ident">node_id</span>, <span class="ident">node</span>)
 }
 
-<span class="doccomment">/// The Pipe device driver.</span>
+<span class="doccomment">/// The pipe device driver.</span>
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Default</span>)]</span>
-<span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">Pipe</span>(<span class="ident">Mutex</span><span class="op">&lt;</span><span class="ident">PipeInner</span><span class="op">&gt;</span>);
-
-<span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Default</span>)]</span>
-<span class="kw">struct</span> <span class="ident">PipeInner</span> {
-    <span class="ident">nxtid</span>: <span class="ident">usize</span>,
-    <span class="ident">list</span>: <span class="ident">LinkedList</span><span class="op">&lt;</span><span class="ident">NodeAdapter</span><span class="op">&gt;</span>,
-}
+<span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">Pipe</span>(<span class="ident">Mutex</span><span class="op">&lt;</span><span class="ident">LinkedList</span><span class="op">&lt;</span><span class="ident">NodeAdapter</span><span class="op">&gt;</span><span class="op">&gt;</span>);
 
 <span class="attribute">#[<span class="ident">repr</span>(<span class="ident">align</span>(<span class="number">8</span>))]</span>
 <span class="kw">struct</span> <span class="ident">Node</span> {
-    <span class="ident">id</span>: <span class="ident">usize</span>,
     <span class="ident">nref</span>: <span class="ident">usize</span>,
     <span class="ident">dref</span>: [<span class="ident">usize</span>; <span class="number">2</span>],
     <span class="ident">cvar</span>: [<span class="ident">Condvar</span>; <span class="number">2</span>],
-    <span class="doccomment">/// Each vector in the data list is from one sender.</span>
     <span class="ident">data</span>: [<span class="ident">List</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span><span class="op">&gt;</span>; <span class="number">2</span>],
     <span class="ident">link</span>: <span class="ident">LinkedListLink</span>,
 }
 
 <span class="macro">intrusive_adapter!</span>(<span class="ident">NodeAdapter</span> <span class="op">=</span> <span class="ident">Box</span><span class="op">&lt;</span><span class="ident">Node</span><span class="op">&gt;</span>: <span class="ident">Node</span> { <span class="ident">link</span>: <span class="ident">LinkedListLink</span> });
-
-<span class="kw">struct</span> <span class="ident">NodePtr</span>(<span class="kw-2">*</span><span class="kw-2">mut</span> <span class="ident">Node</span>);
 
 <span class="attribute">#[<span class="ident">async_trait::async_trait_try</span>]</span>
 <span class="kw">impl</span> <span class="ident">Device</span> <span class="kw">for</span> <span class="ident">Pipe</span> {
@@ -388,7 +374,6 @@
     {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">g</span> <span class="op">=</span> <span class="self">self</span>.<span class="number">0</span>.<span class="ident">lock</span>().<span class="kw">await</span>;
         <span class="kw">let</span> <span class="ident">node</span> <span class="op">=</span> <span class="ident">Box::try_new</span>(<span class="ident">Node</span> {
-            <span class="ident">id</span>: <span class="ident">g</span>.<span class="ident">nxtid</span>,
             <span class="ident">nref</span>: <span class="number">1</span>,
             <span class="ident">dref</span>: [<span class="number">0</span>; <span class="number">2</span>],
             <span class="ident">cvar</span>: [<span class="ident">Condvar::new</span>(), <span class="ident">Condvar::new</span>()],
@@ -397,8 +382,7 @@
         })<span class="question-mark">?</span>;
         <span class="kw">let</span> <span class="ident">path</span> <span class="op">=</span> <span class="ident">node</span>.<span class="ident">as_ref</span>() <span class="kw">as</span> <span class="kw-2">*</span><span class="kw">const</span> <span class="kw">_</span> <span class="kw">as</span> <span class="ident">u64</span>;
         <span class="macro">debug_assert_eq!</span>(<span class="ident">path</span> <span class="op">%</span> <span class="number">8</span>, <span class="number">0</span>);
-        <span class="ident">g</span>.<span class="ident">list</span>.<span class="ident">push_back</span>(<span class="ident">node</span>);
-        <span class="ident">g</span>.<span class="ident">nxtid</span> <span class="op">+</span><span class="op">=</span> <span class="number">1</span>;
+        <span class="ident">g</span>.<span class="ident">push_back</span>(<span class="ident">node</span>);
 
         <span class="prelude-val">Ok</span>(<span class="ident">ChanId</span> {
             <span class="ident">path</span>,
@@ -465,7 +449,7 @@
 
         <span class="kw">if</span> <span class="ident">node</span>.<span class="ident">nref</span> <span class="op">=</span><span class="op">=</span> <span class="number">0</span> {
             <span class="macro">debug_assert_eq!</span>(<span class="ident">node</span>.<span class="ident">dref</span>, [<span class="number">0</span>, <span class="number">0</span>]);
-            <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">cur</span> <span class="op">=</span> <span class="kw">unsafe</span> { <span class="ident">g</span>.<span class="ident">list</span>.<span class="ident">cursor_mut_from_ptr</span>(<span class="ident">node</span>) };
+            <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">cur</span> <span class="op">=</span> <span class="kw">unsafe</span> { <span class="ident">g</span>.<span class="ident">cursor_mut_from_ptr</span>(<span class="ident">node</span>) };
             <span class="ident">cur</span>.<span class="ident">remove</span>();
         }
         <span class="ident">drop</span>(<span class="ident">g</span>);

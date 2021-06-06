@@ -201,12 +201,6 @@
 <span id="198">198</span>
 <span id="199">199</span>
 <span id="200">200</span>
-<span id="201">201</span>
-<span id="202">202</span>
-<span id="203">203</span>
-<span id="204">204</span>
-<span id="205">205</span>
-<span id="206">206</span>
 </pre><pre class="rust">
 <span class="doccomment">//! Device driver.</span>
 <span class="doccomment">//!</span>
@@ -321,14 +315,8 @@
 
 <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">test</span>)]</span>
 <span class="kw">mod</span> <span class="ident">tests</span> {
-    <span class="kw">use</span> <span class="ident">ksched::task</span>;
-
     <span class="kw">use</span> <span class="kw">super</span>::<span class="kw-2">*</span>;
-
-    <span class="kw">use</span> <span class="kw">crate</span><span class="ident">::chan::ChanInner</span>;
-    <span class="kw">use</span> <span class="kw">crate</span><span class="ident">::chan::ChanKind</span>;
-    <span class="kw">use</span> <span class="ident">alloc::sync::Weak</span>;
-    <span class="kw">use</span> <span class="ident">ksched::sync::Mutex</span>;
+    <span class="kw">use</span> <span class="ident">ksched::task</span>;
 
     <span class="kw">struct</span> <span class="ident">A</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span>(<span class="ident">T</span>);
 

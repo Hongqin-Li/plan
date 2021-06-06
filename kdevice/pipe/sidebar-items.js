@@ -1,1 +1,1 @@
-initSidebarItems({"struct":[["Pipe","The Pipe device driver."]]});
+initSidebarItems({"struct":[["Pipe","The pipe device driver."]]});
