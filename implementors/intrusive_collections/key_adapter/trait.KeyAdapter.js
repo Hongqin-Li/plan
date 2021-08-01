@@ -1,0 +1,3 @@
+(function() {var implementors = {};
+implementors["kcore"] = [{"text":"impl&lt;'a&gt; KeyAdapter&lt;'a&gt; for <a class=\"struct\" href=\"kcore/vm/struct.VmObjectEntryAdapter.html\" title=\"struct kcore::vm::VmObjectEntryAdapter\">VmObjectEntryAdapter</a>","synthetic":false,"types":["kcore::vm::VmObjectEntryAdapter"]}];
+if (window.register_implementors) {window.register_implementors(implementors);} else {window.pending_implementors = implementors;}})()

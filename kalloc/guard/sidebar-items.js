@@ -1,0 +1,1 @@
+initSidebarItems({"struct":[["AllocGuard","Smart pointer guard."]]});

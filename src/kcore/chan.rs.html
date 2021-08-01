@@ -566,29 +566,23 @@
 <span id="563">563</span>
 <span id="564">564</span>
 <span id="565">565</span>
-<span id="566">566</span>
-<span id="567">567</span>
-<span id="568">568</span>
-<span id="569">569</span>
-<span id="570">570</span>
 </pre><pre class="rust">
 <span class="doccomment">//! Channel and mount space.</span>
-
-<span class="kw">use</span> <span class="ident">alloc::sync::Weak</span>;
-<span class="kw">use</span> <span class="ident">alloc::vec::Vec</span>;
-<span class="kw">use</span> <span class="ident">core::hint::unreachable_unchecked</span>;
-<span class="kw">use</span> <span class="ident">core</span>::{<span class="ident">cmp::min</span>, <span class="ident">convert::TryFrom</span>, <span class="ident">fmt::Debug</span>, <span class="ident">iter</span>, <span class="ident">mem::MaybeUninit</span>, <span class="ident">str</span>};
-<span class="kw">use</span> <span class="ident">kalloc::wrapper::vec_push</span>;
-<span class="kw">use</span> <span class="ident">ksched</span>::{
-    <span class="ident">sync</span>::{<span class="ident">Mutex</span>, <span class="ident">RwLock</span>},
-    <span class="ident">task::yield_now</span>,
-};
-
-<span class="kw">use</span> <span class="ident">alloc::sync::Arc</span>;
 
 <span class="kw">use</span> <span class="kw">crate</span>::{
     <span class="ident">dev::Device</span>,
     <span class="ident">error</span>::{<span class="ident">Error</span>, <span class="prelude-ty">Result</span>},
+    <span class="ident">vm::VmObject</span>,
+};
+<span class="kw">use</span> <span class="ident">alloc</span>::{
+    <span class="ident">sync</span>::{<span class="ident">Arc</span>, <span class="ident">Weak</span>},
+    <span class="ident">vec::Vec</span>,
+};
+<span class="kw">use</span> <span class="ident">core</span>::{<span class="ident">convert::TryFrom</span>, <span class="ident">fmt::Debug</span>, <span class="ident">iter</span>, <span class="ident">mem::MaybeUninit</span>, <span class="ident">str</span>};
+<span class="kw">use</span> <span class="ident">kalloc::wrapper::vec_push</span>;
+<span class="kw">use</span> <span class="ident">ksched</span>::{
+    <span class="ident">sync</span>::{<span class="ident">Mutex</span>, <span class="ident">RwLock</span>},
+    <span class="ident">task::yield_now</span>,
 };
 
 <span class="doccomment">/// File type.</span>
@@ -661,15 +655,6 @@
 }
 
 <span class="kw">impl</span> <span class="ident">ChanKey</span> {
-    <span class="doccomment">/// Create a new chan key.</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">dev</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">Device</span> <span class="op">+</span> <span class="ident">Send</span> <span class="op">+</span> <span class="ident">Sync</span><span class="op">&gt;</span>, <span class="ident">devid</span>: <span class="ident">usize</span>, <span class="ident">id</span>: <span class="ident">ChanId</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
-        <span class="self">Self</span> {
-            <span class="ident">dev</span>,
-            <span class="ident">id</span>,
-            <span class="ident">dropped</span>: <span class="bool-val">false</span>,
-        }
-    }
-
     <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">dup</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">ChanKey</span><span class="op">&gt;</span> {
         <span class="self">self</span>.<span class="ident">dev</span>.<span class="ident">open</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">id</span>, <span class="string">b&quot;&quot;</span>, <span class="prelude-val">None</span>)<span class="question-mark">?</span>.<span class="kw">await</span><span class="question-mark">?</span>.<span class="ident">map_or</span>(
             <span class="prelude-val">Err</span>(<span class="ident">Error::Gone</span>(<span class="string">&quot;failed to rekey&quot;</span>)),
@@ -726,6 +711,9 @@
     <span class="ident">umnt</span>: <span class="ident">RwLock</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">ChanKey</span><span class="op">&gt;</span><span class="op">&gt;</span>,
     <span class="doccomment">/// The weak pointer must be able to upgrade.</span>
     <span class="ident">child</span>: <span class="ident">Mutex</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Weak</span><span class="op">&lt;</span><span class="ident">Chan</span><span class="op">&gt;</span><span class="op">&gt;</span><span class="op">&gt;</span>,
+
+    <span class="doccomment">/// Managing all memory mapped pages from this chan.</span>
+    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="ident">vmobj</span>: <span class="ident">VmObject</span>,
 }
 
 <span class="kw">impl</span> <span class="ident">Chan</span> {
@@ -743,7 +731,7 @@
             <span class="ident">id</span>,
             <span class="ident">dropped</span>: <span class="bool-val">false</span>,
         };
-        <span class="prelude-val">Ok</span>(<span class="kw">unsafe</span> { <span class="self">Self</span><span class="ident">::from_key</span>(<span class="ident">key</span>, <span class="ident">a</span>) })
+        <span class="prelude-val">Ok</span>(<span class="kw">unsafe</span> { <span class="self">Self</span><span class="ident">::new1</span>(<span class="ident">key</span>, <span class="prelude-val">None</span>, <span class="ident">a</span>) })
     }
 
     <span class="doccomment">/// Get the absolute path string of this chan.</span>
@@ -773,16 +761,21 @@
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">chan</span>: <span class="kw-2">&amp;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Chan</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">a</span> <span class="op">=</span> <span class="ident">Arc</span>::<span class="op">&lt;</span><span class="ident">Chan</span><span class="op">&gt;</span><span class="ident">::try_new_uninit</span>()<span class="question-mark">?</span>;
         <span class="kw">let</span> <span class="ident">key</span> <span class="op">=</span> <span class="ident">chan</span>.<span class="ident">key</span>.<span class="ident">dup</span>().<span class="kw">await</span><span class="question-mark">?</span>;
-        <span class="prelude-val">Ok</span>(<span class="kw">unsafe</span> { <span class="self">Self</span><span class="ident">::from_key</span>(<span class="ident">key</span>, <span class="ident">a</span>) })
+        <span class="prelude-val">Ok</span>(<span class="kw">unsafe</span> { <span class="self">Self</span><span class="ident">::new1</span>(<span class="ident">key</span>, <span class="prelude-val">None</span>, <span class="ident">a</span>) })
     }
 
-    <span class="kw">unsafe</span> <span class="kw">fn</span> <span class="ident">from_key</span>(<span class="ident">key</span>: <span class="ident">ChanKey</span>, <span class="kw-2">mut</span> <span class="ident">a</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">MaybeUninit</span><span class="op">&lt;</span><span class="ident">Chan</span><span class="op">&gt;</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span> {
+    <span class="kw">unsafe</span> <span class="kw">fn</span> <span class="ident">new1</span>(
+        <span class="ident">key</span>: <span class="ident">ChanKey</span>,
+        <span class="ident">parent</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Chan</span><span class="op">&gt;</span><span class="op">&gt;</span>,
+        <span class="kw-2">mut</span> <span class="ident">a</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">MaybeUninit</span><span class="op">&lt;</span><span class="ident">Chan</span><span class="op">&gt;</span><span class="op">&gt;</span>,
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Arc</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span> {
         <span class="ident">Arc::get_mut_unchecked</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">a</span>).<span class="ident">as_mut_ptr</span>().<span class="ident">write</span>(<span class="self">Self</span> {
-            <span class="ident">parent</span>: <span class="prelude-val">None</span>,
+            <span class="ident">parent</span>,
             <span class="ident">umnt</span>: <span class="ident">RwLock::new</span>(<span class="ident">Vec::new</span>()),
             <span class="ident">child</span>: <span class="ident">Mutex::new</span>(<span class="ident">Vec::new</span>()),
             <span class="ident">key</span>,
             <span class="ident">name</span>: <span class="ident">Vec::new</span>(),
+            <span class="ident">vmobj</span>: <span class="ident">VmObject::new</span>(),
         });
         <span class="ident">a</span>.<span class="ident">assume_init</span>()
     }
@@ -873,7 +866,7 @@
             <span class="ident">vec_push</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">names</span>, <span class="kw-2">*</span><span class="ident">x</span>)<span class="question-mark">?</span>;
         }
         <span class="ident">child</span>.<span class="ident">try_reserve</span>(<span class="number">1</span>)<span class="question-mark">?</span>;
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">a</span> <span class="op">=</span> <span class="ident">Arc</span>::<span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span><span class="ident">::try_new_uninit</span>()<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">a</span> <span class="op">=</span> <span class="ident">Arc</span>::<span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span><span class="ident">::try_new_uninit</span>()<span class="question-mark">?</span>;
 
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">some_chan</span> <span class="op">=</span> <span class="prelude-val">None</span>;
         <span class="kw">let</span> <span class="ident">g</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">umnt</span>.<span class="ident">read</span>().<span class="kw">await</span>;
@@ -881,18 +874,15 @@
             <span class="macro">debug_assert_eq!</span>(<span class="ident">key</span>.<span class="ident">id</span>.<span class="ident">kind</span>, <span class="ident">ChanKind::Dir</span>);
             <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">id</span>) <span class="op">=</span> <span class="ident">key</span>.<span class="ident">dev</span>.<span class="ident">open</span>(<span class="kw-2">&amp;</span><span class="ident">key</span>.<span class="ident">id</span>, <span class="ident">name</span>, <span class="ident">create_dir</span>)<span class="question-mark">?</span>.<span class="kw">await</span><span class="question-mark">?</span> {
                 <span class="kw">let</span> <span class="ident">u</span> <span class="op">=</span> <span class="kw">unsafe</span> {
-                    <span class="ident">Arc::get_mut_unchecked</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">a</span>).<span class="ident">as_mut_ptr</span>().<span class="ident">write</span>(<span class="self">Self</span> {
-                        <span class="ident">parent</span>: <span class="prelude-val">Some</span>(<span class="self">self</span>.<span class="ident">clone</span>()),
-                        <span class="ident">umnt</span>: <span class="ident">RwLock::new</span>(<span class="ident">Vec::new</span>()),
-                        <span class="ident">child</span>: <span class="ident">Mutex::new</span>(<span class="ident">Vec::new</span>()),
-                        <span class="ident">key</span>: <span class="ident">ChanKey</span> {
+                    <span class="self">Self</span><span class="ident">::new1</span>(
+                        <span class="ident">ChanKey</span> {
                             <span class="ident">dev</span>: <span class="ident">key</span>.<span class="ident">dev</span>.<span class="ident">clone</span>(),
                             <span class="ident">id</span>,
                             <span class="ident">dropped</span>: <span class="bool-val">false</span>,
                         },
-                        <span class="ident">name</span>: <span class="ident">names</span>,
-                    });
-                    <span class="ident">a</span>.<span class="ident">assume_init</span>()
+                        <span class="prelude-val">Some</span>(<span class="self">self</span>.<span class="ident">clone</span>()),
+                        <span class="ident">a</span>,
+                    )
                 };
                 <span class="ident">some_chan</span> <span class="op">=</span> <span class="prelude-val">Some</span>(<span class="ident">u</span>);
                 <span class="kw">break</span>;

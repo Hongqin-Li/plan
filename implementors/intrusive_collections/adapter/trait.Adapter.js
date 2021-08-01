@@ -1,3 +1,4 @@
 (function() {var implementors = {};
+implementors["kcore"] = [{"text":"impl Adapter for <a class=\"struct\" href=\"kcore/vm/struct.VmObjectEntryAdapter.html\" title=\"struct kcore::vm::VmObjectEntryAdapter\">VmObjectEntryAdapter</a>","synthetic":false,"types":["kcore::vm::VmObjectEntryAdapter"]}];
 implementors["ksched"] = [{"text":"impl Adapter for <a class=\"struct\" href=\"ksched/task/struct.TaskAdapter.html\" title=\"struct ksched::task::TaskAdapter\">TaskAdapter</a>","synthetic":false,"types":["ksched::task::TaskAdapter"]}];
 if (window.register_implementors) {window.register_implementors(implementors);} else {window.pending_implementors = implementors;}})()

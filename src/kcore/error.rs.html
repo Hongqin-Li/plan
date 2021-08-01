@@ -52,6 +52,9 @@
 <span id="49">49</span>
 <span id="50">50</span>
 <span id="51">51</span>
+<span id="52">52</span>
+<span id="53">53</span>
+<span id="54">54</span>
 </pre><pre class="rust">
 <span class="doccomment">//! Common error types for kernel development.</span>
 <span class="kw">use</span> <span class="ident">core::alloc::AllocError</span>;
@@ -83,6 +86,8 @@
     <span class="ident">InsufficientStorage</span>(<span class="kw-2">&amp;</span><span class="lifetime">&#39;static</span> <span class="ident">str</span>),
     <span class="doccomment">/// When feature not yet implemented.</span>
     <span class="ident">NotImplemented</span>(<span class="kw-2">&amp;</span><span class="lifetime">&#39;static</span> <span class="ident">str</span>),
+    <span class="doccomment">/// When page fault triggered at invalid virtual address.</span>
+    <span class="ident">SegmentFault</span>,
 }
 
 <span class="doccomment">/// Sugar of error.</span>
@@ -93,6 +98,7 @@
         <span class="ident">Error::OutOfMemory</span>(<span class="string">&quot;alloc error&quot;</span>)
     }
 }
+
 <span class="kw">impl</span> <span class="ident">From</span><span class="op">&lt;</span><span class="ident">TryReserveError</span><span class="op">&gt;</span> <span class="kw">for</span> <span class="ident">Error</span> {
     <span class="kw">fn</span> <span class="ident">from</span>(<span class="ident">x</span>: <span class="ident">TryReserveError</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
         <span class="ident">Error::OutOfMemory</span>(<span class="string">&quot;try reserve error&quot;</span>)

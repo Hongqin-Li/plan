@@ -1043,6 +1043,13 @@
 <span id="1040">1040</span>
 <span id="1041">1041</span>
 <span id="1042">1042</span>
+<span id="1043">1043</span>
+<span id="1044">1044</span>
+<span id="1045">1045</span>
+<span id="1046">1046</span>
+<span id="1047">1047</span>
+<span id="1048">1048</span>
+<span id="1049">1049</span>
 </pre><pre class="rust">
 <span class="doccomment">//! Simulated i-node layer of FAT32 file system.</span>
 <span class="kw">use</span> <span class="ident">alloc::boxed::Box</span>;
@@ -1063,14 +1070,14 @@
 };
 <span class="kw">use</span> <span class="kw">crate</span>::{
     <span class="ident">block::BSIZE</span>,
-    <span class="ident">cache</span>::{<span class="ident">CEntry</span>, <span class="ident">CGuard</span>, <span class="ident">CNodePtr</span>, <span class="ident">Cache</span>, <span class="ident">CacheData</span>},
+    <span class="ident">cache</span>::{<span class="ident">Cache</span>, <span class="ident">CacheData</span>, <span class="ident">CacheEntry</span>, <span class="ident">CacheGuard</span>, <span class="ident">CacheNodePtr</span>},
     <span class="ident">cache_impl</span>,
     <span class="ident">fat::fname::checksum</span>,
     <span class="ident">from_bytes</span>,
     <span class="ident">log</span>::{<span class="ident">Log</span>, <span class="ident">LOGMAGIC</span>, <span class="ident">LOGSIZE</span>},
 };
-
 <span class="kw">use</span> <span class="ident">alloc</span>::{<span class="ident">sync::Arc</span>, <span class="ident">vec::Vec</span>};
+<span class="kw">use</span> <span class="ident">async_trait::async_trait_static</span>;
 <span class="kw">use</span> <span class="ident">kalloc::wrapper::vec_push</span>;
 <span class="kw">use</span> <span class="ident">kcore</span>::{
     <span class="ident">chan</span>::{<span class="ident">Chan</span>, <span class="ident">Dirent</span>},
@@ -1109,7 +1116,7 @@
             <span class="kw">let</span> <span class="ident">cno</span> <span class="op">=</span> <span class="macro-nonterminal">$</span><span class="macro-nonterminal">ip</span>.<span class="ident">addr</span>.<span class="ident">get</span>(<span class="ident">ci</span>).<span class="ident">ok_or</span>(<span class="ident">Error::InternalError</span>(<span class="string">&quot;fatrw&quot;</span>))<span class="question-mark">?</span>;
             <span class="kw">let</span> <span class="ident">disk_si</span> <span class="op">=</span> <span class="macro-nonterminal">$</span><span class="macro-nonterminal">sel</span>.<span class="ident">meta</span>.<span class="ident">data_off</span> <span class="op">+</span> (<span class="kw-2">*</span><span class="ident">cno</span> <span class="kw">as</span> <span class="ident">usize</span> <span class="op">-</span> <span class="number">2</span>) <span class="op">*</span> <span class="ident">spc</span> <span class="op">+</span> <span class="ident">si</span>;
 
-            <span class="kw">let</span> <span class="ident">b</span>: <span class="ident">CEntry</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">Log</span><span class="op">&gt;</span> <span class="op">=</span> <span class="macro-nonterminal">$</span><span class="macro-nonterminal">sel</span>.<span class="ident">log</span>.<span class="ident">cache_get</span>(<span class="ident">disk_si</span>, <span class="bool-val">false</span>).<span class="kw">await</span><span class="question-mark">?</span>.<span class="ident">unwrap</span>();
+            <span class="kw">let</span> <span class="ident">b</span>: <span class="ident">CacheEntry</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">Log</span><span class="op">&gt;</span> <span class="op">=</span> <span class="macro-nonterminal">$</span><span class="macro-nonterminal">sel</span>.<span class="ident">log</span>.<span class="ident">cache_get</span>(<span class="ident">disk_si</span>, <span class="bool-val">false</span>).<span class="kw">await</span><span class="question-mark">?</span>.<span class="ident">unwrap</span>();
             <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">g</span> <span class="op">=</span> <span class="ident">b</span>.<span class="ident">lock</span>().<span class="kw">await</span><span class="question-mark">?</span>;
             <span class="macro-nonterminal">$</span><span class="kw">fn</span>(<span class="macro-nonterminal">$</span><span class="macro-nonterminal">buf</span>, <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">g</span>, <span class="ident">i</span> <span class="op">-</span> <span class="macro-nonterminal">$</span><span class="macro-nonterminal">off</span>, <span class="ident">soff</span>, <span class="ident">n</span>);
             <span class="macro-nonterminal">$</span><span class="macro-nonterminal">sel</span>.<span class="ident">log</span>.<span class="ident">trace</span>(<span class="ident">g</span>).<span class="kw">await</span>;
@@ -1183,26 +1190,21 @@
     }
 }
 
-<span class="kw">type</span> <span class="ident">InodePtr</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">T</span><span class="op">&gt;</span> <span class="op">=</span> <span class="ident">ManuallyDrop</span><span class="op">&lt;</span><span class="ident">CEntry</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">T</span><span class="op">&gt;</span><span class="op">&gt;</span>;
+<span class="kw">type</span> <span class="ident">InodePtr</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">T</span><span class="op">&gt;</span> <span class="op">=</span> <span class="ident">ManuallyDrop</span><span class="op">&lt;</span><span class="ident">CacheEntry</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">T</span><span class="op">&gt;</span><span class="op">&gt;</span>;
 
 <span class="doccomment">/// The inode cache.</span>
+<span class="attribute">#[<span class="ident">async_trait_static</span>]</span>
 <span class="kw">impl</span> <span class="ident">Cache</span> <span class="kw">for</span> <span class="ident">FAT</span> {
     <span class="macro">cache_impl!</span>(<span class="ident">InodeKey</span>, <span class="ident">Inode</span>, <span class="ident">icache</span>);
 
-    <span class="kw">fn</span> <span class="ident">disk_read</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span>(
-        <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="self">self</span>,
-        <span class="ident">_key</span>: <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="self">Self</span><span class="ident">::Key</span>,
-        <span class="ident">inode</span>: <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="kw-2">mut</span> <span class="self">Self</span><span class="ident">::Value</span>,
-    ) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span><span class="ident">::ReadFut</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span> {
-        <span class="kw">async</span> <span class="kw">move</span> {
-            <span class="ident">inode</span>.<span class="ident">addr</span> <span class="op">=</span> <span class="ident">Vec::new</span>();
-            <span class="ident">inode</span>.<span class="ident">nlink</span> <span class="op">=</span> <span class="number">1</span>;
-            <span class="prelude-val">Ok</span>(())
-        }
+    <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">disk_read</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">_key</span>: <span class="kw-2">&amp;</span><span class="self">Self</span><span class="ident">::Key</span>, <span class="ident">inode</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">Self</span><span class="ident">::Value</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>()<span class="op">&gt;</span> {
+        <span class="ident">inode</span>.<span class="ident">addr</span> <span class="op">=</span> <span class="ident">Vec::new</span>();
+        <span class="ident">inode</span>.<span class="ident">nlink</span> <span class="op">=</span> <span class="number">1</span>;
+        <span class="prelude-val">Ok</span>(())
     }
 
-    <span class="kw">fn</span> <span class="ident">disk_write</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span>(<span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="self">self</span>, <span class="ident">_key</span>: <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="self">Self</span><span class="ident">::Key</span>, <span class="ident">_ip</span>: <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="self">Self</span><span class="ident">::Value</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span><span class="ident">::WriteFut</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span> {
-        <span class="kw">async</span> <span class="kw">move</span> { <span class="prelude-val">Ok</span>(()) }
+    <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">disk_write</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">_key</span>: <span class="kw-2">&amp;</span><span class="self">Self</span><span class="ident">::Key</span>, <span class="ident">_ip</span>: <span class="kw-2">&amp;</span><span class="self">Self</span><span class="ident">::Value</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>()<span class="op">&gt;</span> {
+        <span class="prelude-val">Ok</span>(())
     }
 }
 
@@ -1323,7 +1325,7 @@
     <span class="doccomment">/// Convert qid to inode pointer.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">to_inode</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span>(<span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="self">self</span>, <span class="ident">path</span>: <span class="ident">u64</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">InodePtr</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="self">Self</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">addr</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="ident">path</span>.<span class="ident">try_into</span>().<span class="ident">unwrap</span>();
-        <span class="kw">let</span> <span class="ident">ent</span> <span class="op">=</span> <span class="kw">unsafe</span> { <span class="ident">CEntry::from_ptr</span>(<span class="self">self</span>, <span class="ident">CNodePtr::from_addr</span>(<span class="ident">addr</span>)) };
+        <span class="kw">let</span> <span class="ident">ent</span> <span class="op">=</span> <span class="kw">unsafe</span> { <span class="ident">CacheEntry::from_ptr</span>(<span class="self">self</span>, <span class="ident">CacheNodePtr::from_addr</span>(<span class="ident">addr</span>)) };
         <span class="ident">ManuallyDrop::new</span>(<span class="ident">ent</span>)
     }
     <span class="doccomment">/// Convert inode pointer to unique path id.</span>
@@ -1379,7 +1381,7 @@
         <span class="kw">let</span> <span class="ident">offb_fat</span> <span class="op">=</span> <span class="ident">cno</span> <span class="kw">as</span> <span class="ident">usize</span> <span class="op">*</span> <span class="number">4</span>;
         <span class="kw">let</span> <span class="ident">offs_disk</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">meta</span>.<span class="ident">fat_off</span> <span class="op">+</span> <span class="ident">offb_fat</span> <span class="op">/</span> <span class="self">self</span>.<span class="ident">meta</span>.<span class="ident">bps</span>;
         <span class="kw">let</span> <span class="ident">offb_insect</span> <span class="op">=</span> <span class="ident">offb_fat</span> <span class="op">%</span> <span class="self">self</span>.<span class="ident">meta</span>.<span class="ident">bps</span>;
-        <span class="kw">let</span> <span class="ident">buf</span>: <span class="ident">CEntry</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">Log</span><span class="op">&gt;</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">log</span>.<span class="ident">cache_get</span>(<span class="ident">offs_disk</span>, <span class="bool-val">false</span>).<span class="kw">await</span><span class="question-mark">?</span>.<span class="ident">unwrap</span>();
+        <span class="kw">let</span> <span class="ident">buf</span>: <span class="ident">CacheEntry</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">Log</span><span class="op">&gt;</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">log</span>.<span class="ident">cache_get</span>(<span class="ident">offs_disk</span>, <span class="bool-val">false</span>).<span class="kw">await</span><span class="question-mark">?</span>.<span class="ident">unwrap</span>();
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">g</span> <span class="op">=</span> <span class="ident">buf</span>.<span class="ident">lock</span>().<span class="kw">await</span><span class="question-mark">?</span>;
         <span class="comment">// FIXME: validate?</span>
         <span class="kw">let</span> <span class="ident">old</span> <span class="op">=</span> <span class="macro">from_bytes!</span>(<span class="ident">u32</span>, <span class="ident">g</span>[<span class="ident">offb_insect</span>..(<span class="ident">offb_insect</span> <span class="op">+</span> <span class="number">4</span>)]) <span class="op">&amp;</span> <span class="ident">FAT_MASK</span>;
@@ -1399,7 +1401,7 @@
         <span class="kw">let</span> (<span class="kw-2">mut</span> <span class="ident">i</span>, <span class="kw-2">mut</span> <span class="ident">j</span>) <span class="op">=</span> (<span class="number">0</span>, <span class="self">self</span>.<span class="ident">meta</span>.<span class="ident">fat_off</span>);
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">head</span>: <span class="ident">u32</span> <span class="op">=</span> <span class="ident">FAT_END</span>;
         <span class="kw">while</span> <span class="ident">i</span> <span class="op">&lt;</span> <span class="self">self</span>.<span class="ident">meta</span>.<span class="ident">data_clust</span> <span class="op">+</span> <span class="number">2</span> {
-            <span class="kw">let</span> <span class="ident">buf</span>: <span class="ident">CEntry</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">Log</span><span class="op">&gt;</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">log</span>.<span class="ident">cache_get</span>(<span class="ident">j</span>, <span class="bool-val">false</span>).<span class="kw">await</span><span class="question-mark">?</span>.<span class="ident">unwrap</span>();
+            <span class="kw">let</span> <span class="ident">buf</span>: <span class="ident">CacheEntry</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">Log</span><span class="op">&gt;</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">log</span>.<span class="ident">cache_get</span>(<span class="ident">j</span>, <span class="bool-val">false</span>).<span class="kw">await</span><span class="question-mark">?</span>.<span class="ident">unwrap</span>();
             <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">g</span> <span class="op">=</span> <span class="ident">buf</span>.<span class="ident">lock</span>().<span class="kw">await</span><span class="question-mark">?</span>;
             <span class="kw">for</span> <span class="ident">bi</span> <span class="kw">in</span> (<span class="number">0</span>..<span class="self">self</span>.<span class="ident">meta</span>.<span class="ident">bps</span>).<span class="ident">step_by</span>(<span class="number">4</span>) {
                 <span class="kw">let</span> <span class="ident">ent</span> <span class="op">=</span> <span class="macro">from_bytes!</span>(<span class="ident">u32</span>, <span class="ident">g</span>[<span class="ident">bi</span>..(<span class="ident">bi</span> <span class="op">+</span> <span class="number">4</span>)]);
@@ -1431,7 +1433,7 @@
     <span class="doccomment">/// 3. A plain file or empty directory.</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// Modify at most 2 blocks.</span>
-    <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">removei</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span>(<span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="self">self</span>, <span class="ident">ip</span>: <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="ident">CGuard</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="self">Self</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>()<span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">removei</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span>(<span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="self">self</span>, <span class="ident">ip</span>: <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="ident">CacheGuard</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="self">Self</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>()<span class="op">&gt;</span> {
         <span class="comment">// First, mark SFN as unused.</span>
         <span class="kw">let</span> <span class="ident">buf</span> <span class="op">=</span> <span class="self">self</span>
             .<span class="ident">log</span>
@@ -1450,7 +1452,7 @@
     }
 
     <span class="doccomment">/// Get the meta information of this file.</span>
-    <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">stati</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span>(<span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="self">self</span>, <span class="ident">ip</span>: <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="ident">CGuard</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="self">Self</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Dirent</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">stati</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span>(<span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="self">self</span>, <span class="ident">ip</span>: <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="ident">CacheGuard</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="self">Self</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Dirent</span><span class="op">&gt;</span> {
         <span class="kw">if</span> <span class="ident">ip</span>.<span class="ident">key</span>().<span class="ident">doff</span> <span class="op">=</span><span class="op">=</span> <span class="number">0</span> {
             <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="ident">Dirent</span> {
                 <span class="ident">len</span>: <span class="number">0</span>,
@@ -1476,7 +1478,7 @@
     }
 
     <span class="doccomment">/// Extend the addr pointers.</span>
-    <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">extend</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span>(<span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="self">self</span>, <span class="ident">ip</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">CGuard</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="self">Self</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>()<span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">extend</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span>(<span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="self">self</span>, <span class="ident">ip</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">CacheGuard</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="self">Self</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>()<span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">bpc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">meta</span>.<span class="ident">bps</span> <span class="op">*</span> <span class="self">self</span>.<span class="ident">meta</span>.<span class="ident">spc</span>;
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">cno</span> <span class="op">=</span> <span class="ident">ip</span>.<span class="ident">key</span>().<span class="ident">cno</span>;
         <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">x</span>) <span class="op">=</span> <span class="ident">ip</span>.<span class="ident">addr</span>.<span class="ident">last</span>() {
@@ -1503,7 +1505,7 @@
     <span class="doccomment">/// Return the new size. For directory, the old size is always a multiple of byte-per-cluster.</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">resize</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span>(
         <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="self">self</span>,
-        <span class="ident">ip</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">CGuard</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="self">Self</span><span class="op">&gt;</span>,
+        <span class="ident">ip</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">CacheGuard</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="self">Self</span><span class="op">&gt;</span>,
         <span class="ident">f</span>: <span class="kw">impl</span> <span class="ident">FnOnce</span>(<span class="ident">u32</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">u32</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">u32</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">bps</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">meta</span>.<span class="ident">bps</span>;
@@ -1521,7 +1523,7 @@
             <span class="kw">let</span> <span class="ident">old</span>: <span class="ident">u32</span> <span class="op">=</span> (<span class="ident">ip</span>.<span class="ident">addr</span>.<span class="ident">len</span>() <span class="op">*</span> <span class="ident">bpc</span>) <span class="kw">as</span> <span class="ident">u32</span>;
             (<span class="ident">old</span>, <span class="ident">f</span>(<span class="ident">old</span>))
         } <span class="kw">else</span> {
-            <span class="kw">let</span> <span class="ident">b</span>: <span class="ident">CEntry</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">Log</span><span class="op">&gt;</span> <span class="op">=</span> <span class="self">self</span>
+            <span class="kw">let</span> <span class="ident">b</span>: <span class="ident">CacheEntry</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">Log</span><span class="op">&gt;</span> <span class="op">=</span> <span class="self">self</span>
                 .<span class="ident">log</span>
                 .<span class="ident">cache_get</span>(<span class="ident">ip</span>.<span class="ident">key</span>().<span class="ident">doff</span> <span class="op">/</span> <span class="ident">bps</span>, <span class="bool-val">false</span>)
                 .<span class="kw">await</span><span class="question-mark">?</span>
@@ -1560,12 +1562,18 @@
     <span class="doccomment">/// Read data from inode.</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">readi</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span>(
         <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="self">self</span>,
-        <span class="ident">ip</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">CGuard</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="self">Self</span><span class="op">&gt;</span>,
+        <span class="ident">ip</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">CacheGuard</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="self">Self</span><span class="op">&gt;</span>,
         <span class="ident">buf</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> [<span class="ident">u8</span>],
         <span class="ident">off</span>: <span class="ident">usize</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span> {
         <span class="attribute">#[<span class="ident">inline</span>]</span>
-        <span class="kw">fn</span> <span class="ident">trans</span>(<span class="ident">to</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> [<span class="ident">u8</span>], <span class="ident">from</span>: <span class="kw-2">&amp;</span><span class="ident">CGuard</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span>, <span class="ident">Log</span><span class="op">&gt;</span>, <span class="ident">to_off</span>: <span class="ident">usize</span>, <span class="ident">from_off</span>: <span class="ident">usize</span>, <span class="ident">n</span>: <span class="ident">usize</span>) {
+        <span class="kw">fn</span> <span class="ident">trans</span>(
+            <span class="ident">to</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> [<span class="ident">u8</span>],
+            <span class="ident">from</span>: <span class="kw-2">&amp;</span><span class="ident">CacheGuard</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span>, <span class="ident">Log</span><span class="op">&gt;</span>,
+            <span class="ident">to_off</span>: <span class="ident">usize</span>,
+            <span class="ident">from_off</span>: <span class="ident">usize</span>,
+            <span class="ident">n</span>: <span class="ident">usize</span>,
+        ) {
             <span class="ident">to</span>[<span class="ident">to_off</span>..(<span class="ident">to_off</span> <span class="op">+</span> <span class="ident">n</span>)].<span class="ident">copy_from_slice</span>(<span class="kw-2">&amp;</span><span class="ident">from</span>[<span class="ident">from_off</span>..(<span class="ident">from_off</span> <span class="op">+</span> <span class="ident">n</span>)]);
         }
         <span class="macro">rwinode!</span>(<span class="self">self</span>, <span class="ident">ip</span>, <span class="ident">buf</span>, <span class="ident">off</span>, <span class="ident">trans</span>)
@@ -1574,12 +1582,18 @@
     <span class="doccomment">/// Write data to inode.</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">writei</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span>(
         <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="self">self</span>,
-        <span class="ident">ip</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">CGuard</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="self">Self</span><span class="op">&gt;</span>,
+        <span class="ident">ip</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">CacheGuard</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="self">Self</span><span class="op">&gt;</span>,
         <span class="ident">buf</span>: <span class="kw-2">&amp;</span>[<span class="ident">u8</span>],
         <span class="ident">off</span>: <span class="ident">usize</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span> {
         <span class="attribute">#[<span class="ident">inline</span>]</span>
-        <span class="kw">fn</span> <span class="ident">trans</span>(<span class="ident">from</span>: <span class="kw-2">&amp;</span>[<span class="ident">u8</span>], <span class="ident">to</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">CGuard</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span>, <span class="ident">Log</span><span class="op">&gt;</span>, <span class="ident">from_off</span>: <span class="ident">usize</span>, <span class="ident">to_off</span>: <span class="ident">usize</span>, <span class="ident">n</span>: <span class="ident">usize</span>) {
+        <span class="kw">fn</span> <span class="ident">trans</span>(
+            <span class="ident">from</span>: <span class="kw-2">&amp;</span>[<span class="ident">u8</span>],
+            <span class="ident">to</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">CacheGuard</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span>, <span class="ident">Log</span><span class="op">&gt;</span>,
+            <span class="ident">from_off</span>: <span class="ident">usize</span>,
+            <span class="ident">to_off</span>: <span class="ident">usize</span>,
+            <span class="ident">n</span>: <span class="ident">usize</span>,
+        ) {
             <span class="ident">to</span>[<span class="ident">to_off</span>..(<span class="ident">to_off</span> <span class="op">+</span> <span class="ident">n</span>)].<span class="ident">copy_from_slice</span>(<span class="kw-2">&amp;</span><span class="ident">from</span>[<span class="ident">from_off</span>..(<span class="ident">from_off</span> <span class="op">+</span> <span class="ident">n</span>)]);
         }
         <span class="macro">rwinode!</span>(<span class="self">self</span>, <span class="ident">ip</span>, <span class="ident">buf</span>, <span class="ident">off</span>, <span class="ident">trans</span>)
@@ -1589,7 +1603,7 @@
     <span class="doccomment">/// Return a referenced inode.</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">dirlookup</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span>(
         <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="self">self</span>,
-        <span class="ident">dp</span>: <span class="kw-2">&amp;</span><span class="ident">CGuard</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="self">Self</span><span class="op">&gt;</span>,
+        <span class="ident">dp</span>: <span class="kw-2">&amp;</span><span class="ident">CacheGuard</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="self">Self</span><span class="op">&gt;</span>,
         <span class="ident">name</span>: <span class="kw-2">&amp;</span>[<span class="ident">u8</span>],
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">InodeKey</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">fname</span> <span class="op">=</span> <span class="ident">Filename::try_from</span>(<span class="ident">name</span>)<span class="question-mark">?</span>;
@@ -1641,7 +1655,7 @@
     <span class="doccomment">/// Return inode if the link succeed. Return None if entry with the same name already exist.</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">dirlink</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span>(
         <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="self">self</span>,
-        <span class="ident">dp</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">CGuard</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="self">Self</span><span class="op">&gt;</span>,
+        <span class="ident">dp</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">CacheGuard</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="self">Self</span><span class="op">&gt;</span>,
         <span class="ident">name</span>: <span class="kw-2">&amp;</span>[<span class="ident">u8</span>],
         <span class="ident">cno</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">u32</span><span class="op">&gt;</span>,
         <span class="ident">dir</span>: <span class="ident">bool</span>,
@@ -1807,7 +1821,7 @@
     }
 
     <span class="doccomment">/// Check if directory is empty.</span>
-    <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">dirempty</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span>(<span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="self">self</span>, <span class="ident">dp</span>: <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="ident">CGuard</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="self">Self</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">bool</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">dirempty</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span>(<span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="self">self</span>, <span class="ident">dp</span>: <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="ident">CacheGuard</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="self">Self</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">bool</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">iter</span> <span class="op">=</span> <span class="ident">DirIter::new</span>(<span class="self">self</span>, <span class="ident">dp</span>).<span class="kw">await</span><span class="question-mark">?</span>;
         <span class="comment">// Skip the first two &#39;.&#39; and &#39;..&#39;.</span>
         <span class="kw">while</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">ent</span>) <span class="op">=</span> <span class="ident">iter</span>.<span class="ident">next</span>(<span class="number">0</span>).<span class="kw">await</span><span class="question-mark">?</span> {
@@ -1819,7 +1833,7 @@
     }
 
     <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">test</span>)]</span>
-    <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">dirstat</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span>(<span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="self">self</span>, <span class="ident">dp</span>: <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="ident">CGuard</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="self">Self</span><span class="op">&gt;</span>, <span class="ident">print</span>: <span class="ident">bool</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">u16</span><span class="op">&gt;</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">dirstat</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span>(<span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="self">self</span>, <span class="ident">dp</span>: <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="ident">CacheGuard</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="self">Self</span><span class="op">&gt;</span>, <span class="ident">print</span>: <span class="ident">bool</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">u16</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">names</span> <span class="op">=</span> <span class="ident">Vec::new</span>();
 
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">iter</span> <span class="op">=</span> <span class="ident">DirIter::new</span>(<span class="self">self</span>, <span class="kw-2">&amp;</span><span class="ident">dp</span>).<span class="kw">await</span>.<span class="ident">unwrap</span>();
@@ -1836,7 +1850,7 @@
 }
 
 <span class="kw">struct</span> <span class="ident">SectItem</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span> {
-    <span class="ident">buf</span>: <span class="ident">CEntry</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">Log</span><span class="op">&gt;</span>,
+    <span class="ident">buf</span>: <span class="ident">CacheEntry</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">Log</span><span class="op">&gt;</span>,
 
     <span class="ident">file_secti</span>: <span class="ident">usize</span>,
     <span class="doccomment">/// Disk offset in sectors.</span>
@@ -1922,7 +1936,7 @@
 }
 
 <span class="kw">impl</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span> <span class="ident">DirIter</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span> {
-    <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">fs</span>: <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="ident">FAT</span>, <span class="ident">dp</span>: <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="ident">CGuard</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">FAT</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">DirIter</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span><span class="op">&gt;</span> {
+    <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">fs</span>: <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="ident">FAT</span>, <span class="ident">dp</span>: <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="ident">CacheGuard</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">FAT</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">DirIter</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">siter</span> <span class="op">=</span> <span class="ident">SectIter::new</span>(<span class="ident">fs</span>, <span class="ident">dp</span>.<span class="ident">key</span>().<span class="ident">cno</span>);
         <span class="kw">let</span> <span class="ident">sitem</span> <span class="op">=</span> <span class="ident">siter</span>
             .<span class="ident">next</span>()

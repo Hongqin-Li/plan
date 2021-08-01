@@ -569,17 +569,16 @@
 <span id="566">566</span>
 <span id="567">567</span>
 <span id="568">568</span>
-<span id="569">569</span>
-<span id="570">570</span>
 </pre><pre class="rust">
 <span class="doccomment">//! Log layer supporting transaction operations on blocks.</span>
 <span class="doccomment">//!</span>
 <span class="doccomment">//! The isolation level is Read Committed.</span>
 <span class="kw">use</span> <span class="kw">crate</span>::{
     <span class="ident">block::BSIZE</span>,
-    <span class="ident">cache</span>::{<span class="ident">CGuard</span>, <span class="ident">Cache</span>, <span class="ident">CacheData</span>},
+    <span class="ident">cache</span>::{<span class="ident">Cache</span>, <span class="ident">CacheData</span>, <span class="ident">CacheGuard</span>},
     <span class="ident">cache_impl</span>, <span class="ident">from_bytes</span>,
 };
+<span class="kw">use</span> <span class="ident">async_trait::async_trait_static</span>;
 <span class="kw">use</span> <span class="ident">intrusive_collections::intrusive_adapter</span>;
 <span class="kw">use</span> <span class="ident">intrusive_collections</span>::{<span class="ident">LinkedList</span>, <span class="ident">LinkedListLink</span>};
 
@@ -667,21 +666,18 @@
 }
 
 <span class="doccomment">/// The bio cache.</span>
+<span class="attribute">#[<span class="ident">async_trait_static</span>]</span>
 <span class="kw">impl</span> <span class="ident">Cache</span> <span class="kw">for</span> <span class="ident">Log</span> {
     <span class="macro">cache_impl!</span>(<span class="ident">usize</span>, <span class="ident">Box</span><span class="op">&lt;</span>[<span class="ident">u8</span>; <span class="ident">BSIZE</span>]<span class="op">&gt;</span>, <span class="ident">bio</span>);
 
-    <span class="kw">fn</span> <span class="ident">disk_read</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span>(<span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="self">self</span>, <span class="ident">key</span>: <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="self">Self</span><span class="ident">::Key</span>, <span class="ident">val</span>: <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="kw-2">mut</span> <span class="self">Self</span><span class="ident">::Value</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span><span class="ident">::ReadFut</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span> {
-        <span class="kw">async</span> <span class="kw">move</span> {
-            <span class="self">self</span>.<span class="ident">disk</span>.<span class="ident">read</span>(<span class="ident">val</span>.<span class="ident">as_mut</span>(), <span class="ident">key</span> <span class="op">*</span> <span class="ident">BSIZE</span>).<span class="kw">await</span><span class="question-mark">?</span>;
-            <span class="prelude-val">Ok</span>(())
-        }
+    <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">disk_read</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">key</span>: <span class="kw-2">&amp;</span><span class="self">Self</span><span class="ident">::Key</span>, <span class="ident">val</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">Self</span><span class="ident">::Value</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>()<span class="op">&gt;</span> {
+        <span class="self">self</span>.<span class="ident">disk</span>.<span class="ident">read</span>(<span class="ident">val</span>.<span class="ident">as_mut</span>(), <span class="ident">key</span> <span class="op">*</span> <span class="ident">BSIZE</span>).<span class="kw">await</span><span class="question-mark">?</span>;
+        <span class="prelude-val">Ok</span>(())
     }
 
-    <span class="kw">fn</span> <span class="ident">disk_write</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span>(<span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="self">self</span>, <span class="ident">key</span>: <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="self">Self</span><span class="ident">::Key</span>, <span class="ident">val</span>: <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="self">Self</span><span class="ident">::Value</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span><span class="ident">::WriteFut</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span> {
-        <span class="kw">async</span> <span class="kw">move</span> {
-            <span class="self">self</span>.<span class="ident">disk</span>.<span class="ident">write</span>(<span class="ident">val</span>.<span class="ident">as_ref</span>(), <span class="ident">key</span> <span class="op">*</span> <span class="ident">BSIZE</span>).<span class="kw">await</span><span class="question-mark">?</span>;
-            <span class="prelude-val">Ok</span>(())
-        }
+    <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">disk_write</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">key</span>: <span class="kw-2">&amp;</span><span class="self">Self</span><span class="ident">::Key</span>, <span class="ident">val</span>: <span class="kw-2">&amp;</span><span class="self">Self</span><span class="ident">::Value</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>()<span class="op">&gt;</span> {
+        <span class="self">self</span>.<span class="ident">disk</span>.<span class="ident">write</span>(<span class="ident">val</span>.<span class="ident">as_ref</span>(), <span class="ident">key</span> <span class="op">*</span> <span class="ident">BSIZE</span>).<span class="kw">await</span><span class="question-mark">?</span>;
+        <span class="prelude-val">Ok</span>(())
     }
 }
 
@@ -1017,7 +1013,7 @@
     <span class="doccomment">/// 1. Must use `cache_get` without flush to avoid emitting dirty blocks,</span>
     <span class="doccomment">///    which is handled by log.</span>
     <span class="doccomment">/// 2. Must use this function instead of `unlock`.</span>
-    <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">trace</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span>(<span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="self">self</span>, <span class="ident">buf</span>: <span class="ident">CGuard</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="self">Self</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">usize</span> {
+    <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">trace</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span>(<span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="self">self</span>, <span class="ident">buf</span>: <span class="ident">CacheGuard</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="self">Self</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">usize</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">new</span> <span class="op">=</span> <span class="number">0</span>;
         <span class="kw">if</span> <span class="ident">buf</span>.<span class="ident">is_dirty</span>() {
             <span class="kw">let</span> <span class="ident">key</span> <span class="op">=</span> <span class="ident">buf</span>.<span class="ident">key</span>().<span class="ident">try_into</span>().<span class="ident">unwrap</span>();

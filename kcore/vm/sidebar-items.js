@@ -1,1 +1,1 @@
-initSidebarItems({"enum":[["Segment","Segment."]],"struct":[["AddressSpace","Address space manager."],["Page","Physical page."],["SegmentInner","Inner data of a segment."]],"trait":[["PageTable","Page table."]]});
+initSidebarItems({"enum":[["VmFaultKind","Type of fault in the address space."]],"struct":[["VmObjectEntry",""],["VmObjectEntryAdapter",""],["VmSpace","Virtual memory address space."]],"trait":[["PageTable","Page table."]]});
