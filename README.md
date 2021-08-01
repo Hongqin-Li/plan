@@ -28,7 +28,9 @@ Platform-agnostic operating system building blocks in Rust, inspired by <a href=
   - [x] Test Mutex/Condvar/RwLock/mpsc
   - [ ] RT-Mutex
   - [ ] Online deadlock detection by wait-for graph: inspired by [parking-lot](https://github.com/Amanieu/parking_lot)
-- [x] Address space: inspired by [plan9](https://github.com/0intro/plan9)
+- [x] Address space: inspired by [UVM](https://www.netbsd.org/docs/kernel/uvm.html)
+  - [x] Basic mmap/munmap
+  - [ ] Pager daemon
 - [x] Namespace: inspired by [plan9](https://github.com/0intro/plan9)
 - [ ] File system and device driver
   - [x] O(1) generic LRU cache
@@ -36,6 +38,7 @@ Platform-agnostic operating system building blocks in Rust, inspired by <a href=
   - [x] Transaction-safe FAT32
   - [x] Root/block/pipe driver
   - [ ] Get directory entry
+  - [ ] Temporary file system
   - [ ] More FS
 
 ## Project structure

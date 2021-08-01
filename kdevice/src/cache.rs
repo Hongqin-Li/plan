@@ -20,7 +20,7 @@ use intrusive_collections::{LinkedList, LinkedListLink};
 
 /// Status of a cache entry.
 #[derive(PartialEq, Eq, Debug, Clone, Copy)]
-pub enum CState {
+pub enum CacheState {
     /// Initial value.
     Empty,
     /// Not yet read from disk.
@@ -32,7 +32,7 @@ pub enum CState {
 }
 
 /// Inner data of a cache node.
-struct CNodeInner<K, V> {
+struct CacheNodeInner<K, V> {
     /// Guarded by [`CacheData`].
     pub nref: usize,
     /// Guarded by [`CacheData`]. Immutable since get.
@@ -40,21 +40,21 @@ struct CNodeInner<K, V> {
 
     /// Lock guard.
     pub lock: Mutex<()>,
-    /// Guarded by [`CNodeInner::lock`].
-    pub state: CState,
-    /// Guarded by [`CNodeInner::lock`].
+    /// Guarded by [`CacheNodeInner::lock`].
+    pub state: CacheState,
+    /// Guarded by [`CacheNodeInner::lock`].
     pub val: V,
     /// Times being locked since referenced. Reset when there are no reference.
     /// This is useful for kind of STM, i.e. ensuring no one has mutated the entry
     /// since we have unlocked it.
     ///
-    /// Guarded by [`CNodeInner::lock`].
+    /// Guarded by [`CacheNodeInner::lock`].
     pub nlocks: usize,
 }
 
-impl<K: Debug, V: Debug> Debug for CNodeInner<K, V> {
+impl<K: Debug, V: Debug> Debug for CacheNodeInner<K, V> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("CNodeInner")
+        f.debug_struct("CacheNodeInner")
             .field("nref", &self.nref)
             .field("lock", &self.lock)
             .field("state", &self.state)
@@ -65,11 +65,11 @@ impl<K: Debug, V: Debug> Debug for CNodeInner<K, V> {
 }
 
 /// Pointer the a cache entry node.
-pub struct CNodePtr<K, V>(*const CNode<K, V>);
-impl<K, V> CNodePtr<K, V> {
+pub struct CacheNodePtr<K, V>(*const CacheNode<K, V>);
+impl<K, V> CacheNodePtr<K, V> {
     /// Retrieve node by address pointing to that node.
     pub unsafe fn from_addr(ptr: usize) -> Self {
-        Self(ptr as *const CNode<K, V>)
+        Self(ptr as *const CacheNode<K, V>)
     }
     /// Convert node pointer to address.
     pub fn to_addr(self) -> usize {
@@ -77,48 +77,48 @@ impl<K, V> CNodePtr<K, V> {
     }
 }
 
-impl<K, V> Copy for CNodePtr<K, V> {}
-impl<K, V> Clone for CNodePtr<K, V> {
+impl<K, V> Copy for CacheNodePtr<K, V> {}
+impl<K, V> Clone for CacheNodePtr<K, V> {
     fn clone(&self) -> Self {
         Self(self.0)
     }
 }
 
-impl<K, V> Deref for CNodePtr<K, V> {
-    type Target = CNode<K, V>;
+impl<K, V> Deref for CacheNodePtr<K, V> {
+    type Target = CacheNode<K, V>;
     fn deref(&self) -> &Self::Target {
         unsafe { self.0.as_ref().unwrap() }
     }
 }
 
-impl<K, V> Debug for CNodePtr<K, V> {
+impl<K, V> Debug for CacheNodePtr<K, V> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_tuple("CNodePtr").field(&self.0).finish()
+        f.debug_tuple("CacheNodePtr").field(&self.0).finish()
     }
 }
 
 /// Cache entry node.
-pub struct CNode<K, V> {
+pub struct CacheNode<K, V> {
     link: LinkedListLink,
     /// Unsafe inner data.
-    inner: UnsafeCell<CNodeInner<K, V>>,
+    inner: UnsafeCell<CacheNodeInner<K, V>>,
 }
 
-impl<K: Debug, V: Debug> Debug for CNode<K, V> {
+impl<K: Debug, V: Debug> Debug for CacheNode<K, V> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("CNode")
+        f.debug_struct("CacheNode")
             .field("link", &self.link)
             .field("inner", &self.inner)
             .finish()
     }
 }
 
-intrusive_adapter!(CNodeAdapter<K, V> = Box<CNode<K, V>>: CNode<K, V> { link: LinkedListLink });
+intrusive_adapter!(CacheNodeAdapter<K, V> = Box<CacheNode<K, V>>: CacheNode<K, V> { link: LinkedListLink });
 
 /// Inner data structure of the cache.
 pub struct CacheData<K, V> {
-    map: HashMap<K, CNodePtr<K, V>>,
-    lru: LinkedList<CNodeAdapter<K, V>>,
+    map: HashMap<K, CacheNodePtr<K, V>>,
+    lru: LinkedList<CacheNodeAdapter<K, V>>,
 }
 
 impl<K: Debug, V: Debug> Debug for CacheData<K, V> {
@@ -130,18 +130,13 @@ impl<K: Debug, V: Debug> Debug for CacheData<K, V> {
     }
 }
 
-/// Cache trait.
-pub trait Cache
-where
-    Self: Sized,
-{
-    /// Key type.
+#[allow(missing_docs)]
+#[async_trait::async_trait_static]
+pub trait Cache: Sized {
     type Key: Hash + Eq + Default + Copy + fmt::Debug;
-    /// Value type.
     type Value: fmt::Debug;
-
-    /// Function used to retrieve the cache.
-    fn cache_self<'a>(&'a self) -> &'a Spinlock<CacheData<Self::Key, Self::Value>>;
+    async fn disk_read(&self, key: &Self::Key, value: &mut Self::Value) -> Result<()>;
+    async fn disk_write(&self, key: &Self::Key, value: &Self::Value) -> Result<()>;
 
     /// Create a new cache with at most n in-memory cache entries.
     ///
@@ -153,16 +148,16 @@ where
         n: usize,
         default_val: impl Fn() -> Result<Self::Value>,
     ) -> Result<Spinlock<CacheData<Self::Key, Self::Value>>> {
-        let mut lru = LinkedList::new(CNodeAdapter::new());
+        let mut lru = LinkedList::new(CacheNodeAdapter::new());
         for _ in 0..n {
-            lru.push_back(Box::try_new(CNode {
+            lru.push_back(Box::try_new(CacheNode {
                 link: LinkedListLink::new(),
-                inner: UnsafeCell::new(CNodeInner {
+                inner: UnsafeCell::new(CacheNodeInner {
                     nref: 0,
                     key: Self::Key::default(),
                     val: default_val()?,
                     lock: Mutex::new(()),
-                    state: CState::Empty,
+                    state: CacheState::Empty,
                     nlocks: 0,
                 }),
             })?);
@@ -173,25 +168,16 @@ where
         }))
     }
 
-    /// Future returned by [`Self::disk_read`].
-    type ReadFut<'a>: Future<Output = Result<()>> + 'a
-    where
-        Self::Key: 'a,
-        Self::Value: 'a;
-    /// Async function to fetch data from disk, should be implemented by yourself.
-    fn disk_read<'a>(&'a self, key: &'a Self::Key, val: &'a mut Self::Value) -> Self::ReadFut<'a>;
+    /// Mark all dirty entry as invalid without synchronizing with disk. May cause inconsistency!
+    /// Donot implement it.
+    fn cache_invalidate<'a>(&'a self) {
+        cache_invalidate(self);
+    }
 
-    /// Future returned by [`Self::disk_write`].
-    type WriteFut<'a>: Future<Output = Result<()>> + 'a
-    where
-        Self::Key: 'a,
-        Self::Value: 'a;
+    /// Function used to retrieve the cache.
+    fn cache_self<'a>(&'a self) -> &'a Spinlock<CacheData<Self::Key, Self::Value>>;
 
-    /// Async function to flush data to disk, should be implemented by yourself.
-    fn disk_write<'a>(&'a self, key: &'a Self::Key, val: &'a Self::Value) -> Self::WriteFut<'a>;
-
-    /// Future returned by [`Self::cache_get`].
-    type GetFut<'a>: Future<Output = Result<Option<CEntry<'a, Self>>>> + 'a
+    type GetFut<'a>
     where
         Self: 'a,
         Self::Key: 'a,
@@ -202,10 +188,6 @@ where
     /// If cannot reserve cache entry, returns [None].
     /// Donot implement it. Instead, injected to the trait implementation by [`super::cache_impl`].
     fn cache_get<'a>(&'a self, key: Self::Key, flush: bool) -> Self::GetFut<'a>;
-
-    /// Mark all dirty entry as invalid without synchronizing with disk. May cause inconsistency!
-    /// Donot implement it. Instead, injected to the trait implementation by [`super::cache_impl`].
-    fn cache_invalidate<'a>(&'a self);
 }
 
 /// Macro to automatically inject implementations.
@@ -219,36 +201,17 @@ macro_rules! cache_impl {
             &self.$field
         }
 
-        type ReadFut<'a>
-        where
-            Self::Key: 'a,
-            Self::Value: 'a,
-        = impl core::future::Future<Output = kcore::error::Result<()>> + 'a;
-
-        type WriteFut<'a>
-        where
-            Self::Key: 'a,
-            Self::Value: 'a,
-        = impl core::future::Future<Output = kcore::error::Result<()>> + 'a;
-
         type GetFut<'a>
         where
             Self: 'a,
             Self::Key: 'a,
             Self::Value: 'a,
         = impl core::future::Future<
-            Output = kcore::error::Result<Option<$crate::cache::CEntry<'a, Self>>>,
+            Output = kcore::error::Result<Option<$crate::cache::CacheEntry<'a, Self>>>,
         >;
 
-        fn cache_get<'a>(&'a self, key: Self::Key, flush: bool) -> Self::GetFut<'a>
-        where
-            Self::Key: core::hash::Hash + Eq + Copy,
-        {
+        fn cache_get<'a>(&'a self, key: Self::Key, flush: bool) -> Self::GetFut<'a> {
             $crate::cache::cache_get(self, key, flush)
-        }
-
-        fn cache_invalidate<'a>(&'a self) {
-            $crate::cache::cache_invalidate(self);
         }
     };
 }
@@ -261,7 +224,7 @@ fn cache_get1<T: Cache>(
     sel: &T,
     key: T::Key,
     flush: bool,
-) -> Result<Option<(bool, CNodePtr<T::Key, T::Value>)>> {
+) -> Result<Option<(bool, CacheNodePtr<T::Key, T::Value>)>> {
     let mut g = sel.cache_self().lock();
 
     let CacheData {
@@ -274,7 +237,7 @@ fn cache_get1<T: Cache>(
         let node = cur.remove().unwrap();
         let u = unsafe { node.inner.get().as_mut().unwrap() };
         u.nref += 1;
-        debug_assert_ne!(u.state, CState::Empty);
+        debug_assert_ne!(u.state, CacheState::Empty);
 
         lru.push_back(node);
 
@@ -285,9 +248,9 @@ fn cache_get1<T: Cache>(
     while let Some(u) = cur.get() {
         let inner = unsafe { u.inner.get().as_mut().unwrap() };
         if inner.nref == 0 {
-            let ptr = CNodePtr(u as *const CNode<T::Key, T::Value>);
+            let ptr = CacheNodePtr(u as *const CacheNode<T::Key, T::Value>);
 
-            if inner.state == CState::Dirty {
+            if inner.state == CacheState::Dirty {
                 if flush {
                     inner.nref += 1;
 
@@ -299,7 +262,7 @@ fn cache_get1<T: Cache>(
                 }
             } else {
                 map_insert(map, key, ptr.clone())?;
-                if inner.state != CState::Empty {
+                if inner.state != CacheState::Empty {
                     debug_assert_eq!(map.get(&inner.key).unwrap().0, ptr.0);
                     map.remove(&inner.key);
                 }
@@ -311,7 +274,7 @@ fn cache_get1<T: Cache>(
                 // Since anyone who want to access inner.state after this point
                 // should first acquire g, which must be after `drop(g)`. Thus,
                 // no need for memory fence here.
-                inner.state = CState::Invalid;
+                inner.state = CacheState::Invalid;
                 inner.nlocks = 0;
                 drop(g);
                 return Ok(Some((false, ptr)));
@@ -327,16 +290,16 @@ pub async fn cache_get<'a, T: Cache>(
     sel: &'a T,
     key: T::Key,
     flush: bool,
-) -> Result<Option<CEntry<'a, T>>> {
+) -> Result<Option<CacheEntry<'a, T>>> {
     loop {
         if let Some((dirty, ptr)) = cache_get1(sel, key, flush)? {
             if !dirty {
-                break Ok(Some(CEntry { cache: sel, ptr }));
+                break Ok(Some(CacheEntry { cache: sel, ptr }));
             } else {
                 let inner = unsafe { (*ptr).inner.get().as_mut().unwrap() };
                 let result = sel.disk_write(&inner.key, &inner.val).await;
                 if result.is_ok() {
-                    inner.state = CState::Valid;
+                    inner.state = CacheState::Valid;
                 }
                 inner.lock.release();
                 // Don't move to back of LRU since it's likely to be replaced soon.
@@ -357,8 +320,8 @@ pub fn cache_invalidate<T: Cache>(sel: &T) {
     let mut cur = g.lru.front_mut();
     while let Some(u) = cur.get() {
         let inner = unsafe { u.inner.get().as_mut().unwrap() };
-        if inner.nref == 0 && inner.state == CState::Dirty {
-            inner.state = CState::Invalid;
+        if inner.nref == 0 && inner.state == CacheState::Dirty {
+            inner.state = CacheState::Invalid;
         }
         cur.move_next();
     }
@@ -376,7 +339,7 @@ pub fn cache_stat<T: Cache>(sel: &T) -> (usize, usize) {
             #[cfg(test)]
             println!("cache_stat: referred {:?}, nref {}", inner.key, inner.nref);
         }
-        if inner.state == CState::Dirty {
+        if inner.state == CacheState::Dirty {
             dirty += 1;
         }
         cur.move_next();
@@ -387,28 +350,22 @@ pub fn cache_stat<T: Cache>(sel: &T) -> (usize, usize) {
 
 /// Representing a client of a cache entry.
 ///
-/// There may be several [`CEntry`] that refer to the same cache entry (i.e. same key) at a time.
+/// There may be several [`CacheEntry`] that refer to the same cache entry (i.e. same key) at a time.
 /// Therefore, [`Cache`] maintains reference counter for each in-memory cache entry. If the
 /// reference couter is not zero, it cannot be replace by another cache entyr. Once the the counter
 /// decreases to zero, it will be moved to the back of LRU and can be flushed to disk when replaced
 /// by another cache entry.
-pub struct CEntry<'a, T>
-where
-    T: Cache,
-{
+pub struct CacheEntry<'a, T: Cache> {
     cache: &'a T,
-    ptr: CNodePtr<T::Key, T::Value>,
+    ptr: CacheNodePtr<T::Key, T::Value>,
 }
 
-impl<'a, T> Drop for CEntry<'a, T>
-where
-    T: Cache,
-{
+impl<'a, T: Cache> Drop for CacheEntry<'a, T> {
     fn drop(&mut self) {
         let inner = unsafe { (*self.ptr.0).inner.get().as_mut().unwrap() };
         let g = self.cache.cache_self().lock();
         debug_assert_ne!(inner.nref, 0);
-        debug_assert_ne!(inner.state, CState::Empty);
+        debug_assert_ne!(inner.state, CacheState::Empty);
         // SAFETY: nref is guarded by cache.inner.
         inner.nref -= 1;
 
@@ -418,33 +375,30 @@ where
     }
 }
 
-impl<'a, T> CEntry<'a, T>
-where
-    T: Cache,
-{
+impl<'a, T: Cache> CacheEntry<'a, T> {
     /// Lock and read the cache entry.
-    pub async fn lock(&'a self) -> Result<CGuard<'a, T>> {
+    pub async fn lock(&'a self) -> Result<CacheGuard<'a, T>> {
         let inner = unsafe { (*self.ptr.0).inner.get().as_mut().unwrap() };
 
         inner.lock.acquire().await;
         debug_assert_ne!(inner.nref, 0);
-        debug_assert_ne!(inner.state, CState::Empty);
+        debug_assert_ne!(inner.state, CacheState::Empty);
         inner.nlocks += 1;
 
-        if inner.state == CState::Invalid {
+        if inner.state == CacheState::Invalid {
             // Read from disk.
             let result = self.cache.disk_read(&inner.key, &mut inner.val).await;
             if let Err(e) = result {
                 inner.lock.release();
                 return Err(e);
             }
-            inner.state = CState::Valid;
+            inner.state = CacheState::Valid;
         }
-        Ok(CGuard(self))
+        Ok(CacheGuard(self))
     }
 
     /// Get pointer to this cache entry.
-    pub fn leak(self) -> CNodePtr<T::Key, T::Value> {
+    pub fn leak(self) -> CacheNodePtr<T::Key, T::Value> {
         let p = self.ptr;
         mem::forget(self);
         p
@@ -471,26 +425,21 @@ where
     }
 
     /// Restore the cache entry from a node pointer. Useful for non-RAII operations.
-    pub unsafe fn from_ptr(cache: &'a T, ptr: CNodePtr<T::Key, T::Value>) -> Self {
+    pub unsafe fn from_ptr(cache: &'a T, ptr: CacheNodePtr<T::Key, T::Value>) -> Self {
         Self { cache, ptr }
     }
 }
 
 /// Guard representing the unique ownership of a cache entry.
-pub struct CGuard<'a, T>(&'a CEntry<'a, T>)
-where
-    T: Cache;
+pub struct CacheGuard<'a, T: Cache>(&'a CacheEntry<'a, T>);
 
-impl<'a, T> CGuard<'a, T>
-where
-    T: Cache,
-{
+impl<'a, T: Cache> CacheGuard<'a, T> {
     /// Check if the buffer is dirty.
     pub fn is_dirty(&self) -> bool {
         let inner = unsafe { (*self.0.ptr).inner.get().as_mut().unwrap() };
         debug_assert_eq!(inner.lock.try_lock().is_none(), true);
 
-        inner.state == CState::Dirty
+        inner.state == CacheState::Dirty
     }
 
     /// Return the key of this cache entry.
@@ -520,7 +469,7 @@ where
         debug_assert_eq!(inner.lock.try_lock().is_none(), true);
 
         if flush {
-            if inner.state == CState::Dirty {
+            if inner.state == CacheState::Dirty {
                 // Flush to disk.
                 let result = self.0.cache.disk_write(&inner.key, &inner.val).await;
                 if let Err(e) = result {
@@ -528,7 +477,7 @@ where
                     mem::forget(self);
                     return Err(e);
                 }
-                inner.state = CState::Valid;
+                inner.state = CacheState::Valid;
             }
         }
         inner.lock.release();
@@ -538,54 +487,42 @@ where
     }
 }
 
-impl<T> Deref for CGuard<'_, T>
-where
-    T: Cache,
-{
+impl<T: Cache> Deref for CacheGuard<'_, T> {
     type Target = T::Value;
     fn deref(&self) -> &Self::Target {
         let inner = unsafe { (*self.0.ptr).inner.get().as_ref().unwrap() };
 
         debug_assert_eq!(inner.lock.try_lock().is_none(), true);
-        debug_assert_ne!(inner.state, CState::Empty);
-        debug_assert_ne!(inner.state, CState::Invalid);
+        debug_assert_ne!(inner.state, CacheState::Empty);
+        debug_assert_ne!(inner.state, CacheState::Invalid);
 
         &inner.val
     }
 }
 
-impl<T> DerefMut for CGuard<'_, T>
-where
-    T: Cache,
-{
+impl<T: Cache> DerefMut for CacheGuard<'_, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         let inner = unsafe { (*self.0.ptr.0).inner.get().as_mut().unwrap() };
 
         debug_assert_eq!(inner.lock.try_lock().is_none(), true);
-        debug_assert_ne!(inner.state, CState::Empty);
-        debug_assert_ne!(inner.state, CState::Invalid);
+        debug_assert_ne!(inner.state, CacheState::Empty);
+        debug_assert_ne!(inner.state, CacheState::Invalid);
 
-        inner.state = CState::Dirty;
+        inner.state = CacheState::Dirty;
         &mut inner.val
     }
 }
 
-impl<T> Drop for CGuard<'_, T>
-where
-    T: Cache,
-{
+impl<T: Cache> Drop for CacheGuard<'_, T> {
     fn drop(&mut self) {
         panic!("forget to unlock");
     }
 }
 
-impl<T> fmt::Debug for CGuard<'_, T>
-where
-    T: Cache,
-{
+impl<T: Cache> fmt::Debug for CacheGuard<'_, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let inner = unsafe { (*self.0.ptr.0).inner.get().as_mut().unwrap() };
-        f.debug_tuple("CGuard")
+        f.debug_tuple("CacheGuard")
             .field(&inner.state)
             .field(&inner.key)
             .field(&inner.val)
@@ -593,8 +530,8 @@ where
     }
 }
 
-unsafe impl<K: Send, V: Send> Send for CNodePtr<K, V> {}
-unsafe impl<K: Sync, V: Sync> Sync for CNodePtr<K, V> {}
+unsafe impl<K: Send, V: Send> Send for CacheNodePtr<K, V> {}
+unsafe impl<K: Sync, V: Sync> Sync for CacheNodePtr<K, V> {}
 
 #[cfg(test)]
 mod tests {
@@ -620,32 +557,21 @@ mod tests {
         }
     }
 
+    #[async_trait::async_trait_static]
     impl<const CACHESZ: usize, const DISKSZ: usize> Cache for MyCache<CACHESZ, DISKSZ> {
         cache_impl!(usize, u32, cache);
 
-        fn disk_read<'a>(
-            &'a self,
-            key: &'a Self::Key,
-            val: &'a mut Self::Value,
-        ) -> Self::ReadFut<'a> {
-            async move {
-                let g = self.disk.lock().await;
-                *val = g[key.clone()];
-                Ok(())
-            }
+        async fn disk_read(&self, key: &Self::Key, val: &mut Self::Value) -> Result<()> {
+            let g = self.disk.lock().await;
+            *val = g[key.clone()];
+            Ok(())
         }
 
-        fn disk_write<'a>(
-            &'a self,
-            key: &'a Self::Key,
-            val: &'a Self::Value,
-        ) -> Self::WriteFut<'a> {
-            async move {
-                let key: usize = key.clone().into();
-                let mut g = self.disk.lock().await;
-                g[key] = *val;
-                Ok(())
-            }
+        async fn disk_write(&self, key: &Self::Key, val: &Self::Value) -> Result<()> {
+            let key: usize = key.clone().into();
+            let mut g = self.disk.lock().await;
+            g[key] = *val;
+            Ok(())
         }
     }
 

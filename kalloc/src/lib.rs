@@ -6,6 +6,7 @@
 #![feature(dropck_eyepatch)]
 #![feature(try_reserve)]
 #![feature(const_fn_trait_bound)]
+#![feature(const_generics)]
 
 // So that we can use std when testing.
 #[cfg(test)]
@@ -18,6 +19,7 @@ mod rawlist;
 
 pub mod buddy;
 pub mod cached;
+pub mod guard;
 pub mod list;
 pub mod vecque;
 pub mod wrapper;

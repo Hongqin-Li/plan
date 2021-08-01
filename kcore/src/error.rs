@@ -28,6 +28,8 @@ pub enum Error {
     InsufficientStorage(&'static str),
     /// When feature not yet implemented.
     NotImplemented(&'static str),
+    /// When page fault triggered at invalid virtual address.
+    SegmentFault,
 }
 
 /// Sugar of error.
@@ -38,6 +40,7 @@ impl From<AllocError> for Error {
         Error::OutOfMemory("alloc error")
     }
 }
+
 impl From<TryReserveError> for Error {
     fn from(x: TryReserveError) -> Self {
         Error::OutOfMemory("try reserve error")

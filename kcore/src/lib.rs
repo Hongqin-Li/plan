@@ -18,6 +18,11 @@
 #![feature(const_fn_fn_ptr_basics)]
 #![feature(const_mut_refs)]
 #![feature(const_fn_trait_bound)]
+#![feature(bool_to_option)]
+#![feature(option_result_unwrap_unchecked)]
+#![feature(const_evaluatable_checked)]
+#![feature(const_generics)]
+#![feature(slice_ptr_get)]
 
 extern crate alloc;
 

@@ -17,14 +17,14 @@ use super::fname::{
 };
 use crate::{
     block::BSIZE,
-    cache::{CEntry, CGuard, CNodePtr, Cache, CacheData},
+    cache::{Cache, CacheData, CacheEntry, CacheGuard, CacheNodePtr},
     cache_impl,
     fat::fname::checksum,
     from_bytes,
     log::{Log, LOGMAGIC, LOGSIZE},
 };
-
 use alloc::{sync::Arc, vec::Vec};
+use async_trait::async_trait_static;
 use kalloc::wrapper::vec_push;
 use kcore::{
     chan::{Chan, Dirent},
@@ -63,7 +63,7 @@ macro_rules! rwinode {
             let cno = $ip.addr.get(ci).ok_or(Error::InternalError("fatrw"))?;
             let disk_si = $sel.meta.data_off + (*cno as usize - 2) * spc + si;
 
-            let b: CEntry<'a, Log> = $sel.log.cache_get(disk_si, false).await?.unwrap();
+            let b: CacheEntry<'a, Log> = $sel.log.cache_get(disk_si, false).await?.unwrap();
             let mut g = b.lock().await?;
             $fn($buf, &mut g, i - $off, soff, n);
             $sel.log.trace(g).await;
@@ -137,26 +137,21 @@ impl InodeKey {
     }
 }
 
-type InodePtr<'a, T> = ManuallyDrop<CEntry<'a, T>>;
+type InodePtr<'a, T> = ManuallyDrop<CacheEntry<'a, T>>;
 
 /// The inode cache.
+#[async_trait_static]
 impl Cache for FAT {
     cache_impl!(InodeKey, Inode, icache);
 
-    fn disk_read<'a>(
-        &'a self,
-        _key: &'a Self::Key,
-        inode: &'a mut Self::Value,
-    ) -> Self::ReadFut<'a> {
-        async move {
-            inode.addr = Vec::new();
-            inode.nlink = 1;
-            Ok(())
-        }
+    async fn disk_read(&self, _key: &Self::Key, inode: &mut Self::Value) -> Result<()> {
+        inode.addr = Vec::new();
+        inode.nlink = 1;
+        Ok(())
     }
 
-    fn disk_write<'a>(&'a self, _key: &'a Self::Key, _ip: &'a Self::Value) -> Self::WriteFut<'a> {
-        async move { Ok(()) }
+    async fn disk_write(&self, _key: &Self::Key, _ip: &Self::Value) -> Result<()> {
+        Ok(())
     }
 }
 
@@ -277,7 +272,7 @@ impl FAT {
     /// Convert qid to inode pointer.
     pub fn to_inode<'a>(&'a self, path: u64) -> InodePtr<'a, Self> {
         let addr: usize = path.try_into().unwrap();
-        let ent = unsafe { CEntry::from_ptr(self, CNodePtr::from_addr(addr)) };
+        let ent = unsafe { CacheEntry::from_ptr(self, CacheNodePtr::from_addr(addr)) };
         ManuallyDrop::new(ent)
     }
     /// Convert inode pointer to unique path id.
@@ -333,7 +328,7 @@ impl FAT {
         let offb_fat = cno as usize * 4;
         let offs_disk = self.meta.fat_off + offb_fat / self.meta.bps;
         let offb_insect = offb_fat % self.meta.bps;
-        let buf: CEntry<'a, Log> = self.log.cache_get(offs_disk, false).await?.unwrap();
+        let buf: CacheEntry<'a, Log> = self.log.cache_get(offs_disk, false).await?.unwrap();
         let mut g = buf.lock().await?;
         // FIXME: validate?
         let old = from_bytes!(u32, g[offb_insect..(offb_insect + 4)]) & FAT_MASK;
@@ -353,7 +348,7 @@ impl FAT {
         let (mut i, mut j) = (0, self.meta.fat_off);
         let mut head: u32 = FAT_END;
         while i < self.meta.data_clust + 2 {
-            let buf: CEntry<'a, Log> = self.log.cache_get(j, false).await?.unwrap();
+            let buf: CacheEntry<'a, Log> = self.log.cache_get(j, false).await?.unwrap();
             let mut g = buf.lock().await?;
             for bi in (0..self.meta.bps).step_by(4) {
                 let ent = from_bytes!(u32, g[bi..(bi + 4)]);
@@ -385,7 +380,7 @@ impl FAT {
     /// 3. A plain file or empty directory.
     ///
     /// Modify at most 2 blocks.
-    pub async fn removei<'a>(&'a self, ip: &'a CGuard<'a, Self>) -> Result<()> {
+    pub async fn removei<'a>(&'a self, ip: &'a CacheGuard<'a, Self>) -> Result<()> {
         // First, mark SFN as unused.
         let buf = self
             .log
@@ -404,7 +399,7 @@ impl FAT {
     }
 
     /// Get the meta information of this file.
-    pub async fn stati<'a>(&'a self, ip: &'a CGuard<'a, Self>) -> Result<Dirent> {
+    pub async fn stati<'a>(&'a self, ip: &'a CacheGuard<'a, Self>) -> Result<Dirent> {
         if ip.key().doff == 0 {
             return Ok(Dirent {
                 len: 0,
@@ -430,7 +425,7 @@ impl FAT {
     }
 
     /// Extend the addr pointers.
-    pub async fn extend<'a>(&'a self, ip: &mut CGuard<'a, Self>) -> Result<()> {
+    pub async fn extend<'a>(&'a self, ip: &mut CacheGuard<'a, Self>) -> Result<()> {
         let bpc = self.meta.bps * self.meta.spc;
         let mut cno = ip.key().cno;
         if let Some(x) = ip.addr.last() {
@@ -457,7 +452,7 @@ impl FAT {
     /// Return the new size. For directory, the old size is always a multiple of byte-per-cluster.
     pub async fn resize<'a>(
         &'a self,
-        ip: &mut CGuard<'a, Self>,
+        ip: &mut CacheGuard<'a, Self>,
         f: impl FnOnce(u32) -> u32,
     ) -> Result<u32> {
         let bps = self.meta.bps;
@@ -475,7 +470,7 @@ impl FAT {
             let old: u32 = (ip.addr.len() * bpc) as u32;
             (old, f(old))
         } else {
-            let b: CEntry<'a, Log> = self
+            let b: CacheEntry<'a, Log> = self
                 .log
                 .cache_get(ip.key().doff / bps, false)
                 .await?
@@ -514,12 +509,18 @@ impl FAT {
     /// Read data from inode.
     pub async fn readi<'a>(
         &'a self,
-        ip: &mut CGuard<'a, Self>,
+        ip: &mut CacheGuard<'a, Self>,
         buf: &mut [u8],
         off: usize,
     ) -> Result<usize> {
         #[inline]
-        fn trans(to: &mut [u8], from: &CGuard<'_, Log>, to_off: usize, from_off: usize, n: usize) {
+        fn trans(
+            to: &mut [u8],
+            from: &CacheGuard<'_, Log>,
+            to_off: usize,
+            from_off: usize,
+            n: usize,
+        ) {
             to[to_off..(to_off + n)].copy_from_slice(&from[from_off..(from_off + n)]);
         }
         rwinode!(self, ip, buf, off, trans)
@@ -528,12 +529,18 @@ impl FAT {
     /// Write data to inode.
     pub async fn writei<'a>(
         &'a self,
-        ip: &mut CGuard<'a, Self>,
+        ip: &mut CacheGuard<'a, Self>,
         buf: &[u8],
         off: usize,
     ) -> Result<usize> {
         #[inline]
-        fn trans(from: &[u8], to: &mut CGuard<'_, Log>, from_off: usize, to_off: usize, n: usize) {
+        fn trans(
+            from: &[u8],
+            to: &mut CacheGuard<'_, Log>,
+            from_off: usize,
+            to_off: usize,
+            n: usize,
+        ) {
             to[to_off..(to_off + n)].copy_from_slice(&from[from_off..(from_off + n)]);
         }
         rwinode!(self, ip, buf, off, trans)
@@ -543,7 +550,7 @@ impl FAT {
     /// Return a referenced inode.
     pub async fn dirlookup<'a>(
         &'a self,
-        dp: &CGuard<'a, Self>,
+        dp: &CacheGuard<'a, Self>,
         name: &[u8],
     ) -> Result<Option<InodeKey>> {
         let fname = Filename::try_from(name)?;
@@ -595,7 +602,7 @@ impl FAT {
     /// Return inode if the link succeed. Return None if entry with the same name already exist.
     pub async fn dirlink<'a>(
         &'a self,
-        dp: &mut CGuard<'a, Self>,
+        dp: &mut CacheGuard<'a, Self>,
         name: &[u8],
         cno: Option<u32>,
         dir: bool,
@@ -761,7 +768,7 @@ impl FAT {
     }
 
     /// Check if directory is empty.
-    pub async fn dirempty<'a>(&'a self, dp: &'a CGuard<'a, Self>) -> Result<bool> {
+    pub async fn dirempty<'a>(&'a self, dp: &'a CacheGuard<'a, Self>) -> Result<bool> {
         let mut iter = DirIter::new(self, dp).await?;
         // Skip the first two '.' and '..'.
         while let Some(ent) = iter.next(0).await? {
@@ -773,7 +780,7 @@ impl FAT {
     }
 
     #[cfg(test)]
-    pub async fn dirstat<'a>(&'a self, dp: &'a CGuard<'a, Self>, print: bool) -> Vec<Vec<u16>> {
+    pub async fn dirstat<'a>(&'a self, dp: &'a CacheGuard<'a, Self>, print: bool) -> Vec<Vec<u16>> {
         let mut names = Vec::new();
 
         let mut iter = DirIter::new(self, &dp).await.unwrap();
@@ -790,7 +797,7 @@ impl FAT {
 }
 
 struct SectItem<'a> {
-    buf: CEntry<'a, Log>,
+    buf: CacheEntry<'a, Log>,
 
     file_secti: usize,
     /// Disk offset in sectors.
@@ -876,7 +883,7 @@ struct DirIter<'a> {
 }
 
 impl<'a> DirIter<'a> {
-    async fn new(fs: &'a FAT, dp: &'a CGuard<'a, FAT>) -> Result<DirIter<'a>> {
+    async fn new(fs: &'a FAT, dp: &'a CacheGuard<'a, FAT>) -> Result<DirIter<'a>> {
         let mut siter = SectIter::new(fs, dp.key().cno);
         let sitem = siter
             .next()

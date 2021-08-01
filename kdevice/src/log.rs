@@ -3,9 +3,10 @@
 //! The isolation level is Read Committed.
 use crate::{
     block::BSIZE,
-    cache::{CGuard, Cache, CacheData},
+    cache::{Cache, CacheData, CacheGuard},
     cache_impl, from_bytes,
 };
+use async_trait::async_trait_static;
 use intrusive_collections::intrusive_adapter;
 use intrusive_collections::{LinkedList, LinkedListLink};
 
@@ -93,21 +94,18 @@ pub struct Log {
 }
 
 /// The bio cache.
+#[async_trait_static]
 impl Cache for Log {
     cache_impl!(usize, Box<[u8; BSIZE]>, bio);
 
-    fn disk_read<'a>(&'a self, key: &'a Self::Key, val: &'a mut Self::Value) -> Self::ReadFut<'a> {
-        async move {
-            self.disk.read(val.as_mut(), key * BSIZE).await?;
-            Ok(())
-        }
+    async fn disk_read(&self, key: &Self::Key, val: &mut Self::Value) -> Result<()> {
+        self.disk.read(val.as_mut(), key * BSIZE).await?;
+        Ok(())
     }
 
-    fn disk_write<'a>(&'a self, key: &'a Self::Key, val: &'a Self::Value) -> Self::WriteFut<'a> {
-        async move {
-            self.disk.write(val.as_ref(), key * BSIZE).await?;
-            Ok(())
-        }
+    async fn disk_write(&self, key: &Self::Key, val: &Self::Value) -> Result<()> {
+        self.disk.write(val.as_ref(), key * BSIZE).await?;
+        Ok(())
     }
 }
 
@@ -443,7 +441,7 @@ impl Log {
     /// 1. Must use `cache_get` without flush to avoid emitting dirty blocks,
     ///    which is handled by log.
     /// 2. Must use this function instead of `unlock`.
-    pub async fn trace<'a>(&'a self, buf: CGuard<'a, Self>) -> usize {
+    pub async fn trace<'a>(&'a self, buf: CacheGuard<'a, Self>) -> usize {
         let mut new = 0;
         if buf.is_dirty() {
             let key = buf.key().try_into().unwrap();

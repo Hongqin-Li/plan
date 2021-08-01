@@ -1,20 +1,19 @@
 //! Channel and mount space.
 
-use alloc::sync::Weak;
-use alloc::vec::Vec;
-use core::hint::unreachable_unchecked;
-use core::{cmp::min, convert::TryFrom, fmt::Debug, iter, mem::MaybeUninit, str};
+use crate::{
+    dev::Device,
+    error::{Error, Result},
+    vm::VmObject,
+};
+use alloc::{
+    sync::{Arc, Weak},
+    vec::Vec,
+};
+use core::{convert::TryFrom, fmt::Debug, iter, mem::MaybeUninit, str};
 use kalloc::wrapper::vec_push;
 use ksched::{
     sync::{Mutex, RwLock},
     task::yield_now,
-};
-
-use alloc::sync::Arc;
-
-use crate::{
-    dev::Device,
-    error::{Error, Result},
 };
 
 /// File type.
@@ -87,15 +86,6 @@ pub struct ChanKey {
 }
 
 impl ChanKey {
-    /// Create a new chan key.
-    pub fn new(dev: Arc<dyn Device + Send + Sync>, devid: usize, id: ChanId) -> Self {
-        Self {
-            dev,
-            id,
-            dropped: false,
-        }
-    }
-
     async fn dup(&self) -> Result<ChanKey> {
         self.dev.open(&self.id, b"", None)?.await?.map_or(
             Err(Error::Gone("failed to rekey")),
@@ -152,6 +142,9 @@ pub struct Chan {
     umnt: RwLock<Vec<ChanKey>>,
     /// The weak pointer must be able to upgrade.
     child: Mutex<Vec<Weak<Chan>>>,
+
+    /// Managing all memory mapped pages from this chan.
+    pub(crate) vmobj: VmObject,
 }
 
 impl Chan {
@@ -169,7 +162,7 @@ impl Chan {
             id,
             dropped: false,
         };
-        Ok(unsafe { Self::from_key(key, a) })
+        Ok(unsafe { Self::new1(key, None, a) })
     }
 
     /// Get the absolute path string of this chan.
@@ -199,16 +192,21 @@ impl Chan {
     pub async fn new(chan: &Arc<Chan>) -> Result<Arc<Self>> {
         let a = Arc::<Chan>::try_new_uninit()?;
         let key = chan.key.dup().await?;
-        Ok(unsafe { Self::from_key(key, a) })
+        Ok(unsafe { Self::new1(key, None, a) })
     }
 
-    unsafe fn from_key(key: ChanKey, mut a: Arc<MaybeUninit<Chan>>) -> Arc<Self> {
+    unsafe fn new1(
+        key: ChanKey,
+        parent: Option<Arc<Chan>>,
+        mut a: Arc<MaybeUninit<Chan>>,
+    ) -> Arc<Self> {
         Arc::get_mut_unchecked(&mut a).as_mut_ptr().write(Self {
-            parent: None,
+            parent,
             umnt: RwLock::new(Vec::new()),
             child: Mutex::new(Vec::new()),
             key,
             name: Vec::new(),
+            vmobj: VmObject::new(),
         });
         a.assume_init()
     }
@@ -299,7 +297,7 @@ impl Chan {
             vec_push(&mut names, *x)?;
         }
         child.try_reserve(1)?;
-        let mut a = Arc::<Self>::try_new_uninit()?;
+        let a = Arc::<Self>::try_new_uninit()?;
 
         let mut some_chan = None;
         let g = self.umnt.read().await;
@@ -307,18 +305,15 @@ impl Chan {
             debug_assert_eq!(key.id.kind, ChanKind::Dir);
             if let Some(id) = key.dev.open(&key.id, name, create_dir)?.await? {
                 let u = unsafe {
-                    Arc::get_mut_unchecked(&mut a).as_mut_ptr().write(Self {
-                        parent: Some(self.clone()),
-                        umnt: RwLock::new(Vec::new()),
-                        child: Mutex::new(Vec::new()),
-                        key: ChanKey {
+                    Self::new1(
+                        ChanKey {
                             dev: key.dev.clone(),
                             id,
                             dropped: false,
                         },
-                        name: names,
-                    });
-                    a.assume_init()
+                        Some(self.clone()),
+                        a,
+                    )
                 };
                 some_chan = Some(u);
                 break;
