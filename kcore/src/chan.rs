@@ -3,13 +3,13 @@
 use crate::{
     dev::Device,
     error::{Error, Result},
-    vm::VmObject,
 };
 use alloc::{
+    string::String,
     sync::{Arc, Weak},
     vec::Vec,
 };
-use core::{convert::TryFrom, fmt::Debug, iter, mem::MaybeUninit, str};
+use core::{convert::TryFrom, fmt::Debug, iter, mem::MaybeUninit, ops::Deref, str};
 use kalloc::wrapper::vec_push;
 use ksched::{
     sync::{Mutex, RwLock},
@@ -86,17 +86,16 @@ pub struct ChanKey {
 }
 
 impl ChanKey {
+    pub fn new(dev: Arc<dyn Device + Send + Sync>, id: ChanId) -> Self {
+        let dropped = false;
+        Self { dev, id, dropped }
+    }
+
     async fn dup(&self) -> Result<ChanKey> {
-        self.dev.open(&self.id, b"", None)?.await?.map_or(
-            Err(Error::Gone("failed to rekey")),
-            |id| {
-                Ok(ChanKey {
-                    dev: self.dev.clone(),
-                    id,
-                    dropped: false,
-                })
-            },
-        )
+        match self.dev.open(&self.id, b"", None)?.await? {
+            None => Err(Error::Gone("unexpected return value from reopen")),
+            Some(id) => Ok(ChanKey::new(self.dev.clone(), id)),
+        }
     }
 
     /// FIXME: pre-allocate the future on creation.
@@ -112,6 +111,15 @@ impl ChanKey {
     }
 }
 
+impl Drop for ChanKey {
+    /// Use [`Self::close`] instead, since Rust doesn't support async drop.
+    ///
+    /// FIXME: How to statically assert some function is unreachable?
+    fn drop(&mut self) {
+        debug_assert!(self.dropped, "forgot to close: {:?}", self);
+    }
+}
+
 impl Debug for ChanKey {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("ChanKey")
@@ -121,146 +129,125 @@ impl Debug for ChanKey {
     }
 }
 
-impl Drop for ChanKey {
-    /// Use [`Self::close`] instead, since Rust doesn't support async drop.
-    ///
-    /// FIXME: How to statically assert some function is unreachable?
-    fn drop(&mut self) {
-        assert!(self.dropped, "forgot to close: {:?}", self);
-    }
-}
-
 /// Channel represents a virtual file from kernel's perspective.
 #[derive(Debug)]
-pub struct Chan {
+pub struct ChanInner {
     key: ChanKey,
-    parent: Option<Arc<Chan>>,
-    name: Vec<u8>,
+    parent: Option<Chan>,
+    name: String,
 
     /// Union mount point that derives Chan.
     /// Use ChanKey instead of Chan to avoid cycle in the graph.
     umnt: RwLock<Vec<ChanKey>>,
-    /// The weak pointer must be able to upgrade.
-    child: Mutex<Vec<Weak<Chan>>>,
+    /// The weak pointer must always be able to upgrade.
+    child: Mutex<Vec<ChanWeak>>,
+    // Managing all memory mapped pages from this chan.
+    // pub(crate) pgmap: Spinlock<PageMap>,
+}
 
-    /// Managing all memory mapped pages from this chan.
-    pub(crate) vmobj: VmObject,
+impl ChanInner {
+    fn new(key: ChanKey, parent: Option<Chan>, name: String) -> Self {
+        Self {
+            key,
+            parent,
+            name,
+            umnt: RwLock::new(Vec::new()),
+            child: Mutex::new(Vec::new()),
+            // pgmap: Mutex::new(PageMap::default()),
+        }
+    }
+}
+
+pub(crate) type ChanWeak = Weak<ChanInner>;
+
+#[derive(Debug)]
+pub struct Chan(Arc<ChanInner>);
+
+impl Deref for Chan {
+    type Target = Arc<ChanInner>;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
 }
 
 impl Chan {
     /// Create a new mount space from the root of a device.
-    pub async fn attach(dev: Arc<dyn Device + Send + Sync>, aname: &[u8]) -> Result<Arc<Self>> {
-        let mut name = Vec::new();
-        name.try_reserve(aname.len())?;
-        for x in aname {
-            name.push(*x);
-        }
-        let a = Arc::<Chan>::try_new_uninit()?;
-        let id = dev.clone().attach(aname)?.await?;
-        let key = ChanKey {
-            dev,
-            id,
-            dropped: false,
-        };
-        Ok(unsafe { Self::new1(key, None, a) })
-    }
-
-    /// Get the absolute path string of this chan.
-    pub async fn path(self: &Arc<Chan>) -> Result<Vec<u8>> {
-        let name1 = |u: &Arc<Chan>| -> Result<Vec<u8>> {
-            let mut buf = Vec::new();
-            for b in &u.name {
-                vec_push(&mut buf, *b)?;
-            }
-            Ok(buf)
-        };
-        let mut u = self.clone();
-        let mut ret = Vec::new();
-        while let Some(fa) = &u.parent {
-            let name = name1(&u)?;
-            for b in name.iter().rev() {
-                vec_push(&mut ret, *b)?;
-            }
-            u = fa.clone();
-        }
-        vec_push(&mut ret, b'/')?;
-        ret.reverse();
-        Ok(ret)
+    pub async fn attach(dev: Arc<dyn Device + Send + Sync>, aname: &[u8]) -> Result<Self> {
+        let uninit_chan = Arc::try_new_uninit()?;
+        let chan_id = dev.clone().attach(aname)?.await?;
+        let chan_key = ChanKey::new(dev, chan_id);
+        let name_str = str::from_utf8(aname)?;
+        let mut name = String::new();
+        name.try_reserve(name_str.len())?;
+        name.push_str(name_str);
+        Ok(unsafe { Self::from_uninit(uninit_chan, chan_key, None, name) })
     }
 
     /// Create a new mount space rooted at a chan.
-    pub async fn new(chan: &Arc<Chan>) -> Result<Arc<Self>> {
-        let a = Arc::<Chan>::try_new_uninit()?;
+    pub async fn new(chan: &Self) -> Result<Self> {
+        let uninit = Arc::try_new_uninit()?;
         let key = chan.key.dup().await?;
-        Ok(unsafe { Self::new1(key, None, a) })
+        Ok(unsafe { Self::from_uninit(uninit, key, None, String::new()) })
     }
 
-    unsafe fn new1(
+    unsafe fn from_uninit(
+        mut uninit: Arc<MaybeUninit<ChanInner>>,
         key: ChanKey,
-        parent: Option<Arc<Chan>>,
-        mut a: Arc<MaybeUninit<Chan>>,
-    ) -> Arc<Self> {
-        Arc::get_mut_unchecked(&mut a).as_mut_ptr().write(Self {
-            parent,
-            umnt: RwLock::new(Vec::new()),
-            child: Mutex::new(Vec::new()),
-            key,
-            name: Vec::new(),
-            vmobj: VmObject::new(),
-        });
-        a.assume_init()
+        parent: Option<Self>,
+        name: String,
+    ) -> Self {
+        Arc::get_mut_unchecked(&mut uninit)
+            .as_mut_ptr()
+            .write(ChanInner::new(key, parent, name));
+        Chan(uninit.assume_init())
     }
 
-    /// Mount directory to this chan.
-    ///
-    /// This will mount all union directories from old to this chan.
-    pub async fn mount(&self, old: &Arc<Self>) -> Result<()> {
-        if !(self.is_dir() && old.is_dir()) {
+    /// Mount all union directories from another chan to this chan.
+    pub async fn mount(&self, from: &Self) -> Result<()> {
+        if !self.is_dir() || !from.is_dir() {
             return Err(Error::BadRequest("cannot mount file"));
         }
 
-        let mut umnt = Vec::new();
+        let mut keys = Vec::new();
         let result = async {
-            let g = old.umnt.read().await;
-            umnt.try_reserve(g.len() + 1)?;
-            for key in iter::once(&old.key).chain(g.iter()) {
-                umnt.push(key.dup().await?);
+            let from_umnt = from.umnt.read().await;
+            keys.try_reserve(from_umnt.len() + 1)?;
+            for key in iter::once(&from.key).chain(from_umnt.iter()) {
+                keys.push(key.dup().await?);
             }
-            drop(g);
+            drop(from_umnt);
 
-            let mut g = self.umnt.write().await;
-            g.try_reserve(umnt.len())?;
-            umnt.reverse();
-            while let Some(k) = umnt.pop() {
-                g.push(k);
+            let mut umnt = self.umnt.write().await;
+            umnt.try_reserve(keys.len())?;
+            keys.reverse();
+            while let Some(key) = keys.pop() {
+                umnt.push(key);
             }
             Ok(())
         }
         .await;
-
-        while let Some(key) = umnt.pop() {
+        while let Some(key) = keys.pop() {
             key.close().await;
         }
         result
     }
 
-    /// Bind file to this chan.
-    ///
-    /// Drop any previously bound chan.
-    pub async fn bind(&self, old: &Arc<Self>) -> Result<()> {
-        if self.is_dir() || old.is_dir() {
+    /// Bind another chan to this chan and drop any previously bound chan.
+    pub async fn bind(&self, chan: &Self) -> Result<()> {
+        if self.is_dir() || chan.is_dir() {
             return Err(Error::BadRequest("cannot bind dir"));
         }
-        let mut g = self.umnt.write().await;
-        if g.is_empty() {
-            g.try_reserve(1)?;
+
+        let mut umnt = self.umnt.write().await;
+        if umnt.is_empty() {
+            umnt.try_reserve(1)?;
         }
-        let key = old.key.dup().await?;
-        if let Some(key) = g.pop() {
+
+        let new_key = chan.key.dup().await?;
+        if let Some(key) = umnt.pop() {
             key.close().await;
         }
-        g.push(key);
-        debug_assert_eq!(g.len(), 1);
+        umnt.push(new_key);
         Ok(())
     }
 
@@ -272,56 +259,61 @@ impl Chan {
         }
     }
 
+    /// Get the absolute path string of this chan.
+    pub async fn path(&self) -> Result<String> {
+        let mut path = Vec::new();
+        let mut cur = self;
+        while let Some(fa) = &cur.parent {
+            for b in cur.name.as_bytes().iter().rev() {
+                vec_push(&mut path, *b)?;
+            }
+            vec_push(&mut path, b'/')?;
+            cur = fa;
+        }
+        if path.is_empty() {
+            vec_push(&mut path, b'/')?;
+        }
+        path.reverse();
+        Ok(unsafe { String::from_utf8_unchecked(path) })
+    }
+
     /// Caller should guarantee `name` is non-empty.
-    async fn open1(
-        self: &Arc<Self>,
-        name: &[u8],
-        create_dir: Option<bool>,
-    ) -> Result<Option<Arc<Chan>>> {
-        debug_assert_eq!(name.is_empty(), false);
+    async fn open1(&self, name_str: &str, create_dir: Option<bool>) -> Result<Option<Self>> {
+        debug_assert_eq!(name_str.is_empty(), false);
         if !self.is_dir() {
             return Ok(None);
         }
 
         let mut child = self.child.lock().await;
         for u in child.iter() {
-            let u = u.upgrade().unwrap();
-            if u.name == name {
-                return Ok(Some(u.clone()));
+            let chan = Chan::from_weak(u);
+            if chan.name == name_str {
+                return Ok(Some(chan));
             }
         }
 
-        // Pre allocation.
-        let mut names = Vec::new();
-        for x in name {
-            vec_push(&mut names, *x)?;
-        }
+        let uninit = Arc::try_new_uninit()?;
+        let name_bytes = name_str.as_bytes();
+        let mut name = String::new();
+        name.try_reserve(name_str.len())?;
+        name.push_str(name_str);
         child.try_reserve(1)?;
-        let a = Arc::<Self>::try_new_uninit()?;
 
         let mut some_chan = None;
-        let g = self.umnt.read().await;
-        for key in iter::once(&self.key).chain(g.iter()) {
+        let umnt = self.umnt.read().await;
+        for key in iter::once(&self.key).chain(umnt.iter()) {
             debug_assert_eq!(key.id.kind, ChanKind::Dir);
-            if let Some(id) = key.dev.open(&key.id, name, create_dir)?.await? {
-                let u = unsafe {
-                    Self::new1(
-                        ChanKey {
-                            dev: key.dev.clone(),
-                            id,
-                            dropped: false,
-                        },
-                        Some(self.clone()),
-                        a,
-                    )
-                };
-                some_chan = Some(u);
+            if let Some(id) = key.dev.open(&key.id, name_bytes, create_dir)?.await? {
+                let new_key = ChanKey::new(key.dev.clone(), id);
+                let parent = Some(self.dup());
+                let chan = unsafe { Self::from_uninit(uninit, new_key, parent, name) };
+                some_chan = Some(chan);
                 break;
             }
         }
-        Ok(some_chan.map(|c| {
-            child.push(Arc::<Self>::downgrade(&c));
-            c
+        Ok(some_chan.map(|chan| {
+            child.push(Arc::downgrade(&chan));
+            chan
         }))
     }
 
@@ -329,95 +321,82 @@ impl Chan {
     ///
     /// Return [NotFound](Error::NotFound) if failed to find any directory components within the path.
     /// Otherwise it can find the parent directory.
-    pub async fn open(
-        self: &Arc<Self>,
-        path: &[u8],
-        create_dir: Option<bool>,
-    ) -> Result<Option<Arc<Self>>> {
+    pub async fn open(&self, path: &[u8], create_dir: Option<bool>) -> Result<Option<Self>> {
         let path = Path::try_from(path)?;
-        let mut cur = self.clone();
+        let mut cur = self.dup();
         for _ in 0..path.dotdots {
             if let Some(fa) = &cur.parent {
-                cur = fa.clone();
+                // Do not need to close cur since cur is the ancestor of self
+                // and self exists across this function and won't be closed.
+                cur = fa.dup();
             }
         }
-
         for (i, name) in path.names.iter().enumerate() {
             let last = i == path.names.len() - 1;
-            match cur
-                .open1(name.as_bytes(), if last { create_dir } else { None })
-                .await
-            {
-                Ok(Some(u)) => {
-                    // Since u is the child of cur and chan that has children won't be close.
-                    // just drop cur.
-                    cur = u;
+            let to_create_dir = if last { create_dir } else { None };
+            match cur.open1(name, to_create_dir).await {
+                Err(e) => {
+                    cur.close().await;
+                    return Err(e);
                 }
                 Ok(None) => {
                     cur.close().await;
                     return if last {
                         Ok(None)
                     } else {
-                        Err(Error::NotFound("failed to find intermediate directory"))
+                        Err(Error::NotFound("failed to open intermediate directory"))
                     };
                 }
-                Err(e) => {
-                    cur.close().await;
-                    return Err(e);
-                }
+                // Do not need to close cur since u is already the child of cur
+                // and thus won't be closed.
+                Ok(Some(u)) => cur = u,
             }
         }
-
         Ok(Some(cur))
     }
 
-    async fn close1(u: Arc<Self>) -> Option<Arc<Self>> {
-        let fa = &u.parent;
-
-        let ug = u.child.lock().await;
-        let mut fg = if let Some(fa) = fa {
-            Some(fa.child.lock().await)
+    async fn close1(self) -> Option<Self> {
+        let parent = &self.parent;
+        let self_child = self.child.lock().await;
+        let mut parent_child = if let Some(parent) = parent {
+            Some(parent.child.lock().await)
         } else {
             None
         };
         // Once we have locked this node and its parent, the reference count won't
         // decrease(but may be increased by dup) since every close operation also need to
         // enter this function. And if we are the last one, the reference count won't change.
-        let last = Arc::<Self>::strong_count(&u) == 1;
-
-        if last {
-            assert_eq!(ug.len(), 0);
-            while let Some(ck) = u.umnt.try_write().unwrap().pop() {
-                ck.close().await;
+        if Arc::strong_count(&self) == 1 {
+            assert_eq!(self_child.len(), 0);
+            while let Some(key) = self.umnt.try_write().unwrap().pop() {
+                key.close().await;
             }
-
-            if let Some(mut fg) = fg.take() {
-                let w = Arc::<Self>::downgrade(&u);
-                let i = fg.iter().position(|x| Weak::<Self>::ptr_eq(&w, x)).unwrap();
-                fg.swap_remove(i);
+            if let Some(mut child) = parent_child.take() {
+                let me = Arc::downgrade(&self);
+                let i = child.iter().position(|x| Weak::ptr_eq(&me, x)).unwrap();
+                child.swap_remove(i);
             }
-            drop(fg);
-            drop(ug);
+            drop(parent_child);
+            drop(self_child);
 
-            let c = Arc::<Self>::try_unwrap(u).unwrap();
-            c.key.close().await;
-            c.parent
+            let inner = self.into_inner();
+            inner.key.close().await;
+            inner.parent
         } else {
             None
         }
     }
 
     /// Close a file. The async destructor.
-    pub async fn close(self: Arc<Self>) {
-        let mut cur = self;
-        while let Some(fa) = Self::close1(cur).await {
-            cur = fa;
+    pub async fn close(mut self) {
+        while let Some(fa) = Self::close1(self).await {
+            self = fa;
         }
     }
 
-    /// Duplicate a handle of file.
-    pub fn dup(self: &Arc<Self>) -> Arc<Self> {
-        self.clone()
+    /// Duplicate a handle of chan.
+    pub fn dup(&self) -> Self {
+        Chan(self.0.clone())
     }
 
     /// Check if this chan is directory.
@@ -455,6 +434,7 @@ impl Chan {
         drop(umnt);
         ret
     }
+
     /// Write wrapper.
     pub async fn write(&self, buf: &[u8], off: usize) -> Result<usize> {
         if self.is_dir() {
@@ -481,6 +461,14 @@ impl Chan {
         drop(umnt);
         ret
     }
+
+    fn into_inner(self) -> ChanInner {
+        Arc::<ChanInner>::try_unwrap(self.0).unwrap()
+    }
+
+    pub(crate) fn from_weak(weak_chan: &ChanWeak) -> Self {
+        Chan(weak_chan.upgrade().unwrap())
+    }
 }
 
 struct Path<'a> {
@@ -496,7 +484,6 @@ impl<'a> TryFrom<&'a [u8]> for Path<'a> {
             str::from_utf8(value).map_err(|_| Error::BadRequest("path is not valid utf-8"))?;
         let mut dotdots = 0;
         let mut names = Vec::new();
-
         let mut eat = |name: &'a str| -> Result<()> {
             if name == ".." {
                 if names.pop().is_none() {
@@ -507,7 +494,6 @@ impl<'a> TryFrom<&'a [u8]> for Path<'a> {
             }
             Ok(())
         };
-
         let mut l = 0;
         for (i, c) in path.char_indices() {
             if c == b'/' as char {

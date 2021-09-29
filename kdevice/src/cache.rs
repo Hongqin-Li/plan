@@ -44,12 +44,6 @@ struct CacheNodeInner<K, V> {
     pub state: CacheState,
     /// Guarded by [`CacheNodeInner::lock`].
     pub val: V,
-    /// Times being locked since referenced. Reset when there are no reference.
-    /// This is useful for kind of STM, i.e. ensuring no one has mutated the entry
-    /// since we have unlocked it.
-    ///
-    /// Guarded by [`CacheNodeInner::lock`].
-    pub nlocks: usize,
 }
 
 impl<K: Debug, V: Debug> Debug for CacheNodeInner<K, V> {
@@ -158,7 +152,6 @@ pub trait Cache: Sized {
                     val: default_val()?,
                     lock: Mutex::new(()),
                     state: CacheState::Empty,
-                    nlocks: 0,
                 }),
             })?);
         }
@@ -275,7 +268,6 @@ fn cache_get1<T: Cache>(
                 // should first acquire g, which must be after `drop(g)`. Thus,
                 // no need for memory fence here.
                 inner.state = CacheState::Invalid;
-                inner.nlocks = 0;
                 drop(g);
                 return Ok(Some((false, ptr)));
             }
@@ -301,7 +293,7 @@ pub async fn cache_get<'a, T: Cache>(
                 if result.is_ok() {
                     inner.state = CacheState::Valid;
                 }
-                inner.lock.release();
+                unsafe { inner.lock.release() }
                 // Don't move to back of LRU since it's likely to be replaced soon.
                 let g = sel.cache_self().lock();
                 inner.nref -= 1;
@@ -383,13 +375,12 @@ impl<'a, T: Cache> CacheEntry<'a, T> {
         inner.lock.acquire().await;
         debug_assert_ne!(inner.nref, 0);
         debug_assert_ne!(inner.state, CacheState::Empty);
-        inner.nlocks += 1;
 
         if inner.state == CacheState::Invalid {
             // Read from disk.
             let result = self.cache.disk_read(&inner.key, &mut inner.val).await;
             if let Err(e) = result {
-                inner.lock.release();
+                unsafe { inner.lock.release() }
                 return Err(e);
             }
             inner.state = CacheState::Valid;
@@ -449,14 +440,6 @@ impl<'a, T: Cache> CacheGuard<'a, T> {
         inner.key
     }
 
-    /// Return the key of this cache entry.
-    pub fn nlocks(&self) -> usize {
-        let inner = unsafe { (*self.0.ptr).inner.get().as_mut().unwrap() };
-        debug_assert_eq!(inner.lock.try_lock().is_none(), true);
-        debug_assert!(inner.nlocks > 0);
-        inner.nlocks
-    }
-
     /// Release the cache entry.
     ///
     /// If flush is true, the data will be flushed to disk if modified. Otherwise, it won't be flushed
@@ -473,14 +456,14 @@ impl<'a, T: Cache> CacheGuard<'a, T> {
                 // Flush to disk.
                 let result = self.0.cache.disk_write(&inner.key, &inner.val).await;
                 if let Err(e) = result {
-                    inner.lock.release();
+                    unsafe { inner.lock.release() }
                     mem::forget(self);
                     return Err(e);
                 }
                 inner.state = CacheState::Valid;
             }
         }
-        inner.lock.release();
+        unsafe { inner.lock.release() }
         mem::forget(self);
 
         Ok(())

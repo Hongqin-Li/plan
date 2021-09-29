@@ -86,7 +86,7 @@ struct LogInner {
 /// Generic log layer with buffer cache.
 #[derive(Debug)]
 pub struct Log {
-    disk: Arc<Chan>,
+    disk: Chan,
     begin_cvar: Condvar,
     end_cvar: Condvar,
     bio: Spinlock<CacheData<usize, Box<[u8; BSIZE]>>>,
@@ -113,43 +113,31 @@ impl Log {
     /// Create a buffer cache with maximum `nbuf` in-memory buffers.
     ///
     /// Close the disk on error.
-    pub async fn new(nbuf: usize, start: usize, disk: Arc<Chan>) -> Result<Self> {
+    pub async fn new(nbuf: usize, start: usize, disk: &Chan) -> Result<Self> {
         const_assert_eq!(LOGSIZE * 8 + 8, BSIZE);
         assert!(nbuf >= NBUF);
 
-        match async {
-            let mut buf = unsafe { Box::<[u8; BSIZE]>::try_new_uninit()?.assume_init() };
-            disk.read(buf.as_mut(), start * BSIZE).await?;
+        let mut buf = unsafe { Box::<[u8; BSIZE]>::try_new_uninit()?.assume_init() };
+        disk.read(buf.as_mut(), start * BSIZE).await?;
 
-            let log = LogInner {
-                start,
-                outstanding: 0,
-                ending: 0,
-                ender: LinkedList::new(NodeAdapter::new()),
-                state: LogState::Redo,
-                lh: Self::read_head(buf.as_ref())?,
-            };
-
-            let bio = Self::new_cache(nbuf, || {
-                Ok(unsafe { Box::<[u8; BSIZE]>::try_new_uninit()?.assume_init() })
-            })?;
-
-            Ok((log, bio))
-        }
-        .await
-        {
-            Err(e) => {
-                disk.close().await;
-                Err(e)
-            }
-            Ok((log, bio)) => Ok(Self {
-                disk,
-                bio,
-                log: Spinlock::new(log),
-                begin_cvar: Condvar::new(),
-                end_cvar: Condvar::new(),
-            }),
-        }
+        let log = LogInner {
+            start,
+            outstanding: 0,
+            ending: 0,
+            ender: LinkedList::new(NodeAdapter::new()),
+            state: LogState::Redo,
+            lh: Self::read_head(buf.as_ref())?,
+        };
+        let bio = Self::new_cache(nbuf, || {
+            Ok(unsafe { Box::<[u8; BSIZE]>::try_new_uninit()?.assume_init() })
+        })?;
+        Ok(Self {
+            disk: disk.dup(),
+            bio,
+            log: Spinlock::new(log),
+            begin_cvar: Condvar::new(),
+            end_cvar: Condvar::new(),
+        })
     }
 
     /// Close the underlying disk file. Async destructor.
@@ -534,7 +522,8 @@ mod tests {
                 .await
                 .unwrap();
 
-            let log = Arc::new(Log::new(100, log_start, disk_chan).await.unwrap());
+            let log = Arc::new(Log::new(100, log_start, &disk_chan).await.unwrap());
+            disk_chan.close().await;
             for _ in 0..ntask {
                 let log = log.clone();
                 ksched::task::spawn(0, async move {

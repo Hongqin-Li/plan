@@ -22,12 +22,15 @@ use kcore::{
     dev::Device,
     error::{Error, Result},
 };
-use ksched::{sync::Spinlock, task::yield_now};
+use ksched::{
+    sync::Spinlock,
+    task::{self, yield_now},
+};
 
 use super::inode::{Inode, FAT};
 use super::{
     fname::{utf8_to_utf16, ATTR_DIRECTORY},
-    inode::InodeKey,
+    inode::{InodeKey, InodePtr},
 };
 
 #[async_trait::async_trait_try]
@@ -48,10 +51,7 @@ impl Device for FAT {
             doff: 0,
             attr: ATTR_DIRECTORY,
         };
-        let ip = self
-            .iget(root_key)
-            .await
-            .ok_or(Error::OutOfMemory("attach fat"))?;
+        let ip = self.iget(root_key).await?;
         let path = self.to_path(ip);
         Ok(ChanId {
             path,
@@ -83,44 +83,38 @@ impl Device for FAT {
 
         let mut new_dir = false;
         let mut some_ip = None;
-        let mut result: Result<Option<InodeKey>> = async {
+        let mut result: Result<()> = async {
             Ok(if let Some(dir) = create_dir {
-                let result = self.dirlink(&mut g, &name, None, dir).await?;
-                if result.is_some() && dir {
-                    new_dir = true;
+                if let Some(key) = self.dirlink(&mut g, &name, None, dir).await? {
+                    some_ip = Some(self.iget(key).await?);
+                    new_dir = dir;
                 }
-                result
-            } else {
-                self.dirlookup(&g, &name).await?
+            } else if let Some(key) = self.dirlookup(&g, &name).await? {
+                some_ip = Some(self.iget(key).await?)
             })
         }
         .await;
-
-        if let Ok(Some(key)) = result {
-            if let Some(ip) = self.iget(key).await {
-                if new_dir {
-                    // Create "." and ".." for new dir.
-                    let (ip_cno, dp_cno) = (ip.key().cno, dp.key().cno);
-                    debug_assert!(ip.key().is_dir(), "{:?}, {:?}", key, ip.key());
-                    let mut g = ip.lock().await.unwrap();
-                    // FIXME: Currently this two will be created as LFN.
-                    result = self.dirlink(&mut g, b".", Some(ip_cno), true).await;
-                    if result.is_ok() {
-                        result = self.dirlink(&mut g, b"..", Some(dp_cno), true).await;
-                    }
-                    // For simplicity, just reset the inode as if we didn't get it.
-                    g.addr = Vec::new();
-                    g.unlock(true).await.unwrap();
-                }
-                if result.is_ok() {
-                    some_ip = Some(ip);
-                }
-            } else {
-                result = Err(Error::OutOfMemory("inode cache used out"));
-            }
-        }
         g.addr.clear();
         g.unlock(false).await.unwrap();
+
+        if let Some(ip) = some_ip {
+            if new_dir {
+                // Create "." and ".." for new dir.
+                let (ip_cno, dp_cno) = (ip.key().cno, dp.key().cno);
+                debug_assert!(ip.key().is_dir());
+                let mut g = ip.lock().await.unwrap();
+                // FIXME: Currently this two will be created as LFN.
+                if let Err(e) = self.dirlink(&mut g, b".", Some(ip_cno), true).await {
+                    result = Err(e);
+                } else if let Err(e) = self.dirlink(&mut g, b"..", Some(dp_cno), true).await {
+                    result = Err(e);
+                }
+                // For simplicity, just reset the inode as if we didn't get it.
+                g.addr = Vec::new();
+                g.unlock(true).await.unwrap();
+            }
+            some_ip = Some(ip);
+        }
 
         if let Some(ip) = some_ip {
             let op = self.log.end_op(result.is_err(), true).await;
@@ -150,62 +144,62 @@ impl Device for FAT {
 
     async fn close(&self, c: ChanId) {
         let ip = self.to_inode(c.path);
-        let step = (self.meta.bps * self.meta.spc * (MAXEXOPBLOCKS - 5)) as u32;
-
-        let op = loop {
-            if self.log.begin_exop().await.is_err() {
-                // FIXME:
-                yield_now().await;
-            }
-
-            if ip.nref() != 1 {
-                break self.log.end_exop(false, true).await;
-            }
-
-            let mut g = ip.lock().await.unwrap();
-            if g.nlink != 0 {
-                debug_assert_eq!(g.nlink, 1);
-                g.addr = Vec::new();
-                g.unlock(true).await.unwrap();
-                break self.log.end_exop(false, true).await;
-            }
-
-            let rm: Result<Option<bool>> = async {
-                if ip.key().is_dir() && !self.dirempty(&g).await? {
-                    return Ok(Some(false));
+        let result = task::spawn(0, async {
+            let step = (self.meta.bps * self.meta.spc * (MAXEXOPBLOCKS - 5)) as u32;
+            loop {
+                if self.log.begin_exop().await.is_err() {
+                    // FIXME:
+                    yield_now().await;
                 }
-                let new = self.resize(&mut g, |old| old - min(old, step)).await?;
-                if new == 0 {
-                    self.removei(&g).await?;
-                    return Ok(Some(true));
+
+                if ip.nref() != 1 {
+                    self.log.end_exop(false, true).await;
                 }
-                Ok(None)
-            }
-            .await;
 
-            g.unlock(true).await.unwrap();
-
-            let done = match rm {
-                Ok(None) => false,
-                _ => true,
-            };
-
-            // Since the addr is just truncated when removing, no need to restore previous value.
-            let op = self.log.end_exop(rm.is_err(), false).await;
-            if !op.committed || done {
-                // After removed, someone may create a file with the same inode key,
-                // whose nlink must be 1. Thus, even if we have removed the file,
-                // we still need to restore nlink to 1 here.
                 let mut g = ip.lock().await.unwrap();
-                g.nlink = 1;
-                g.addr = Vec::new();
+                if g.nlink != 0 {
+                    debug_assert_eq!(g.nlink, 1);
+                    g.addr = Vec::new();
+                    g.unlock(true).await.unwrap();
+                    self.log.end_exop(false, true).await;
+                }
+
+                let rm: Result<Option<bool>> = async {
+                    if ip.key().is_dir() && !self.dirempty(&g).await? {
+                        return Ok(Some(false));
+                    }
+                    let new = self.resize(&mut g, |old| old - min(old, step)).await?;
+                    if new == 0 {
+                        self.removei(&g).await?;
+                        return Ok(Some(true));
+                    }
+                    Ok(None)
+                }
+                .await;
+
                 g.unlock(true).await.unwrap();
 
-                break op;
+                let done = match rm {
+                    Ok(None) => false,
+                    _ => true,
+                };
+
+                // Since the addr is just truncated when removing, no need to restore previous value.
+                let op = self.log.end_exop(rm.is_err(), false).await;
+                if !op.committed || done {
+                    // After removed, someone may create a file with the same inode key,
+                    // whose nlink must be 1. Thus, even if we have removed the file,
+                    // we still need to restore nlink to 1 here.
+                    let mut g = ip.lock().await.unwrap();
+                    g.nlink = 1;
+                    g.addr = Vec::new();
+                    g.unlock(true).await.unwrap();
+                }
             }
-        };
-        self.iput(self.to_inode(c.path));
-        drop(op);
+        });
+        if result.is_err() {
+            self.iput(self.to_inode(c.path));
+        }
     }
 
     /// Return false the link is already zero or it is an non-empty directory.

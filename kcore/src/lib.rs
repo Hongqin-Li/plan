@@ -1,6 +1,4 @@
 //! Kernel building blocks.
-
-#![deny(missing_docs)]
 #![no_std]
 #![feature(test)]
 #![feature(allocator_api)]
@@ -24,8 +22,6 @@
 #![feature(const_generics)]
 #![feature(slice_ptr_get)]
 
-extern crate alloc;
-
 // So that we can use std when testing.
 #[cfg(test)]
 #[macro_use]
@@ -34,11 +30,14 @@ extern crate std;
 #[cfg(test)]
 extern crate test;
 
+extern crate alloc;
+
 pub mod chan;
 pub mod dev;
 pub mod error;
+// pub mod pager;
 pub mod utils;
-pub mod vm;
+// pub mod vm;
 pub use async_trait;
 pub use ksched;
 

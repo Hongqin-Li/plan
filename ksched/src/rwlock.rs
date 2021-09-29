@@ -638,6 +638,13 @@ unsafe impl<T: Send + ?Sized> Send for RwLockWriteGuard<'_, T> {}
 unsafe impl<T: Sync + ?Sized> Sync for RwLockWriteGuard<'_, T> {}
 
 impl<'a, T: ?Sized> RwLockWriteGuard<'a, T> {
+    /// Create a writer guard without acquiring the lock.
+    ///
+    /// You need to guarantee that you are actually the writer before.
+    pub unsafe fn from_raw(lock: &'a RwLock<T>) -> Self {
+        Self(lock)
+    }
+
     /// Downgrades into a regular reader guard.
     ///
     /// # Examples

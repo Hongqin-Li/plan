@@ -108,11 +108,11 @@ impl<T: ?Sized> Mutex<T> {
         Lock(self).await
     }
 
-    /// unlock
-    pub fn release(&self) {
+    /// Unlock manually.
+    pub unsafe fn release(&self) {
         // Notify waiters.
         let mut g = self.inner.lock();
-        assert_eq!(g.locked, true);
+        debug_assert_eq!(g.locked, true);
         g.slpque.wakeup_one();
         g.locked = false;
     }
@@ -246,7 +246,7 @@ impl<'a, T: ?Sized> MutexGuard<'a, T> {
 
 impl<T: ?Sized> Drop for MutexGuard<'_, T> {
     fn drop(&mut self) {
-        self.0.release();
+        unsafe { self.0.release() }
     }
 }
 

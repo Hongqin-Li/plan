@@ -15,8 +15,7 @@ use kcore::{
     dev::Device,
     error::{Error, Result},
 };
-use ksched::sync::Condvar;
-use ksched::sync::Mutex;
+use ksched::sync::{Condvar, Spinlock};
 
 fn parse_path<'a>(path: u64) -> (u64, usize, &'a mut Node) {
     let raw_path = (path >> 3) << 3;
@@ -27,7 +26,7 @@ fn parse_path<'a>(path: u64) -> (u64, usize, &'a mut Node) {
 
 /// The pipe device driver.
 #[derive(Default)]
-pub struct Pipe(Mutex<LinkedList<NodeAdapter>>);
+pub struct Pipe(Spinlock<LinkedList<NodeAdapter>>);
 
 #[repr(align(8))]
 struct Node {
@@ -52,7 +51,7 @@ impl Device for Pipe {
     where
         Self: Sized,
     {
-        let mut g = self.0.lock().await;
+        let mut g = self.0.lock();
         let node = Box::try_new(Node {
             nref: 1,
             dref: [0; 2],
@@ -77,7 +76,7 @@ impl Device for Pipe {
         name: &[u8],
         create_dir: Option<bool>,
     ) -> Result<Option<ChanId>> {
-        let g = self.0.lock().await;
+        let g = self.0.lock();
         let (raw_path, node_id, node) = parse_path(dir.path);
 
         let ret = if name.is_empty() {
@@ -119,7 +118,7 @@ impl Device for Pipe {
     async fn close(&self, c: ChanId) {
         let (_raw_path, node_id, node) = parse_path(c.path);
 
-        let mut g = self.0.lock().await;
+        let mut g = self.0.lock();
         node.nref -= 1;
         if (1..=2).contains(&node_id) {
             let di = node_id - 1;
@@ -158,7 +157,7 @@ impl Device for Pipe {
         let di = node_id - 1;
 
         loop {
-            let g = self.0.lock().await;
+            let g = self.0.lock();
 
             let mut empty = false;
             let mut i = 0;
@@ -187,7 +186,7 @@ impl Device for Pipe {
             if node.dref[1 - di] == 0 {
                 return Ok(0);
             }
-            node.cvar[di].await_notify(g).await;
+            node.cvar[di].spin_await_notify(g).await;
         }
     }
 
@@ -204,7 +203,7 @@ impl Device for Pipe {
         }
         v.reverse();
 
-        let g = self.0.lock().await;
+        let g = self.0.lock();
         if node.dref[1 - di] == 0 {
             return Err(Error::Gone("write broken pipe"));
         }
@@ -230,7 +229,8 @@ mod tests {
             let p = Chan::attach(devpipe, b"").await.unwrap();
             let data = p.open(b"data", None).await.unwrap().unwrap();
             let data1 = p.open(b"data1", None).await.unwrap().unwrap();
-
+            assert_eq!(data.is_dir(), false);
+            assert_eq!(data1.is_dir(), false);
             task::spawn(0, async move {
                 assert_eq!(data.write(b"12345", 0).await.unwrap(), 5);
                 let mut buf = [0u8; 10];

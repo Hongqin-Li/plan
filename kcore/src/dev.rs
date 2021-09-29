@@ -17,16 +17,11 @@
 
 #![allow(missing_docs)]
 
-use alloc::boxed::Box;
-use alloc::sync::Arc;
-use alloc::vec::Vec;
-use bitflags::bitflags;
-use core::ops::Deref;
-
 use crate::{
-    chan::{Chan, ChanId, ChanKey, ChanKind, Dirent, Perm},
+    chan::{ChanId, ChanKey, ChanKind, Dirent, Perm},
     error::{Error, Result},
 };
+use alloc::boxed::Box;
 
 /// Common trait of a device driver.
 ///
@@ -54,12 +49,10 @@ pub trait Device {
     /// If `name` is empty, ignore other parameters and reopen the file itself(same as dup).
     /// The reopen operation returns either an error or some chan id(but not [None]).
     ///
-    /// `dir` is guaranteed to be a directory if `name` is not empty.
-    ///
-    /// If `create_dir` is [None], this operation is a normal open. Return [None] if not found.
-    ///
-    /// Otherwise, it means creating a file. The boolean indicates type of the file to be
-    /// created is a directory or not. Return [None] if the file already exist.
+    /// If `name` is not empty, `dir` is guaranteed to be a directory. And if `create_dir` is
+    /// [None], this operation is a normal open. Return [None] if not found. Otherwise, it means
+    /// creating a file. The boolean indicates type of the file to be created is a directory or
+    /// not. Return [None] if the file already exist.
     async fn open(
         &self,
         dir: &ChanId,
@@ -107,94 +100,4 @@ pub trait Device {
     /// NOTE: truncate with infinite size can be used to retrieve the size of the file.
     /// Why not resize? Since resize by write can better handle initial bytes.
     async fn truncate(&self, c: &ChanId, size: usize) -> Result<usize>;
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use ksched::task;
-
-    struct A<T>(T);
-
-    #[async_trait::async_trait_try]
-    impl<T: Send + 'static + Sync> Device for A<T> {
-        async fn shutdown(self)
-        where
-            Self: Sized,
-        {
-            todo!()
-        }
-        async fn attach(&self, aname: &[u8]) -> Result<ChanId>
-        where
-            Self: Sized,
-        {
-            todo!()
-        }
-        async fn open(
-            &self,
-            dir: &ChanId,
-            name: &[u8],
-            create_dir: Option<bool>,
-        ) -> Result<Option<ChanId>> {
-            todo!()
-        }
-        async fn close(&self, c: ChanId) {}
-        async fn remove(&self, c: &ChanId) -> Result<bool> {
-            todo!()
-        }
-        async fn truncate(&self, c: &ChanId, size: usize) -> Result<usize> {
-            todo!();
-        }
-
-        async fn stat(&self, c: &ChanId) -> Result<Dirent> {
-            todo!()
-        }
-
-        async fn wstat(&self, c: &ChanId, dirent: &Dirent) -> Result<()> {
-            todo!()
-        }
-
-        async fn read(&self, c: &ChanId, buf: &mut [u8], off: usize) -> Result<usize> {
-            println!("c {:?}", c);
-            buf[0] = 10;
-            Ok(0)
-        }
-
-        async fn write(&self, c: &ChanId, buf: &[u8], off: usize) -> Result<usize> {
-            todo!()
-        }
-    }
-
-    #[test]
-    fn it_compiles() {
-        // task::spawn(0, async move {
-        //     let a = Arc::new(Dev::FAT(A(1u8)));
-        //     let key = ChanKey::new(
-        //         a.clone(),
-        //         0,
-        //         Qid {
-        //             path: 0,
-        //             version: 0,
-        //             qtype: QType::File,
-        //         },
-        //     );
-        //     let mut buf = [0u8; 10];
-        //     // Test NewDevice.
-        //     let newa = A(1u8);
-        //     newa.read(&newa, &key, &mut buf, 0).await.unwrap();
-
-        //     let file = Arc::new(Chan {
-        //         key,
-        //         name: Vec::new(),
-        //         parent: Weak::new(),
-        //         inner: Mutex::new(ChanInner::default()),
-        //     });
-
-        //     file.read(&mut buf, 0).await.unwrap();
-        //     assert_eq!(buf[0], 10);
-        //     file.close().await;
-        // })
-        // .unwrap();
-        // task::run_all();
-    }
 }

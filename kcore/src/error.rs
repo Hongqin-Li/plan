@@ -1,7 +1,8 @@
 //! Common error types for kernel development.
-use core::alloc::AllocError;
-
 use alloc::collections::TryReserveError;
+use alloc::string::FromUtf8Error;
+use core::alloc::AllocError;
+use core::str::Utf8Error;
 
 /// Kernel errors.
 #[derive(Debug, Copy, Clone)]
@@ -36,19 +37,31 @@ pub enum Error {
 pub type Result<T> = core::result::Result<T, Error>;
 
 impl From<AllocError> for Error {
-    fn from(x: AllocError) -> Self {
+    fn from(_: AllocError) -> Self {
         Error::OutOfMemory("alloc error")
     }
 }
 
 impl From<TryReserveError> for Error {
-    fn from(x: TryReserveError) -> Self {
+    fn from(_: TryReserveError) -> Self {
         Error::OutOfMemory("try reserve error")
     }
 }
 
 impl From<hashbrown::TryReserveError> for Error {
-    fn from(x: hashbrown::TryReserveError) -> Self {
+    fn from(_: hashbrown::TryReserveError) -> Self {
         Error::OutOfMemory("try reserve error")
+    }
+}
+
+impl From<FromUtf8Error> for Error {
+    fn from(_: FromUtf8Error) -> Self {
+        Error::BadRequest("from utf8 error")
+    }
+}
+
+impl From<Utf8Error> for Error {
+    fn from(_: Utf8Error) -> Self {
+        Error::BadRequest("utf8 error")
     }
 }

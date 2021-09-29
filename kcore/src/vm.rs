@@ -1,38 +1,76 @@
-//! FIXME: You must specify only ONE PageTable when using this crate.
-#![allow(missing_docs)]
+//! Virtual memory management.
+//!
+//! The virtual memory of a process is represented by a [VmSpace], which uses [VmSegment] to describe
+//! each non-overlapping contiguous virtual memory area. These segments are ordered by their begin
+//! address in a red-black tree owned by the [VmSpace]. It also contains `pgdir`, a user-specific
+//! interface to manipulate physical MMU.
+//!
+//! # Hardware layer
+//!
+//! The hardware-dependent mapping from virtual address to physical address is usually done by MMU.
+//! It describes the permission of all virtual address in the unit of pages. Each page can only be
+//! in one of the following states.
+//!
+//! - Empty: Reference to this page is forbidden.
+//! - Read-only: Read is allowed but write is not.
+//! - Read-write: Both read and write are allowed.
+//!
+//! # Memory mapping
+//!
+//! Each segment has a backing chan, to which pages of governed by this segment will be flushed
+//! after removing the segment. It seems like we have mapped some part of the chan into the memory
+//! as a segment, that's why it's called memory mapping. There only two kinds of segments, private
+//! or shared. Private mapped segments won't allow any modifications of pages to affect the backing
+//! chan, while shared mapped segments will.
+//!
+//! Each segment has a backing chan. The backing chan is used to store pages when paging out.
+//! For a private mapped segment, it also has a reference chan, from which it fetches pages and
+//! then move to the backing store. For example, when the first time we fault in a private page,
+//! we may check the page in reference chan and map it as read-only.
+//!
+//! # Demand paging
+//!
+//! # Page out
+//!
+//! # Fault tolarence
+//!
+//! Disk read and write must not fail due to memory shortage.
+//!
 
 use crate::{
     chan::Chan,
     error::{Error, Result},
+    pager::{Page, PageBufGuard, PageMapEntry, PageOwner, PageOwnerKind, Pager, PAGE_LIST},
     utils::{round_down, round_up},
 };
 use ::alloc::{alloc, boxed::Box, sync::Arc, vec::Vec};
 use core::{
-    alloc::Layout,
+    alloc::{Allocator, Layout},
     cell::UnsafeCell,
     cmp::{max, min},
+    fmt::Debug,
     intrinsics::copy_nonoverlapping,
-    ops::Range,
-    ptr::{slice_from_raw_parts_mut, NonNull},
+    ops::{Deref, Range, RangeInclusive},
+    ptr::{slice_from_raw_parts, slice_from_raw_parts_mut},
+    usize,
 };
 use intrusive_collections::{intrusive_adapter, Bound, KeyAdapter, RBTree, RBTreeLink, UnsafeRef};
 use kalloc::guard::AllocGuard;
-use ksched::sync::{Mutex, Spinlock, SpinlockGuard};
+use ksched::{
+    sync::{Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard, Spinlock},
+    task::yield_now,
+};
 
-/// Page table.
-pub trait PageTable: Sized {
-    /// Request map to the page table will be always lower than USERTOP.
-    /// This must be page aligned.
-    const USERTOP: usize;
+pub const PAGE_SIZE: usize = 4096;
+pub const PAGE_LAYOUT: Layout = unsafe { Layout::from_size_align_unchecked(PAGE_SIZE, PAGE_SIZE) };
+pub const USERTOP: usize = usize::MAX / 2;
 
-    /// Layout used to alloc and dealloc physical pages from global allocator.
-    const PAGE_LAYOUT: Layout;
-
-    /// Page size derived from [PAGE_LAYOUT]. Donot overwrite this.
-    const PAGE_SIZE: usize = Self::PAGE_LAYOUT.size();
-
+/// Page table trait.
+pub trait PhysicalMap {
     /// Create a new page table.
-    fn new() -> Result<Self>;
+    fn new() -> Result<Box<Self>>
+    where
+        Self: Sized + 'static;
 
     /// Switch to this page table.
     ///
@@ -45,7 +83,7 @@ pub trait PageTable: Sized {
     ///
     /// It's guaranteed that `va` is page-aligned. Overwrite the old mapping if exists.
     /// The implementation is required to be atomic, i.e., undo the mapping if failed.
-    fn map(&mut self, va: usize, vpa: usize) -> Result<()>;
+    fn map(&mut self, va: usize, vpa: usize, read_only: bool) -> Result<()>;
 
     /// Unmap the pages in `[va, va+PAGE_SIZE)` in this page table.
     ///
@@ -58,469 +96,659 @@ pub trait PageTable: Sized {
     fn protect(&mut self, va: usize, read_only: bool);
 }
 
+type PageTable = Box<dyn PhysicalMap + 'static>;
+
 #[derive(Debug)]
-struct Page {
-    /// Pointer to the physical page.
-    ptr: NonNull<u8>,
-    /// Array of distinct segments that map this page.
-    ///
-    /// The length of the array represents the refcnt. In `anon` if refcnt is greater than 1,
-    /// all corresponding mappings must be marked as read-only.
-    ///
-    /// Why not array of address space? Because different segments of an address space
-    /// may map to the same pages.
-    owner: Spinlock<Vec<UnsafeRef<VmSegment>>>,
+enum VmFaultKind {
+    ReadFault,
+    WriteFault,
 }
 
-impl Page {
-    /// Return true iff
-    /// - `from` is one of the owners.
-    /// - `to` is not one of the owners or is equal to `from`.
-    ///
-    /// Note that calling `change_owner` with `from` equal to `to` can be used to verify an owner.
-    fn change_owner(&self, from: &VmSegment, to: &VmSegment) -> bool {
-        let mut owner = self.owner.lock();
-        let (mut some_from_idx, mut some_to_idx) = (None, None);
-        for (i, seg) in owner.iter().enumerate() {
-            let seg_ptr = seg.as_ref() as *const _;
-            if seg_ptr == from {
-                some_from_idx = Some(i);
-            }
-            if seg_ptr == to {
-                some_to_idx = Some(i);
-            }
-        }
-        if let Some(i) = some_from_idx {
-            if some_to_idx.is_none() {
-                owner[i] = unsafe { UnsafeRef::from_raw(to) };
-                true
-            } else {
-                to as *const _ == from
-            }
-        } else {
-            false
-        }
+#[derive(Debug, Clone, Copy)]
+struct VmAddrRange {
+    start_va: usize,
+    npages: usize,
+}
+
+impl VmAddrRange {
+    fn new(va_range: RangeInclusive<usize>) -> Self {
+        let end_pgid = *va_range.end() / PAGE_SIZE + 1;
+        let start_va = round_down(*va_range.start(), PAGE_SIZE);
+        let npages = end_pgid - start_va / PAGE_SIZE;
+        Self { start_va, npages }
     }
 
-    fn owned_by(&self, target: &VmSegment) -> bool {
-        self.change_owner(target, target)
+    fn inclusive_end(&self) -> usize {
+        self.start_va + (self.npages * PAGE_SIZE - 1)
     }
 
-    /// Caller must guarantee that target is not the owner.
-    fn add_owner(&self, target: &VmSegment) -> Result<usize> {
-        let mut owner = self.owner.lock();
-        debug_assert_eq!(
-            owner
-                .iter()
-                .find(|seg| seg.as_ref() as *const _ == target)
-                .is_some(),
-            false
-        );
-
-        owner.try_reserve(1)?;
-        owner.push(unsafe { UnsafeRef::from_raw(target) });
-        Ok(owner.len())
-    }
-
-    /// Remove target owner and return the new number of owners.
-    fn remove_owner(&self, target: &VmSegment) -> Option<usize> {
-        let mut owner = self.owner.lock();
-        Self::remove_owner_guarded(&mut owner, target)
-    }
-
-    fn remove_owner_guarded(
-        owner: &mut SpinlockGuard<Vec<UnsafeRef<VmSegment>>>,
-        target: &VmSegment,
-    ) -> Option<usize> {
-        let some_idx = owner.iter().enumerate().find_map(|(i, seg)| {
-            if seg.as_ref() as *const _ == target {
-                Some(i)
-            } else {
-                None
-            }
-        });
-        some_idx.map(|i| {
-            owner.swap_remove(i);
-            owner.len()
-        })
+    fn va_range(&self) -> RangeInclusive<usize> {
+        self.start_va..=self.inclusive_end()
     }
 }
 
-unsafe impl Sync for Page {}
-unsafe impl Send for Page {}
+#[derive(Debug)]
+pub(crate) struct VmSegmentInner {
+    /// Range of virtual address that mapped by this segment.
+    addr_range: VmAddrRange,
+    /// Offset in number of pages in the back chan.
+    back_pgoff: usize,
+    /// Offset in number of pages in the ref chan(if any).
+    ref_pgoff: usize,
+}
 
 #[derive(Debug)]
-pub struct VmObjectEntry {
-    /// Key, the offset (in number of pages) in this object.
-    pgid: usize,
-    /// Value.
-    page: Page,
+pub(crate) struct VmSegment {
+    /// The [VmSpace] that this segment belongs to.
+    pub vmspace: UnsafeRef<VmSpaceInner>,
+    pub back_chan: Chan,
+    pub ref_chan: Option<Chan>,
+    pub inner: RwLock<VmSegmentInner>,
     link: RBTreeLink,
 }
 
-intrusive_adapter!(pub VmObjectEntryAdapter = Box<VmObjectEntry>: VmObjectEntry { link: RBTreeLink });
-
-impl<'a> KeyAdapter<'a> for VmObjectEntryAdapter {
-    type Key = usize;
-    fn get_key(&self, ent: &'a VmObjectEntry) -> Self::Key {
-        ent.pgid
-    }
-}
-
-#[derive(Debug, Default)]
-pub(crate) struct VmObject {
-    /// Maps from page index (key) to resident page (value). See [VmObjectEntry].
-    pgmap: Mutex<RBTree<VmObjectEntryAdapter>>,
-}
-
-impl VmObject {
-    pub(crate) fn new() -> Self {
-        Self::default()
-    }
-}
-
-#[derive(Debug)]
-struct VmSegment {
-    /// Inner mutable data.
-    inner: UnsafeCell<VmSegmentInner>,
-    /// Pointer to backing object.
-    chan: Arc<Chan>,
-    /// Segments are linked by a RB-tree in their [`VmSpace`].
-    link: RBTreeLink,
-}
-
-unsafe impl Send for VmSegment {}
-unsafe impl Sync for VmSegment {}
-
-intrusive_adapter!(VmSegmentAdapter= Box<VmSegment>: VmSegment { link: RBTreeLink } );
+intrusive_adapter!(VmSegmentAdapter = Box<VmSegment>: VmSegment { link: RBTreeLink } );
 
 impl<'a> KeyAdapter<'a> for VmSegmentAdapter {
     type Key = usize;
     fn get_key(&self, seg: &'a VmSegment) -> Self::Key {
-        unsafe { &*seg.inner.get() }.va.start
+        let inner = seg.inner.try_read().unwrap();
+        inner.addr_range.start_va
     }
-}
-
-#[derive(Debug)]
-struct VmSegmentInner {
-    /// Range of virtual memory of this segment.
-    va: Range<usize>,
-    /// Offset (in pages) in the backing file.
-    pgoff: usize,
-    /// Array of anonymous page entries.
-    ///
-    /// If empty, the segment is a copy-on-write mapping and all changes made to data
-    /// in the mapping should be done in anonymous memory. Otherwise, the segment is a shared
-    /// mapping and all changes should be made directly to the underlying object.
-    anon: Vec<Option<UnsafeRef<Page>>>,
 }
 
 impl VmSegment {
     fn new(
-        va: Range<usize>,
-        pgoff: usize,
-        anon: Vec<Option<UnsafeRef<Page>>>,
-        chan: Arc<Chan>,
+        vmspace: UnsafeRef<VmSpaceInner>,
+        addr_range: VmAddrRange,
+        back_chan: Chan,
+        ref_chan: Option<Chan>,
+        back_pgoff: usize,
+        ref_pgoff: usize,
     ) -> Self {
+        let inner = VmSegmentInner {
+            addr_range,
+            back_pgoff,
+            ref_pgoff,
+        };
         Self {
-            inner: UnsafeCell::new(VmSegmentInner { va, pgoff, anon }),
-            chan,
+            vmspace,
+            inner: RwLock::new(inner),
+            back_chan,
+            ref_chan,
             link: RBTreeLink::new(),
         }
     }
 
-    fn is_shared(&self) -> bool {
-        unsafe { &*self.inner.get() }.anon.is_empty()
+    pub fn is_shared(&self) -> bool {
+        self.ref_chan.is_none()
+    }
+
+    /// Get page offset in ref chan of the page with specific virtual address.
+    fn ref_pgoff(&self, va: usize) -> usize {
+        let inner = self.inner.try_read().unwrap();
+        debug_assert!(va > inner.addr_range.start_va);
+        debug_assert_eq!(va % PAGE_SIZE, 0);
+        let seg_pgoff = (va - inner.addr_range.start_va) / PAGE_SIZE;
+        inner.ref_pgoff + seg_pgoff
+    }
+
+    /// Get page offset in back chan of the page with specific virtual address.
+    fn back_pgoff(&self, va: usize) -> usize {
+        let inner = self.inner.try_read().unwrap();
+        debug_assert!(va > inner.addr_range.start_va);
+        debug_assert_eq!(va % PAGE_SIZE, 0);
+        let seg_pgoff = (va - inner.addr_range.start_va) / PAGE_SIZE;
+        inner.back_pgoff + seg_pgoff
+    }
+
+    fn npages(&self) -> usize {
+        self.inner.try_read().unwrap().addr_range.npages
+    }
+
+    pub fn va_range(&self) -> RangeInclusive<usize> {
+        self.inner.try_read().unwrap().addr_range.va_range()
+    }
+
+    pub async fn fork_ref(&self, new_seg: &VmSegment) -> Result<()> {
+        debug_assert!(!self.is_shared());
+        let chan = self.ref_chan.as_ref().unwrap();
+        let pgdir = &self.vmspace.pgdir;
+        let pgid_start = self.ref_pgoff(*self.va_range().start());
+        let pgid_end = pgid_start + self.npages();
+        let pgmap = chan.pgmap.lock().await;
+        let mut cur = pgmap.lower_bound(Bound::Included(&pgid_start));
+        while let Some(page_entry) = cur.get() {
+            if page_entry.pgid >= pgid_end {
+                break;
+            }
+            let mut owners = page_entry.owners.lock().await;
+            if let Some(this_owner) = owners.owned_by(&self) {
+                debug_assert_eq!(this_owner.kind, PageOwnerKind::ReadOnlyPrivateRef);
+                owners.add_owner(new_seg, PageOwnerKind::ReadOnlyPrivateRef)?;
+            }
+            cur.move_next();
+        }
+        Ok(())
+    }
+
+    pub async fn fork_back(&self, new_seg: &VmSegment) -> Result<()> {
+        debug_assert!(!self.is_shared());
+        let chan = &self.back_chan;
+        let pgdir = &self.vmspace.pgdir;
+        let pgid_start = self.back_pgoff(*self.va_range().start());
+        let pgid_end = pgid_start + self.npages();
+        let pgmap = chan.pgmap.lock().await;
+        let mut cur = pgmap.lower_bound(Bound::Included(&pgid_start));
+        while let Some(page_entry) = cur.get() {
+            if page_entry.pgid >= pgid_end {
+                break;
+            }
+            let mut owners = page_entry.owners.lock().await;
+            if let Some(this_owner) = owners.owned_by(self) {
+                let new_kind = PageOwnerKind::ReadOnlyPrivateBack;
+                if this_owner.kind != new_kind {
+                    debug_assert_eq!(owners.len(), 1);
+                    debug_assert_eq!(this_owner.kind, PageOwnerKind::ReadWritePrivateBack);
+                    if let Some(va) = this_owner.va {
+                        pgdir.write().await.unmap(va);
+                    }
+                    this_owner.kind = new_kind;
+                }
+                owners.add_owner(new_seg, new_kind)?;
+            }
+            cur.move_next();
+        }
+        Ok(())
     }
 
     /// Split the segment of [start, end) into [start, va) and [va, end).
     ///
-    /// This function is atomic. Return the new segment of [va, end).
-    async fn split_from<P: PageTable>(&self, va: usize) -> Result<Box<Self>> {
-        let old_seg = unsafe { &mut *self.inner.get() };
-        let old_va = &mut old_seg.va;
+    /// Caller must hold segments' write lock. This function is atomic. Return the new
+    /// segment of [va, end).
+    pub async fn split_from(&self, va: usize) -> Result<Box<Self>> {
+        let va_range = self.va_range();
+        debug_assert_eq!(va & PAGE_SIZE, 0);
+        debug_assert!(va_range.start() < &va && &va < va_range.end());
 
-        debug_assert_eq!(va & P::PAGE_SIZE, 0);
-        debug_assert!(old_va.start < va && va < old_va.end);
+        let old_npages = (va - va_range.start()) / PAGE_SIZE;
+        let npages = (va_range.end() - va + 1) / PAGE_SIZE;
+        let back_chan = self.back_chan.dup();
+        let back_pgoff = self.back_pgoff(va);
+        let back_pgids = back_pgoff..back_pgoff + npages;
+        let mut ref_chan = None;
+        let mut ref_pgoff = 0;
+        let mut ref_pgids = 0..0;
+        if let Some(chan) = &self.ref_chan {
+            ref_chan = Some(chan.dup());
+            ref_pgoff = self.ref_pgoff(va);
+            ref_pgids = ref_pgoff..ref_pgoff + npages;
+        }
 
-        let old_npages = (va - old_va.start) / P::PAGE_SIZE;
-        let new_npages = (old_va.end - va) / P::PAGE_SIZE;
-        let new_pgoff = old_seg.pgoff + old_npages;
-        let new_seg_box = Box::try_new(VmSegment::new(
-            va..old_va.end,
-            new_pgoff,
-            Vec::new(),
-            self.chan.dup(),
+        let seg = Box::try_new(VmSegment::new(
+            self.vmspace.clone(),
+            VmAddrRange::new(va..=*va_range.end()),
+            back_chan,
+            ref_chan,
+            back_pgoff,
+            ref_pgoff,
         ))?;
-        if self.is_shared() {
-            let pgmap = self.chan.vmobj.pgmap.lock().await;
-            let cur = pgmap.lower_bound(Bound::Included(&new_pgoff));
-            while let Some(ent) = cur.get() {
-                if ent.pgid >= new_pgoff + new_npages {
-                    break;
-                }
-                ent.page.change_owner(self, &new_seg_box);
-            }
-        } else {
-            let old_anon = &mut old_seg.anon;
-            let new_anon = &mut unsafe { &mut *new_seg_box.inner.get() }.anon;
-            new_anon.try_reserve(new_npages)?;
-            debug_assert_eq!(new_npages + old_npages, old_anon.len());
-            for some_page in &mut old_anon[old_npages..] {
-                new_anon.push(some_page.take().map(|page| {
-                    page.change_owner(self, &new_seg_box);
-                    page
-                }))
-            }
-            old_anon.truncate(old_npages);
-            old_va.end = va;
+        let pgmap = self.back_chan.pgmap.lock().await;
+        pgmap.change_owner(back_pgids, self, seg.as_ref()).await;
+        drop(pgmap);
+        if let Some(chan) = &self.ref_chan {
+            let pgmap = chan.pgmap.lock().await;
+            pgmap.change_owner(ref_pgids, self, seg.as_ref()).await;
         }
-        Ok(new_seg_box)
+        let mut inner = self.inner.try_write().unwrap();
+        inner.addr_range.npages = old_npages;
+        Ok(seg)
     }
 
-    /// Unmap the region of target_va in this segemnt.
+    /// Shrink the segment by unmapping pages from one end.
     ///
-    /// For shared segment, pages will be flushed back to the backing object.
-    /// Return true if some of the pages are failed to flushed back.
+    /// The target range must be
+    /// 1. a strict sub set of va range interval of this segment
+    /// 2. its left endpoint is equal to the left endpoint of va range of this segment, or
+    ///    its right endpoint is equal to the right endpoint of va range of this segment.
     ///
-    /// For private segment, pages are dropped and cannot be retrieved after that.
-    /// Always return false.
-    ///
-    /// Note that the `va` and `anon` are not maintained. For example, you still need to
-    /// truncate the size and redistribute the anon slots.
-    async fn unmap1<P: PageTable>(&self, pgdir: &mut P, target_va: Range<usize>) -> bool {
-        let seg = unsafe { &mut *self.inner.get() };
-        debug_assert!(seg.va.start <= target_va.start && target_va.end <= seg.va.end);
-        let mut bad = false;
-        if self.is_shared() {
-            for va in target_va.step_by(P::PAGE_SIZE) {
-                if !pgdir.unmap(va) {
-                    continue;
-                }
-                let chan_pgid = seg.pgoff + (va - seg.va.start) / P::PAGE_SIZE;
-                let mut pgmap = self.chan.vmobj.pgmap.lock().await;
-                let mut cur = pgmap.find_mut(&chan_pgid);
-                let ent = cur.get().unwrap();
-                let left_owners = ent.page.remove_owner(self).unwrap();
-                if left_owners == 0 {
-                    // Flush page to the backing object.
-                    let page_ptr = ent.page.ptr.as_ptr();
-                    let page_buf = unsafe { &*slice_from_raw_parts_mut(page_ptr, P::PAGE_SIZE) };
-                    let err = match self.chan.write(page_buf, chan_pgid * P::PAGE_SIZE).await {
-                        Ok(cnt) => cnt != page_buf.len(),
-                        Err(_) => true,
-                    };
-                    bad |= err;
-                    cur.remove();
-                    unsafe { alloc::dealloc(page_ptr, P::PAGE_LAYOUT) }
-                }
-            }
-        } else {
-            for va in target_va.step_by(P::PAGE_SIZE) {
-                if !pgdir.unmap(va) {
-                    continue;
-                }
-                let seg_pgidx = (va - seg.va.start) / P::PAGE_SIZE;
-                // SAFETY: Since pgdir.unmap returns true.
-                unsafe {
-                    let page_ref = seg.anon[seg_pgidx].take().unwrap_unchecked();
-                    let left_owners = page_ref.remove_owner(self).unwrap_unchecked();
-                    if left_owners == 0 {
-                        alloc::dealloc(page_ref.ptr.as_ptr(), P::PAGE_LAYOUT);
-                        UnsafeRef::into_box(page_ref);
-                    }
-                }
-            }
+    /// Caller must hold segments' write lock. This function won't fail.
+    pub async fn unmap_edge(&self, target: VmAddrRange) {
+        self.unmap_pages(target).await;
+        self.shrink_addr_range(target);
+    }
+
+    /// Unmap pages of a region in this segemnt.
+    async fn unmap_pages(&self, target: VmAddrRange) {
+        let chanoff = &self.back_chan;
+        let pgid_start = self.back_pgoff(target.start_va);
+        let pgid_end = pgid_start + target.npages;
+        let mut pgmap = self.back_chan.pgmap.lock().await;
+        pgmap.remove_owner(pgid_start..pgid_end, self);
+        if let Some(chan) = &self.ref_chan {
+            let pgid_start = self.ref_pgoff(target.start_va);
+            let pgid_end = pgid_start + target.npages;
+            let mut pgmap = chan.pgmap.lock().await;
+            pgmap.remove_owner(pgid_start..pgid_end, self);
         }
-        bad
     }
 
-    async fn unmap_inner<P: PageTable>(
-        &self,
-        pgdir: &mut P,
-        target_va: Range<usize>,
-    ) -> Result<(Box<VmSegment>, bool)> {
-        let seg = unsafe { &mut *self.inner.get() };
-        debug_assert!(seg.va.start < target_va.start && target_va.end < seg.va.end);
-        let new_seg = self.split_from::<P>(target_va.end).await?;
-        let bad = self.unmap_edge(pgdir, target_va).await;
-        Ok((new_seg, bad))
-    }
-
-    async fn unmap_edge<P: PageTable>(&self, pgdir: &mut P, target_va: Range<usize>) -> bool {
-        let seg = unsafe { &mut *self.inner.get() };
-        let bad = self.unmap1(pgdir, target_va.clone()).await;
-        if target_va.start > seg.va.start {
-            debug_assert!(target_va.end == seg.va.end);
-            seg.va.end = target_va.end;
-            if !self.is_shared() {
-                debug_assert_eq!(seg.anon.len(), seg.va.len() / P::PAGE_SIZE);
-                seg.anon
-                    .truncate((target_va.start - seg.va.start) / P::PAGE_SIZE);
-            }
+    fn shrink_addr_range(&self, target: VmAddrRange) {
+        let va_range = self.va_range();
+        let mut inner = self.inner.try_write().unwrap();
+        inner.addr_range.npages -= target.npages;
+        if target.start_va == *va_range.start() {
+            let target_end = target.inclusive_end();
+            debug_assert!(target_end < *va_range.end());
+            // Note that order won't be changed since all segments are already non-overlapping.
+            inner.addr_range.start_va = target_end + 1;
+            inner.back_pgoff += target.npages;
+            inner.ref_pgoff += target.npages;
         } else {
-            debug_assert!(target_va.end < seg.va.end);
-            let pgoff_diff = (target_va.end - seg.va.start) / P::PAGE_SIZE;
-            // SAFETY: Order won't be changed since all segments are
-            // non-overlapping and r is in [va.start, va.end).
-            seg.va.start = target_va.end;
-            seg.pgoff += pgoff_diff;
-            if !self.is_shared() {
-                let npages = seg.va.len() / P::PAGE_SIZE;
-                for i in 0..npages {
-                    seg.anon[i] = seg.anon[i + pgoff_diff].take();
-                }
-                seg.anon.truncate(npages);
-            }
+            debug_assert!(target.start_va > *va_range.start());
+            debug_assert_eq!(target.inclusive_end(), *va_range.end());
         }
-        bad
     }
 
-    async fn fetch<P: PageTable>(&self, pgdir: &mut P, va: usize) -> Result<&mut [u8]> {
-        debug_assert_eq!(va % P::PAGE_SIZE, 0);
-        let segi = unsafe { &mut *self.inner.get() };
-        let seg_pgid = (va - segi.va.start) / P::PAGE_SIZE;
-        let buf = if self.is_shared() {
-            // Fault at a shared page in chan.
-            let mut pgmap = self.chan.vmobj.pgmap.lock().await;
-            let chan_pgid = segi.pgoff + seg_pgid;
-            if let Some(ent) = pgmap.find(&chan_pgid).get() {
-                if ent.page.owned_by(self) {
-                    pgdir.protect(va, false);
-                } else {
-                    ent.page.add_owner(self)?;
-                    pgdir.map(va, ent.page.ptr.as_ptr() as usize).map_err(|e| {
-                        ent.page.remove_owner(self).unwrap();
-                        e
-                    })?;
-                }
-                unsafe { &mut *slice_from_raw_parts_mut(ent.page.ptr.as_ptr(), P::PAGE_SIZE) }
+    /// Lock the page entry in a shared segment.
+    ///
+    /// 1. Lock the page map of back chan.
+    /// 2. Find the target page entry or create a new one.
+    /// 3. Lock the page entry and unlock page map.
+    /// 4. Adjust the owner kind of the page entry.
+    /// 5. Return the locked page entry so that this segment won't change its owner kind on it.
+    ///
+    /// Caller must hold segments' read lock. The locked page entry can then be used to access
+    /// its physical page.
+    ///
+    /// The locked page entry can
+    ///
+    /// 1. fetch or flush underlying page from or to backing chan.
+    /// 2. map or unmap the fetched page in physical map.
+    async fn lock_shared_page_entry(&self, va: usize) -> Result<PageEntryGuard> {
+        todo!()
+    }
+
+    /// Similar to [lock_shared_page_entry] but for private segment.
+    async fn lock_private_page_entry(&self, va: usize) -> Result<PageEntryGuard> {
+        todo!()
+    }
+
+    /// Fetch a page for reading in shared segment.
+    ///
+    /// After that, the fetched page will then be read-only or read-write.
+    async fn read_shared(&self, va: usize) -> Result<PageBufGuard> {
+        debug_assert_eq!(self.is_shared(), true);
+        debug_assert_eq!(va & PAGE_SIZE, 0);
+        let mut readonly = true;
+        let pgid = self.back_pgoff(va);
+        let mut pgmap = self.back_chan.pgmap.lock().await;
+        let page = if let Some(page_entry) = pgmap.find(&pgid).get() {
+            let mut owners = page_entry.owners.lock().await;
+            if let Some(this_owner) = owners.owned_by(self) {
+                readonly = this_owner.kind == PageOwnerKind::ReadOnlySharedBack;
             } else {
-                let guard = AllocGuard::new(P::PAGE_LAYOUT)?;
-                let ent = Box::try_new(VmObjectEntry {
-                    pgid: chan_pgid,
-                    page: Page {
-                        ptr: guard.ptr(),
-                        owner: Spinlock::new(Vec::new()),
-                    },
-                    link: RBTreeLink::new(),
-                })?;
-                let page_buf =
-                    unsafe { &mut *slice_from_raw_parts_mut(guard.ptr().as_ptr(), P::PAGE_SIZE) };
-                let cnt = self.chan.read(page_buf, segi.pgoff * P::PAGE_SIZE).await?;
-                if cnt != P::PAGE_SIZE {
-                    return Err(Error::InternalError("read page from chan failed"));
-                }
-                ent.page.add_owner(self)?;
-                pgdir.map(va, guard.ptr().as_ptr() as usize)?;
-                // Since it's a new page, no need to remove the owner when failed.
-                pgmap.insert(ent);
-                guard.consume();
-                page_buf
-            }
-        } else {
-            debug_assert!(seg_pgid < segi.anon.len());
-            let some_page = if let Some(page) = &mut segi.anon[seg_pgid] {
-                // Fault at a copy-on-write page.
-                debug_assert!(page.owned_by(self));
-                let mut owner = page.owner.lock();
-                if owner.len() == 1 {
-                    pgdir.protect(va, false);
-                    None
-                } else {
-                    let guard = AllocGuard::new(P::PAGE_LAYOUT)?;
-                    let new_page = Box::try_new(Page {
-                        ptr: guard.ptr(),
-                        owner: Spinlock::new(Vec::new()),
-                    })?;
-                    new_page.add_owner(self)?;
-                    pgdir.map(va, guard.ptr().as_ptr() as usize)?;
-                    Page::remove_owner_guarded(&mut owner, self);
-                    unsafe {
-                        copy_nonoverlapping(
-                            new_page.ptr.as_ptr(),
-                            guard.ptr().as_mut(),
-                            P::PAGE_SIZE,
-                        )
+                let my_kind = match owners[0].kind {
+                    PageOwnerKind::ReadWritePrivateBack => {
+                        debug_assert_eq!(owners.len(), 1);
+                        return Err(Error::Conflict("cannot read others private backing page"));
                     }
-                    guard.consume();
-                    Some(UnsafeRef::from_box(new_page))
-                }
-            } else {
-                // Fault at a unfetched private page.
-                let guard = AllocGuard::new(P::PAGE_LAYOUT)?;
-                let page = Box::try_new(Page {
-                    ptr: guard.ptr(),
-                    owner: Spinlock::new(Vec::new()),
-                })?;
-                page.add_owner(self)?;
-                let page_buf =
-                    unsafe { &mut *slice_from_raw_parts_mut(guard.ptr().as_ptr(), P::PAGE_SIZE) };
-                let cnt = self.chan.read(page_buf, segi.pgoff * P::PAGE_SIZE).await?;
-                if cnt != P::PAGE_SIZE {
-                    return Err(Error::InternalError("read page from chan failed"));
-                }
-                pgdir.map(va, guard.ptr().as_ptr() as usize)?;
-                guard.consume();
-                Some(UnsafeRef::from_box(page))
-            };
-            if let Some(page) = some_page {
-                segi.anon[seg_pgid] = Some(page);
+                    PageOwnerKind::ReadOnlyPrivateRef
+                    | PageOwnerKind::ReadOnlyPrivateBack
+                    | PageOwnerKind::ReadOnlySharedBack => PageOwnerKind::ReadOnlySharedBack,
+                    PageOwnerKind::ReadWriteSharedBack => {
+                        readonly = false;
+                        PageOwnerKind::ReadWriteSharedBack
+                    }
+                };
+                owners.add_owner(self, my_kind)?;
             }
-            unsafe {
-                &mut *slice_from_raw_parts_mut(
-                    segi.anon[seg_pgid].as_ref().unwrap().ptr.as_ptr(),
-                    P::PAGE_SIZE,
-                )
-            }
+            page_entry.page.upgrade().unwrap()
+        } else {
+            let my_kind = PageOwnerKind::ReadOnlySharedBack;
+            pgmap.new_page(pgid, self, my_kind).await?
         };
-        Ok(buf)
+        let page_buf = PageBufGuard::lock(page, pgmap).await?;
+        // FIXME: only need to map when page fault.
+        let mut pgdir = self.vmspace.pgdir.write().await;
+        pgdir.map(va, page_buf.as_ptr() as usize, readonly)?;
+        Ok(page_buf)
     }
-}
 
-/// Virtual memory address space.
-pub struct VmSpace<P: PageTable> {
-    pgdir: P,
-    segments: RBTree<VmSegmentAdapter>,
-}
+    async fn read_private(&self, va: usize) -> Result<PageBufGuard> {
+        debug_assert_eq!(self.is_shared(), false);
+        debug_assert_eq!(va & PAGE_SIZE, 0);
+        let mut readonly = true;
+        let ref_chanoff = self.ref_chan.as_ref().unwrap();
+        let back_pgid = self.back_pgoff(va);
+        let ref_pgid = self.ref_pgoff(va);
+        let (mut back_pgmap, mut ref_pgmap) = loop {
+            let ref_pgmap = self.ref_chan.as_ref().unwrap().pgmap.lock().await;
+            if let Some(back_pgmap) = self.back_chan.pgmap.try_lock() {
+                break (back_pgmap, ref_pgmap);
+            }
+            yield_now().await;
+        };
+        let page = if let Some(page) = back_pgmap.find(&back_pgid).get() {
+            if let Some(this_owner) = page.owners.lock().await.owned_by(self) {
+                debug_assert!(
+                    this_owner.kind == PageOwnerKind::ReadWritePrivateBack
+                        || this_owner.kind == PageOwnerKind::ReadOnlyPrivateBack
+                );
+                readonly = this_owner.kind == PageOwnerKind;
+            } else {
+                return Err(Error::Conflict("private backing page is not mine"));
+            }
+            page
+        } else if let Some(page) = ref_pgmap.find(&ref_pgid).clone_pointer() {
+            let mut pagei = page.lock().await;
+            if let Some(kind) = pagei.owned_by(self) {
+                debug_assert_eq!(kind, PageOwnerKind::ReadOnlyPrivate);
+                readonly = true;
+            } else {
+                let first_kind = pagei.owners[0].kind;
+                if first_kind == PageOwnerKind::ReadWritePrivate
+                    || first_kind == PageOwnerKind::ReadWriteShared
+                {
+                    drop(ref_pgmap);
 
-/// Type of fault in the address space.
-pub enum VmFaultKind {
-    /// A read from then memory causes the fault.
-    ReadFault,
-    /// A write to the memory causes the fault.
-    WriteFault,
-}
+                    let new_page = Page::new(&self.back_chan.chan, back_pgid)?;
+                    let guard = AllocGuard::new(PAGE_LAYOUT)?;
+                    let ptr = guard.ptr();
+                    let buf = unsafe { &mut *slice_from_raw_parts_mut(ptr.as_ptr(), PAGE_SIZE) };
 
-impl<P: PageTable> VmSpace<P> {
-    /// Create a new address space.
-    pub fn new() -> Result<Self> {
-        Ok(Self {
-            pgdir: P::new()?,
-            segments: RBTree::new(VmSegmentAdapter::new()),
+                    if let Some(ref_ptr) = pagei.ptr {
+                        let ref_buf = unsafe {
+                            &*slice_from_raw_parts(ref_ptr.as_ptr() as *const _, PAGE_SIZE)
+                        };
+                        buf.copy_from_slice(ref_buf)
+                    } else {
+                        let chan = Chan::from_weak(&page.chan);
+                        if chan.read(buf, page.pgid * PAGE_SIZE).await? != PAGE_SIZE {
+                            return Err(Error::InternalError("failed to page in"));
+                        }
+                        chan.close().await;
+                    };
+                    drop(pagei);
+
+                    let mut new_pagei = new_page.try_lock().unwrap();
+                    new_pagei.add_owner(self, PageOwnerKind::ReadWritePrivate)?;
+                    back_pgmap.insert(new_page.clone());
+                    new_pagei.ptr = Some(ptr);
+                    guard.consume();
+                    PAGE_LIST.lock().await.push_back(new_page.clone());
+                    drop(new_pagei);
+
+                    let page_buf = PageBufGuard::lock(new_page, [back_pgmap]).await?;
+                    let mut pgdir = self.vmspace.pgdir.write().await;
+                    pgdir.map(va, page_buf.as_ptr() as usize, false)?;
+                    return Ok(page_buf);
+                } else {
+                    pagei.add_owner(self, PageOwnerKind::ReadOnlyPrivate)?;
+                }
+            }
+            drop(pagei);
+            page
+        } else {
+            let page = Page::new(&ref_chanoff.chan, ref_pgid)?;
+            page.try_lock()
+                .unwrap()
+                .add_owner(self, PageOwnerKind::ReadOnlyPrivate)?;
+            ref_pgmap.insert(page.clone());
+            page
+        };
+        let page_buf = PageBufGuard::lock(page, [back_pgmap, ref_pgmap]).await?;
+        let mut pgdir = self.vmspace.pgdir.write().await;
+        pgdir.map(va, page_buf.as_ptr() as usize, readonly)?;
+        Ok(page_buf)
+    }
+
+    async fn write_shared(&self, va: usize) -> Result<PageBufGuard<'_>> {
+        debug_assert_eq!(self.is_shared(), true);
+        debug_assert_eq!(va & PAGE_SIZE, 0);
+        let pgid = self.back_chan.pgoff + (va - self.start) / PAGE_SIZE;
+        let mut pgmap = self.back_chan.chan.pgmap.lock().await;
+        let page = if let Some(page) = pgmap.find(&pgid).clone_pointer() {
+            let mut pagei = page.lock().await;
+            let my_kind = match pagei.owners[0].kind {
+                PageOwnerKind::ReadWritePrivate => {
+                    debug_assert_eq!(pagei.owners.len(), 1);
+                    return Err(Error::Conflict("cannot read others private backing page"));
+                }
+                PageOwnerKind::ReadOnlyPrivate | PageOwnerKind::ReadOnlyShared => {
+                    if pagei.owners.len() != 1 || pagei.owned_by(self).is_none() {
+                        return Err(Error::Conflict("cannot upgrade to rw page"));
+                    }
+                    pagei.owners[0].kind = PageOwnerKind::ReadWriteShared;
+                }
+                PageOwnerKind::ReadWriteShared => {
+                    if pagei.owned_by(self).is_none() {
+                        pagei.add_owner(self, PageOwnerKind::ReadWriteShared)?;
+                    }
+                }
+            };
+            drop(pagei);
+            page
+        } else {
+            let page = Page::new(&self.back_chan.chan, pgid)?;
+            page.try_lock()
+                .unwrap()
+                .add_owner(self, PageOwnerKind::ReadWriteShared)?;
+            pgmap.insert(page.clone());
+            page
+        };
+        let page_buf = PageBufGuard::lock(page, pgmap).await?;
+        let mut pgdir = self.vmspace.pgdir.write().await;
+        pgdir.map(va, page_buf.as_ptr() as usize, false)?;
+        Ok(page_buf)
+    }
+
+    async fn write_private(&self, va: usize) -> Result<PageBufGuard<'_>> {
+        debug_assert!(!self.is_shared());
+        debug_assert_eq!(va & PAGE_SIZE, 0);
+        let ref_chanoff = self.ref_chan.as_ref().unwrap();
+        let seg_pgoff = (va - self.start) / PAGE_SIZE;
+        let back_pgid = self.back_chan.pgoff + seg_pgoff;
+        let ref_pgid = ref_chanoff.pgoff + seg_pgoff;
+        let (mut back_pgmap, mut ref_pgmap) = loop {
+            let back_pgmap = self.back_chan.chan.pgmap.lock().await;
+            if let Some(ref_pgmap) = ref_chanoff.chan.pgmap.try_lock() {
+                break (back_pgmap, ref_pgmap);
+            }
+            yield_now().await;
+        };
+        let page = if let Some(page) = back_pgmap.find(&back_pgid).clone_pointer() {
+            if let Some(kind) = page.lock().await.owned_by(self) {
+                debug_assert_eq!(kind, PageOwnerKind::ReadWritePrivate);
+            } else {
+                return Err(Error::Conflict("private backing page is not mine"));
+            }
+            page
+        } else {
+            let new_page = Page::new(&self.back_chan.chan, back_pgid)?;
+            let guard = AllocGuard::new(PAGE_LAYOUT)?;
+            let ptr = guard.ptr();
+            let buf = unsafe { &mut *slice_from_raw_parts_mut(ptr.as_ptr(), PAGE_SIZE) };
+
+            let mut ref_buf = None;
+            let mut cur = ref_pgmap.find_mut(&ref_pgid);
+            if let Some(page) = cur.get() {
+                let pagei = page.lock().await;
+                if let Some(ptr) = pagei.ptr {
+                    ref_buf = Some(unsafe {
+                        &*slice_from_raw_parts(ptr.as_ptr() as *const u8, PAGE_SIZE)
+                    });
+                }
+            }
+            if let Some(ref_buf) = ref_buf {
+                buf.copy_from_slice(ref_buf);
+            } else {
+                if ref_chanoff.chan.read(buf, ref_pgid * PAGE_SIZE).await? != PAGE_SIZE {
+                    return Err(Error::InternalError("failed to page in"));
+                }
+            }
+
+            let mut new_pagei = new_page.try_lock().unwrap();
+            new_pagei.add_owner(self, PageOwnerKind::ReadWritePrivate)?;
+            new_pagei.ptr = Some(ptr);
+            guard.consume();
+            drop(new_pagei);
+            back_pgmap.insert(new_page.clone());
+            PAGE_LIST.lock().await.push_back(new_page.clone());
+
+            // Clean up old page in ref chan.
+            let mut remove = None;
+            if let Some(page) = cur.get() {
+                let mut pagei = page.lock().await;
+                if let Some(num_owners) = pagei.remove_owner(self) {
+                    if num_owners == 0 {
+                        remove = Some(pagei.ptr.is_some());
+                    }
+                }
+            }
+            if let Some(remove_pglist) = remove {
+                let page = cur.remove().unwrap();
+                if remove_pglist {
+                    let mut pglist = PAGE_LIST.lock().await;
+                    let mut cur = unsafe { pglist.cursor_mut_from_ptr(page.as_ref()) };
+                    cur.remove();
+                }
+            }
+
+            new_page
+        };
+        let page_buf = PageBufGuard::lock(page, [back_pgmap, ref_pgmap]).await?;
+        let mut pgdir = self.vmspace.pgdir.write().await;
+        pgdir.map(va, page_buf.as_ptr() as usize, false)?;
+        Ok(page_buf)
+    }
+
+    async fn fetch_for_read(&self, va: usize) -> Result<PageBufGuard<'_>> {
+        Ok(if self.is_shared() {
+            self.read_shared(va).await?
+        } else {
+            self.read_private(va).await?
         })
     }
 
-    // Check if segments are still non-overlapping after adding the new segment with range `va`.
-    pub fn check_overlap(&self, va: Range<usize>) -> Result<()> {
-        let cur = self.segments.lower_bound(Bound::Excluded(&va.start));
-        let mut overlap = false;
-        if let Some(seg) = cur.get() {
-            let seg = unsafe { &*seg.inner.get() };
-            if va.end > seg.va.start {
-                overlap = true;
-            }
-        };
-        if let Some(seg) = cur.peek_prev().get() {
-            let seg = unsafe { &*seg.inner.get() };
-            if seg.va.end > va.start {
-                overlap = true;
-            }
-        }
-        if overlap {
-            Err(Error::Conflict("mmap segment overlap"))
+    async fn fetch_for_write(&self, va: usize) -> Result<PageBufGuard<'_>> {
+        Ok(if self.is_shared() {
+            self.write_shared(va).await?
         } else {
-            Ok(())
+            self.write_private(va).await?
+        })
+    }
+}
+
+struct VmSpaceInner {
+    pgdir: RwLock<PageTable>,
+    /// The read-write lock guards towards the number of segments and the va range of the segments.
+    segments: RwLock<RBTree<VmSegmentAdapter>>,
+    refcnt: Spinlock<usize>,
+}
+
+impl Drop for VmSpaceInner {
+    fn drop(&mut self) {
+        let refcnt = self.refcnt.lock();
+        debug_assert_eq!(*refcnt, 0);
+    }
+}
+
+impl Debug for VmSpaceInner {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("VmSpaceInner")
+            .field("refcnt", &self.refcnt)
+            .field("segments", &self.segments)
+            .finish()
+    }
+}
+
+#[derive(Debug)]
+pub struct VmSpace {
+    inner: UnsafeRef<VmSpaceInner>,
+    dropped: bool,
+}
+
+impl Deref for VmSpace {
+    type Target = UnsafeRef<VmSpaceInner>;
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+impl Drop for VmSpace {
+    fn drop(&mut self) {
+        debug_assert!(self.dropped, "forgot to free: {:?}", self);
+    }
+}
+
+impl VmSpace {
+    /// Create a new address space.
+    pub fn new<P: PhysicalMap + 'static>() -> Result<Self> {
+        Ok(Self {
+            inner: UnsafeRef::from_box(Box::try_new(VmSpaceInner {
+                refcnt: Spinlock::new(1),
+                pgdir: RwLock::new(P::new()?),
+                segments: RwLock::new(RBTree::new(VmSegmentAdapter::new())),
+            })?),
+            dropped: false,
+        })
+    }
+
+    /// Duplicate a new address space with the same physical map.
+    ///
+    /// May be called when spawning a thread.
+    pub fn dup(&self) -> Self {
+        self.refcnt_inc();
+        Self {
+            inner: self.inner.clone(),
+            dropped: false,
+        }
+    }
+
+    /// Fork an address space.
+    ///
+    /// May be called when forking a process.
+    pub async fn fork<P: PhysicalMap + 'static>(&mut self) -> Result<VmSpace> {
+        let mut new_vm = Self::new::<P>()?;
+        if let Err(e) = self.fork1(&mut new_vm).await {
+            new_vm.free().await;
+            Err(e)
+        } else {
+            Ok(new_vm)
+        }
+    }
+
+    async fn fork1(&self, new_vm: &mut VmSpace) -> Result<()> {
+        let segments = self.segments.read().await;
+        for seg in segments.iter() {
+            let new_seg = Box::try_new(VmSegment::new(
+                new_vm.clone(),
+                seg.inner.try_read().unwrap().addr_range.clone(),
+                self.new_back_chan().await?,
+                seg.ref_chan.as_ref().map(|chan| chan.dup()),
+                seg.back_pgoff(),
+                seg.ref_pgoff(),
+            ))?;
+            if !seg.is_shared() {
+                seg.fork_back(&new_seg).await?;
+                seg.fork_ref(&new_seg).await?;
+            }
+            let mut new_segments = new_vm.segments.try_write().unwrap();
+            new_segments.insert(new_seg);
+        }
+        Ok(())
+    }
+
+    /// Unmap all segments and drop this address space.
+    ///
+    /// Note that this dosen't gurantee all dirty pages are successfully flushed
+    /// to their backing object.
+    pub async fn free(mut self) {
+        self.dropped = true;
+        if self.refcnt_dec() == 0 {
+            self.munmap(0, USERTOP).await.unwrap();
+            unsafe { UnsafeRef::into_box(self.inner.clone()) };
         }
     }
 
@@ -533,33 +761,51 @@ impl<P: PageTable> VmSpace<P> {
     /// when the underlying chan is then modified by others after creating the anonymous mapping,
     /// since we may or may not view the modified value in the mapping.
     pub async fn mmap(
-        &mut self,
+        &self,
         addr: usize,
         len: usize,
-        chan: &Arc<Chan>,
+        chan: &Chan,
         offset: usize,
         anonymous: bool,
     ) -> Result<()> {
-        if len == 0 || addr.checked_add(len).is_none() || addr + len >= P::USERTOP {
-            return Err(Error::BadRequest("mmap invalid va range"));
-        } else if addr % P::PAGE_SIZE != 0 || len % P::PAGE_SIZE != 0 || offset % P::PAGE_SIZE != 0
-        {
+        if addr % PAGE_SIZE != 0 || len % PAGE_SIZE != 0 || offset % PAGE_SIZE != 0 {
             return Err(Error::BadRequest("mmap va misaligned"));
+        } else if len == 0 || addr.checked_add(len).is_none() {
+            return Err(Error::BadRequest("mmap invalid va range"));
         }
-        let va = addr..addr + len;
-        self.check_overlap(va.clone())?;
-        let mut anon = Vec::new();
-        if anonymous {
-            let npages = len / P::PAGE_SIZE;
-            anon.try_reserve(npages)?;
-            anon.resize(npages, None);
-        }
-        self.segments.insert(Box::try_new(VmSegment::new(
-            va,
-            offset / P::PAGE_SIZE,
-            anon,
-            chan.clone(),
-        ))?);
+        let addr_range = VmAddrRange::new(addr..=(addr + len - 1));
+        let pgoff = offset / PAGE_SIZE;
+        let (back_chan, ref_chan, back_pgoff, ref_pgoff) = if anonymous {
+            (self.new_back_chan().await?, Some(chan.dup()), 0, pgoff)
+        } else {
+            (chan.dup(), None, pgoff, 0)
+        };
+        let result = self
+            .mmap1(addr_range, &back_chan, &ref_chan, back_pgoff, ref_pgoff)
+            .await;
+        back_chan.close().await;
+        result
+    }
+
+    async fn mmap1(
+        &self,
+        addr_range: VmAddrRange,
+        back_chan: &Chan,
+        ref_chan: &Option<Chan>,
+        back_pgoff: usize,
+        ref_pgoff: usize,
+    ) -> Result<()> {
+        let mut segments = self.segments.write().await;
+        let new_seg = VmSegment::new(
+            self.inner.clone(),
+            addr_range,
+            back_chan.dup(),
+            ref_chan.as_ref().map(|chan| chan.dup()),
+            back_pgoff,
+            ref_pgoff,
+        );
+        Self::check_overlap(&segments, &new_seg)?;
+        segments.insert(Box::try_new(new_seg)?);
         Ok(())
     }
 
@@ -567,53 +813,53 @@ impl<P: PageTable> VmSpace<P> {
     ///
     /// All pages containing a part of the indicated range [addr, addr + len) are unmapped.
     ///
-    /// Note that when the chunk of memory to unmap is included by exactly one segment,
-    /// we need to split it and add a new segment. In other cases, we can just reuse the old
-    /// segments by modifying their keys and anon.
+    /// Note that when the chunk of memory to unmap is included by exactly one segment, we need to
+    /// split it and add a new segment. In other cases, we can just reuse the old segments by
+    /// adjusting their structures.
     ///
-    /// This is atomic. Return error if unmap failed. Otherwise, all mappings are guaranteed to
+    /// This is atomic. Return error if failed. Otherwise, all mappings are guaranteed to
     /// be unmapped and the return value indicates whether there are any error when flushing
-    /// to the backing objects. See also [`VmSegment::unmap`].
+    /// to the backing chans. See also [`VmSegment::unmap`].
     pub async fn munmap(&mut self, addr: usize, len: usize) -> Result<bool> {
-        if addr.checked_add(len).is_none() || addr + len >= P::USERTOP {
+        if addr.checked_add(len).is_none() {
             return Err(Error::BadRequest("mmap invalid va range"));
+        } else if len == 0 {
+            return Ok(false);
         }
-        let target_va = round_down(addr, P::PAGE_SIZE)..round_up(addr + len, P::PAGE_SIZE);
-        let mut cur = self
-            .segments
-            .upper_bound_mut(Bound::Included(&target_va.start));
-
+        let target = VmAddrRange::new(addr..=(addr + len - 1));
+        let mut segments = self.segments.write().await;
+        let mut cur = segments.upper_bound_mut(Bound::Included(&target.start_va));
         if let Some(seg) = cur.get() {
-            let seg_va = &unsafe { &*seg.inner.get() }.va;
-            if seg_va.end <= target_va.start {
+            if *seg.va_range().end() < target.start_va {
                 cur.move_next();
             }
-        } else {
-            cur.move_next();
         }
-
         if let Some(seg) = cur.get() {
-            let seg_va = &unsafe { &*seg.inner.get() }.va;
-            if seg_va.start < target_va.start && target_va.end < seg_va.end {
-                let (new_seg, bad) = seg.unmap_inner(&mut self.pgdir, target_va).await?;
-                self.segments.insert(new_seg);
+            let va_range = seg.va_range();
+            if *va_range.start() < target.start_va && target.va_range().end() < va_range.end() {
+                let new_seg = seg.split_from(target.va_range().end() + 1).await?;
+                let bad = seg.unmap_edge(target).await;
+                segments.insert(new_seg);
                 return Ok(bad);
             }
         }
 
         let mut bad = false;
         while let Some(seg) = cur.get() {
-            let segi = unsafe { &mut *seg.inner.get() };
-            if segi.va.start <= target_va.end {
+            let va_range = seg.va_range();
+            if va_range.start() < target.va_range().end() {
                 break;
             }
-            let l = max(segi.va.start, target_va.start);
-            let r = min(segi.va.end, target_va.end);
-            bad |= seg.unmap_edge(&mut self.pgdir, l..r).await;
-            if (l..r) == segi.va {
-                // SAFETY: By loop condition.
-                let seg = unsafe { cur.remove().unwrap_unchecked() };
-                seg.chan.close().await;
+            let l = max(*va_range.start(), *target.va_range().start());
+            let r = min(*va_range.end(), *target.va_range().end());
+            let cur_range = l..=r;
+            bad |= seg.unmap_edge(VmAddrRange::new(cur_range.clone())).await;
+            if cur_range == va_range {
+                let seg = cur.remove().unwrap();
+                seg.back_chan.close().await;
+                if let Some(chan) = seg.ref_chan {
+                    chan.close().await;
+                }
             } else {
                 cur.move_next();
             }
@@ -621,125 +867,61 @@ impl<P: PageTable> VmSpace<P> {
         Ok(bad)
     }
 
-    async fn fork1(&mut self, new_vm: &mut VmSpace<P>) -> Result<()> {
-        for seg in self.segments.iter() {
-            let segi = unsafe { &mut *seg.inner.get() };
-            let new_seg = Box::try_new(VmSegment::new(
-                segi.va.clone(),
-                segi.pgoff,
-                Vec::new(),
-                seg.chan.dup(),
-            ))?;
-            let new_seg_ref = unsafe { UnsafeRef::from_raw(new_seg.as_ref() as *const _) };
-            new_vm.segments.insert(new_seg);
-            if !seg.is_shared() {
-                let new_anon = unsafe { &mut (*seg.inner.get()).anon };
-                new_anon.try_reserve(segi.anon.len())?;
-                let mut va = segi.va.start;
-                for some_page in segi.anon.iter() {
-                    if let Some(page) = some_page {
-                        let new_owners = page.add_owner(&new_seg_ref)?;
-                        if let Err(e) = new_vm.pgdir.map(va, page.ptr.as_ptr() as usize) {
-                            page.remove_owner(&new_seg_ref).unwrap();
-                            return Err(e);
-                        }
-                        new_vm.pgdir.protect(va, true);
-                        if new_owners == 2 {
-                            self.pgdir.protect(va, true);
-                        }
-                        new_anon.push(Some(page.clone()));
-                    } else {
-                        new_anon.push(None);
-                    }
-                    va += P::PAGE_SIZE;
-                }
-            }
-        }
-        Ok(())
-    }
-
-    /// Fork an address space.
-    ///
-    /// For example, it may be called when forking a process.
-    pub async fn fork(&mut self) -> Result<VmSpace<P>> {
-        let mut new_vm = Self::new()?;
-        if let Err(e) = self.fork1(&mut new_vm).await {
-            new_vm.free().await;
-            Err(e)
-        } else {
-            Ok(new_vm)
-        }
-    }
-
-    /// Page fault handler at virtual address `va`.
-    ///
-    /// Faults can be divided into following cases:
-    /// 1. Fault at a shared page in chan.
-    ///    It may happen when the page is newly mapped shared but not yet referred.
-    /// 2. Fault at a copy-on-write private page.
-    ///    When the private page is forked, corresponding page table entries will be marked as
-    ///    read-only. Thus, for example, this kind of fault will happend when the child process
-    ///    is trying to modify this page.
-    /// 3. Fault at a unfetched private page.
-    ///    It may happen when the page is newly mapped private but not yet referred.
+    /// Page fault handler.
     ///
     /// If it returns ok, the address space will have read/write permission to the page containing
     /// virtual address `va`. That means the kernel can safely read or write to the page (after
     /// switching to it) without page fault.
-    pub async fn fault(&mut self, va: usize) -> Result<()> {
-        let va = round_down(va, P::PAGE_SIZE);
-        let cur = self.segments.upper_bound_mut(Bound::Included(&va));
-        if let Some(seg) = cur.get() {
-            let segi = unsafe { &*seg.inner.get() };
-            if va < segi.va.end {
-                return seg.fetch(&mut self.pgdir, va).await.map(|_| {});
+    pub async fn fault(&self, va: usize, kind: VmFaultKind) -> Result<()> {
+        let va = round_down(va, PAGE_SIZE);
+        let segments = self.segments.read().await;
+        if let Some(seg) = segments.upper_bound(Bound::Included(&va)).get() {
+            let end = seg.end.try_read().unwrap();
+            if va < *end {
+                match kind {
+                    VmFaultKind::ReadFault => seg.fetch_for_read(&self.pgdir, va).await?,
+                    VmFaultKind::WriteFault => seg.fetch_for_write(&self.pgdir, va).await?,
+                };
+                return Ok(());
             }
         }
         Err(Error::SegmentFault)
     }
 
-    /// Unmap all segments and drop this address space.
-    ///
-    /// Note that this dosen't gurantee all dirty pages are successfully flushed
-    /// to their backing object.
-    pub async fn free(mut self) {
-        self.munmap(0, P::USERTOP).await.unwrap();
-    }
-
     /// Read data in memory area [offset, offset + buf.len) from this address space.
     pub async fn read(&mut self, mut buf: &mut [u8], mut offset: usize) -> Result<()> {
-        if offset.checked_add(buf.len()).is_none() || offset + buf.len() >= P::USERTOP {
+        if offset.checked_add(buf.len()).is_none() {
             return Err(Error::BadRequest("vm read"));
         }
-        let mut cur = self.segments.upper_bound(Bound::Included(&offset));
+        let segments = self.segments.read().await;
+        let mut cur = segments.upper_bound(Bound::Included(&offset));
         let end = offset + buf.len();
         while let Some(seg) = cur.get() {
-            let segi = unsafe { &*seg.inner.get() };
-            if offset < segi.va.start || buf.is_empty() {
+            if offset < seg.start || buf.is_empty() {
                 break;
             }
-            let l = round_down(offset, P::PAGE_SIZE);
-            let r = min(end, segi.va.end);
-            for va in (l..r).step_by(P::PAGE_SIZE) {
+            let l = round_down(offset, PAGE_SIZE);
+            let r = min(end, *seg.end.try_read().unwrap());
+            for va in (l..r).step_by(PAGE_SIZE) {
                 let page_buf = seg.fetch(&mut self.pgdir, va).await?;
                 let page_off = offset - va;
-                let cnt = min(end, va + P::PAGE_SIZE) - max(offset, va);
+                let cnt = min(end, va + PAGE_SIZE) - max(offset, va);
                 buf[..cnt].copy_from_slice(&page_buf[page_off..page_off + cnt]);
                 buf = &mut buf[cnt..];
                 offset += cnt;
             }
             cur.move_next();
         }
-        if buf.is_empty() {
-            Ok(())
-        } else {
+        if !buf.is_empty() {
             Err(Error::Forbidden("vm read"))
+        } else {
+            Ok(())
         }
     }
 
     /// Write data from buffer to memory area [offset, offset + buf.len) of this address space.
     pub async fn write(&mut self, mut buf: &[u8], mut offset: usize) -> Result<()> {
-        if offset.checked_add(buf.len()).is_none() || offset + buf.len() >= P::USERTOP {
+        if offset.checked_add(buf.len()).is_none() {
             return Err(Error::BadRequest("vm write"));
         }
         let mut cur = self.segments.upper_bound(Bound::Included(&offset));
@@ -749,23 +931,75 @@ impl<P: PageTable> VmSpace<P> {
             if offset < segi.va.start || buf.is_empty() {
                 break;
             }
-            let l = round_down(offset, P::PAGE_SIZE);
+            let l = round_down(offset, PAGE_SIZE);
             let r = min(end, segi.va.end);
-            for va in (l..r).step_by(P::PAGE_SIZE) {
+            for va in (l..r).step_by(PAGE_SIZE) {
                 let page_buf = seg.fetch(&mut self.pgdir, va).await?;
                 let page_off = offset - va;
-                let cnt = min(end, va + P::PAGE_SIZE) - max(offset, va);
+                let cnt = min(end, va + PAGE_SIZE) - max(offset, va);
                 page_buf[page_off..page_off + cnt].copy_from_slice(&buf[..cnt]);
                 buf = &buf[cnt..];
                 offset += cnt;
             }
             cur.move_next();
         }
-        if buf.is_empty() {
-            Ok(())
-        } else {
+        if !buf.is_empty() {
             Err(Error::Forbidden("vm write"))
+        } else {
+            Ok(())
         }
+    }
+
+    /// Entering user space.
+    ///
+    /// The lock of physical map ensures that the mapping won't change when executing user
+    /// programs. It must be called before entering user space.
+    async fn enter_user(&self) -> RwLockReadGuard<'_, PageTable> {
+        let pgdir = self.pgdir.read().await;
+        pgdir.switch();
+        pgdir
+    }
+
+    /// Check if segments are still non-overlapping after adding the new segment.
+    fn check_overlap(segments: &RBTree<VmSegmentAdapter>, new_seg: &VmSegment) -> Result<()> {
+        let new_va_range = new_seg.va_range();
+        let cur = segments.lower_bound(Bound::Excluded(new_va_range.start()));
+        let mut overlap = false;
+        if let Some(seg) = cur.get() {
+            let va_range = seg.va_range();
+            if va_range.start() <= new_va_range.end() {
+                overlap = true;
+            }
+        };
+        if let Some(seg) = cur.peek_prev().get() {
+            let va_range = seg.va_range();
+            if va_range.end() >= new_va_range.start() {
+                overlap = true;
+            }
+        }
+        if overlap {
+            Err(Error::Conflict("mmap segment overlap"))
+        } else {
+            Ok(())
+        }
+    }
+
+    async fn new_back_chan(&self) -> Result<Chan> {
+        todo!()
+    }
+}
+
+impl VmSpace {
+    fn refcnt_inc(&self) -> usize {
+        let refcnt = self.refcnt.lock();
+        *refcnt += 1;
+        *refcnt
+    }
+
+    fn refcnt_dec(&self) -> usize {
+        let refcnt = self.refcnt.lock();
+        *refcnt -= 1;
+        *refcnt
     }
 }
 

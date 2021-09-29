@@ -11,7 +11,7 @@ use kcore::{
     error::{Error, Result},
     utils::intersect,
 };
-use ksched::sync::{Mutex, MutexGuard};
+use ksched::sync::{Mutex, MutexGuard, Spinlock, SpinlockGuard};
 
 /// Block size. The block device hardware should guarantee that write to a block is always atomic.
 /// That's, either all data in a single block is updated or not.
@@ -66,13 +66,80 @@ struct BlockSlotInner {
 
     /// None means it has been removed.
     /// Only support MBR with four partitions now.
-    part: Option<[BlockPart; 4]>,
+    part: Option<[Spinlock<BlockPart>; 4]>,
+}
+
+impl BlockSlotInner {
+    fn use_all(&self) -> Result<()> {
+        let part = self.part.as_ref().unwrap();
+        let mut i = 0;
+        for part in part.iter() {
+            let mut part = part.lock();
+            if part.used {
+                break;
+            }
+            part.used = true;
+            i += 1;
+        }
+        if i != part.len() {
+            for part in part[0..i].iter() {
+                let mut part = part.lock();
+                debug_assert!(part.used);
+                part.used = false;
+            }
+            Err(Error::Conflict("disk occupied"))
+        } else {
+            Ok(())
+        }
+    }
+
+    fn probe(&mut self) -> Result<()> {
+        self.bus.probe()?;
+
+        // Parse MBR.
+        let mut buf = [0u8; BSIZE];
+        self.bus.read(0, &mut buf)?;
+
+        // FIXME:
+        debug_assert_eq!(buf[510], 0x55);
+        debug_assert_eq!(buf[511], 0xAA);
+
+        const R: Spinlock<BlockPart> = Spinlock::new(BlockPart {
+            used: false,
+            range: 0..0,
+        });
+        let part = [R; 4];
+
+        for i in 0..4 {
+            let off = 446 + i * 16;
+            let ent = &buf[off..off + 16];
+            let start_bno = from_bytes!(u32, ent[8..12]);
+            let part_size = from_bytes!(u32, ent[12..16]);
+            let end_bno = start_bno
+                .checked_add(part_size)
+                .ok_or(Error::InternalError("partition size overflow"))?;
+            part[i].lock().range = (start_bno as usize)..(end_bno as usize);
+        }
+
+        // Check intersection.
+        for i in 0..4 {
+            for j in (i + 1)..4 {
+                if intersect(&part[i].lock().range, &part[j].lock().range) {
+                    return Err(Error::InternalError("partition intersect"));
+                }
+            }
+        }
+
+        self.version += 1;
+        self.part = Some(part);
+        Ok(())
+    }
 }
 
 /// Representing a physical device slot.
 pub struct BlockSlot {
     name: &'static str,
-    inner: Mutex<BlockSlotInner>,
+    inner: Spinlock<BlockSlotInner>,
 }
 
 impl BlockSlot {
@@ -80,7 +147,7 @@ impl BlockSlot {
     pub fn new(name: &'static str, bus: Box<dyn BlockBus + Send + Sync>) -> Self {
         Self {
             name,
-            inner: Mutex::new(BlockSlotInner {
+            inner: Spinlock::new(BlockSlotInner {
                 version: 0,
                 bus,
                 part: None,
@@ -100,54 +167,12 @@ impl<const N: usize> Blocks<N> {
 
     /// If ok, `inner.part` is guaranteed to be non empty.
     /// Return error iff the chan id is deprecated, i.e. the block has been removed.
-    async fn get_slot(&self, c: &ChanId) -> Result<MutexGuard<'_, BlockSlotInner>> {
-        let g = self.0[path_slot(c.path)].inner.lock().await;
+    fn get_slot(&self, c: &ChanId) -> Result<SpinlockGuard<'_, BlockSlotInner>> {
+        let g = self.0[path_slot(c.path)].inner.lock();
         if c.version != g.version || g.part.is_none() {
             return Err(Error::Gone("failed to get removed slot"));
         }
         Ok(g)
-    }
-
-    fn probe(&self, inner: &mut MutexGuard<'_, BlockSlotInner>) -> Result<()> {
-        inner.bus.probe()?;
-
-        // Parse MBR.
-        let mut buf = [0u8; BSIZE];
-        inner.bus.read(0, &mut buf)?;
-
-        // FIXME:
-        debug_assert_eq!(buf[510], 0x55);
-        debug_assert_eq!(buf[511], 0xAA);
-
-        const R: BlockPart = BlockPart {
-            used: false,
-            range: 0..0,
-        };
-        let mut part = [R; 4];
-
-        for i in 0..4 {
-            let off = 446 + i * 16;
-            let ent = &buf[off..off + 16];
-            let start_bno = from_bytes!(u32, ent[8..12]);
-            let part_size = from_bytes!(u32, ent[12..16]);
-            let end_bno = start_bno
-                .checked_add(part_size)
-                .ok_or(Error::InternalError("partition size overflow"))?;
-            part[i].range = (start_bno as usize)..(end_bno as usize);
-        }
-
-        // Check intersection.
-        for i in 0..4 {
-            for j in (i + 1)..4 {
-                if intersect(&part[i].range, &part[j].range) {
-                    return Err(Error::InternalError("partition intersect"));
-                }
-            }
-        }
-
-        inner.version += 1;
-        inner.part = Some(part);
-        Ok(())
     }
 }
 
@@ -189,18 +214,16 @@ impl<const N: usize> Device for Blocks<N> {
                 // Create a block device file by probing.
                 for (i, slot) in self.0.iter().enumerate() {
                     if slot.name.as_bytes() == name {
-                        let mut g = slot.inner.lock().await;
-                        if g.part.is_some() {
+                        let mut sloti = slot.inner.lock();
+                        if sloti.part.is_some() {
                             return Ok(None);
                         }
-                        self.probe(&mut g)?;
+                        sloti.probe()?;
                         // Disk file is open as exclusive mode.
-                        for p in g.part.as_mut().unwrap().iter_mut() {
-                            p.used = true;
-                        }
+                        sloti.use_all()?;
                         return Ok(Some(ChanId {
                             path: to_path(i, None, 0),
-                            version: g.version,
+                            version: sloti.version,
                             kind: ChanKind::File,
                         }));
                     }
@@ -211,19 +234,13 @@ impl<const N: usize> Device for Blocks<N> {
 
         for (i, slot) in self.0.iter().enumerate() {
             if name.starts_with(slot.name.as_bytes()) {
-                let mut g = slot.inner.lock().await;
+                let mut sloti = slot.inner.lock();
                 let kind = ChanKind::File;
-                let version = g.version as u32;
-                if let Some(part) = &mut g.part {
+                let version = sloti.version as u32;
+                if let Some(part) = &mut sloti.part {
                     if name.len() == slot.name.len() {
-                        if part.iter().find(|p| p.used).is_some() {
-                            return Err(Error::Conflict("disk occupied"));
-                        }
-
                         // Disk file is open as exclusive mode.
-                        for p in part.iter_mut() {
-                            p.used = true;
-                        }
+                        sloti.use_all()?;
                         return Ok(Some(ChanId {
                             path: to_path(i, None, 0),
                             version,
@@ -231,13 +248,14 @@ impl<const N: usize> Device for Blocks<N> {
                         }));
                     } else if name.len() == slot.name.len() + 1 {
                         if let Some(pi) = name.last().unwrap().checked_sub(b'1') {
-                            if let Some(BlockPart { used, range }) = part.get_mut(pi as usize) {
-                                if range.len() == 0 {
+                            if let Some(part) = part.get(pi as usize) {
+                                let mut part = part.lock();
+                                if part.range.len() == 0 {
                                     return Ok(None);
-                                } else if *used {
+                                } else if part.used {
                                     return Err(Error::Conflict("partition occupied"));
                                 }
-                                *used = true;
+                                part.used = true;
                                 return Ok(Some(ChanId {
                                     path: to_path(i, Some(pi as usize), 0),
                                     version,
@@ -251,52 +269,60 @@ impl<const N: usize> Device for Blocks<N> {
         }
         Ok(None)
     }
+
     async fn close(&self, c: ChanId) {
         if c.kind == ChanKind::Dir {
             return;
         }
 
-        let mut g = match self.get_slot(&c).await {
-            Ok(x) => x,
+        let sloti = match self.get_slot(&c) {
+            Ok(sloti) => sloti,
             _ => return,
         };
-        let part = g.part.as_mut().unwrap();
-        if let Some(pi) = path_part(c.path) {
-            debug_assert_eq!(part[pi].used, true);
-            part[pi].used = false;
-        } else {
-            for BlockPart { used, range } in part.iter_mut() {
-                debug_assert_eq!(*used, true);
-                *used = false;
+        if let Some(part) = &sloti.part {
+            if let Some(pi) = path_part(c.path) {
+                let mut part = part[pi].lock();
+                debug_assert_eq!(part.used, true);
+                part.used = false;
+            } else {
+                for part in part.iter() {
+                    let mut part = part.lock();
+                    debug_assert_eq!(part.used, true);
+                    part.used = false;
+                }
             }
+        } else {
+            // Slot removed.
+            debug_assert!(path_part(c.path).is_none());
         }
     }
+
     /// Remove a block device.
     /// Active partition within device are not allowed to be removed.
     async fn remove(&self, c: &ChanId) -> Result<bool> {
         if c.kind == ChanKind::Dir {
             return Err(Error::BadRequest("remove block root dir"));
         }
-        let mut g = match self.get_slot(&c).await {
-            Ok(g) => g,
+        let mut sloti = match self.get_slot(&c) {
+            Ok(sloti) => sloti,
             _ => return Ok(true),
         };
         if path_part(c.path).is_some() {
             return Err(Error::BadRequest("remove partition file"));
         }
-        g.part = None;
+        sloti.part = None;
         Ok(true)
     }
 
     async fn truncate(&self, c: &ChanId, size: usize) -> Result<usize> {
         debug_assert_eq!(c.kind, ChanKind::File);
-        let g = self.0[path_slot(c.path)].inner.lock().await;
-        if c.version != g.version || g.part.is_none() {
+        let sloti = self.0[path_slot(c.path)].inner.lock();
+        if c.version != sloti.version || sloti.part.is_none() {
             return Err(Error::Gone("truncate removed slot"));
         }
-        let part = g.part.as_ref().unwrap();
+        let part = sloti.part.as_ref().unwrap();
         let oldsz = if let Some(pi) = path_part(c.path) {
-            part[pi].range.len()
+            part[pi].lock().range.len()
         } else {
             0
         };
@@ -324,13 +350,13 @@ impl<const N: usize> Device for Blocks<N> {
         }
         let end = buf.len() + off;
 
-        let mut g = self.0[path_slot(c.path)].inner.lock().await;
-        if c.version != g.version || g.part.is_none() {
+        let mut sloti = self.0[path_slot(c.path)].inner.lock();
+        if c.version != sloti.version || sloti.part.is_none() {
             return Err(Error::Gone("read removed slot"));
         }
-        let part = g.part.as_ref().unwrap();
+        let part = sloti.part.as_ref().unwrap();
         let bno_off = if let Some(pi) = path_part(c.path) {
-            part[pi].range.start
+            part[pi].lock().range.start
         } else {
             0
         };
@@ -341,7 +367,8 @@ impl<const N: usize> Device for Blocks<N> {
                 Some(x) => x,
                 None => return Ok(cnt),
             };
-            if g.bus
+            if sloti
+                .bus
                 .read(bno, &mut buf[addr - off..addr - off + BSIZE])
                 .is_err()
             {
@@ -361,13 +388,13 @@ impl<const N: usize> Device for Blocks<N> {
         }
         let end = buf.len() + off;
 
-        let mut g = self.0[path_slot(c.path)].inner.lock().await;
-        if c.version != g.version || g.part.is_none() {
+        let mut slot = self.0[path_slot(c.path)].inner.lock();
+        if c.version != slot.version || slot.part.is_none() {
             return Err(Error::Gone("write removed slot"));
         }
-        let part = g.part.as_ref().unwrap();
+        let part = slot.part.as_ref().unwrap();
         let bno_off = if let Some(pi) = path_part(c.path) {
-            part[pi].range.start
+            part[pi].lock().range.start
         } else {
             0
         };
@@ -378,7 +405,8 @@ impl<const N: usize> Device for Blocks<N> {
                 Some(x) => x,
                 None => return Ok(cnt),
             };
-            if g.bus
+            if slot
+                .bus
                 .write(bno, &buf[addr - off..addr - off + BSIZE])
                 .is_err()
             {

@@ -137,7 +137,7 @@ impl InodeKey {
     }
 }
 
-type InodePtr<'a, T> = ManuallyDrop<CacheEntry<'a, T>>;
+pub type InodePtr<'a, T> = ManuallyDrop<CacheEntry<'a, T>>;
 
 /// The inode cache.
 #[async_trait_static]
@@ -159,7 +159,7 @@ impl FAT {
     /// Initialize a new FAT from a virtual disk.
     ///
     /// `ninodes` is the maximum active inode, `nbuf` is the number of cached buffer.
-    pub async fn new(ninodes: usize, nbuf: usize, disk: &Arc<Chan>) -> Result<Self> {
+    pub async fn new(ninodes: usize, nbuf: usize, disk: &Chan) -> Result<Self> {
         let mut buf = unsafe { Box::<[u8; BSIZE]>::try_new_uninit()?.assume_init() };
         disk.read(buf.as_mut(), 0).await?;
 
@@ -264,7 +264,7 @@ impl FAT {
 
         Ok(Self {
             meta,
-            log: Log::new(nbuf, log_bno, disk.dup()).await?,
+            log: Log::new(nbuf, log_bno, disk).await?,
             icache: Self::new_cache(ninodes, || Ok(Inode::default()))?,
         })
     }
@@ -282,11 +282,12 @@ impl FAT {
     }
 
     /// Open and increase the reference of a file.
-    pub async fn iget<'a>(&'a self, key: InodeKey) -> Option<InodePtr<'a, Self>> {
+    pub async fn iget<'a>(&'a self, key: InodeKey) -> Result<InodePtr<'a, Self>> {
         self.cache_get(key, false)
             .await
             .unwrap()
             .map(|ent| ManuallyDrop::new(ent))
+            .ok_or(Error::OutOfMemory("inode cache used out"))
     }
 
     /// Close and decrease the reference counter of a file.
