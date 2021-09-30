@@ -273,6 +273,22 @@ impl DerefMut for PageMap {
 }
 
 impl PageMap {
+    /// Lock the owner and return guard that segment won't change its kind on the target page.
+    ///
+    /// 1. Lock page map.
+    /// 2. Find the page entry with pgid.
+    /// 3. Unlock page map.
+    /// 4. Lock the owner list of the page entry.
+    /// 5. Find the target owner among all owners of this page entry.
+    /// 6. Marked it as locked or wait by its condvar.
+    /// 7. Return the guard.
+    ///
+    /// The guard contains a pointer to the page entry. It will clear the used mark and wake up
+    /// the waiters when dropped.
+    pub async fn lock_owner(&self, pgid: usize, seg: &VmSegment) -> Option<PageEntryGuard> {
+        todo!()
+    }
+
     pub async fn new_page(
         &mut self,
         pgid: usize,
@@ -293,6 +309,8 @@ impl PageMap {
         Ok(page)
     }
 
+    /// Caller must guarantee that both `to` and `from` won't lock any target pages during
+    /// this function.
     pub async fn change_owner(&self, pgids: Range<usize>, from: &VmSegment, to: &VmSegment) {
         let mut cur = self.lower_bound(Bound::Included(&pgids.start));
         while let Some(page_entry) = cur.get() {

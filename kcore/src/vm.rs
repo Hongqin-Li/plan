@@ -354,23 +354,66 @@ impl VmSegment {
     ///
     /// 1. Lock the page map of back chan.
     /// 2. Find the target page entry or create a new one.
-    /// 3. Lock the page entry and unlock page map.
-    /// 4. Adjust the owner kind of the page entry.
-    /// 5. Return the locked page entry so that this segment won't change its owner kind on it.
+    /// 3. Lock the target page entry.
+    /// 4. Find or insert self into the owner list of the target page entry.
+    /// 5. Unlock the page map. Note that the page entry will then reside in the page map until we
+    ///    drop the read lock of this segment.
+    /// 6. Sleep until we lock this owner. Note that it won't be removed since the removal must
+    ///    hold write lock of this segments but we have already held its read lock here.
+    /// 7. Adjust this owner's kind of the page entry accordingly.
+    /// 8. Mark this owner as locked so that its owner kind won't change.
+    /// 9. Unlock the target page entry.
+    /// 10. Return the guard. It guards towards the owner kind, and will unlock the owner entry
+    ///     when dropped.
     ///
     /// Caller must hold segments' read lock. The locked page entry can then be used to access
     /// its physical page.
     ///
-    /// The locked page entry can
+    /// The guard can
     ///
     /// 1. fetch or flush underlying page from or to backing chan.
     /// 2. map or unmap the fetched page in physical map.
-    async fn lock_shared_page_entry(&self, va: usize) -> Result<PageEntryGuard> {
+    async fn lock_shared_page(&self, va: usize, for_write: bool) -> Result<PageEntryGuard> {
         todo!()
     }
 
-    /// Similar to [lock_shared_page_entry] but for private segment.
-    async fn lock_private_page_entry(&self, va: usize) -> Result<PageEntryGuard> {
+    /// Similar to [lock_shared_page] but for private segment.
+    ///
+    /// 1. Lock the page map of ref chan.
+    /// 2. Try lock the page map of back chan, if that failed, retry from step 1. Since back chan
+    ///    is private to this segment, this step is likely to succeed. Note that the changing of
+    ///    owner kind must acquire both locks.
+    /// 3. Find our owner entry or insert a new one in owner lists of the target page entry.
+    /// 4. If we don't need to change the owner kind, just increase the lock count and return the
+    ///    guard.
+    /// 5. If the our owner entry resides in back chan's page map, things happened like
+    ///    [lock_shared_page]. Otherwise,
+    /// 6. Unlock page map of ref chan and back chan.
+    /// 7. Return none with the hint that caller should call [lock_private_page] with segments'
+    ///    write lock.
+    async fn try_lock_private_page(
+        &self,
+        va: usize,
+        for_write: bool,
+    ) -> Result<Option<PageEntryGuard>> {
+        todo!()
+    }
+
+    /// Slow path for locking private page entry.
+    ///
+    /// 1. Try lock the page maps of ref chan and back chan.
+    /// 2. Find the owner kind or create a new one in ref chan.
+    /// 3. If not need to copy on write, just adjust the owner kind and return.
+    /// 4. Unlock the page maps.
+    /// 5. Copy the page data and create a new page entry.
+    /// 6. Try lock the page maps of ref chan and back chan.
+    /// 7. Insert the new page entry in back chan. Return if failed by confiction.
+    /// 8. Remove the page owner in ref chan and
+    /// 9. Unlock the page maps.
+    /// 10. Return the guard.
+    ///
+    /// Caller must hold segments' write lock.
+    async fn lock_private_page(&self, for_write: bool) -> Result<PageEntryGuard> {
         todo!()
     }
 

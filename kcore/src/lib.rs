@@ -35,9 +35,9 @@ extern crate alloc;
 pub mod chan;
 pub mod dev;
 pub mod error;
-// pub mod pager;
+pub mod pager;
 pub mod utils;
-// pub mod vm;
+pub mod vm;
 pub use async_trait;
 pub use ksched;
 
