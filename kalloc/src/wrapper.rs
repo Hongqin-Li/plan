@@ -6,6 +6,7 @@ use core::mem::swap;
 pub use alloc::{
     alloc::AllocError,
     collections::{TryReserveError, VecDeque},
+    string::String,
     vec::Vec,
 };
 pub use hashbrown::HashMap;
@@ -13,6 +14,13 @@ pub use hashbrown::HashMap;
 /// Map [TryReserveError] to [AllocError] for consistency.
 pub fn r2a<T>(r: Result<T, TryReserveError>) -> Result<T, AllocError> {
     r.map_err(|_| AllocError)
+}
+
+/// OOM Wrapper to push back an element into a vector. Amortized O(1).
+pub fn str_push<T>(s: &mut String, x: char) -> Result<(), AllocError> {
+    r2a(s.try_reserve(1))?;
+    s.push(x);
+    Ok(())
 }
 
 /// OOM Wrapper to push back an element into a vector. Amortized O(1).

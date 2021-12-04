@@ -6,9 +6,7 @@
 #![feature(dropck_eyepatch)]
 #![feature(try_reserve)]
 #![feature(const_fn_trait_bound)]
-#![feature(const_generics)]
 
-// So that we can use std when testing.
 #[cfg(test)]
 #[macro_use]
 extern crate std;

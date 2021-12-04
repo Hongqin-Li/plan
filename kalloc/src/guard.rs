@@ -1,9 +1,10 @@
 //! Smart pointer guard.
+
 use alloc::alloc;
 use core::{
     alloc::{AllocError, Layout},
     mem,
-    ptr::NonNull,
+    ptr::{slice_from_raw_parts, slice_from_raw_parts_mut, NonNull},
 };
 
 /// Smart pointer guard.
@@ -24,6 +25,16 @@ impl AllocGuard {
     /// Get the pointer inside.
     pub fn ptr(&self) -> NonNull<u8> {
         self.ptr.clone()
+    }
+
+    /// Extract the slice.
+    pub fn as_slice(&self) -> &[u8] {
+        unsafe { &*slice_from_raw_parts(self.ptr.as_ptr() as *const _, self.layout.size()) }
+    }
+
+    /// Extract the mutable slice.
+    pub fn as_mut_slice(&self) -> &mut [u8] {
+        unsafe { &mut *slice_from_raw_parts_mut(self.ptr.as_ptr(), self.layout.size()) }
     }
 
     /// Drop and don't deallocate the pointer.

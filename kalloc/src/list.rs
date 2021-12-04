@@ -10,15 +10,17 @@
 //! [`Vec`]: alloc::vec::Vec
 //! [`Vecque`]: super::vecque::Vecque
 
-use core::fmt;
-use core::hash::{Hash, Hasher};
-use core::iter::FusedIterator;
-use core::marker::PhantomData;
-use core::mem;
-use core::ptr::NonNull;
-use core::{alloc::AllocError, cmp::Ordering};
-
 use alloc::boxed::Box;
+use core::{
+    alloc::AllocError,
+    cmp::Ordering,
+    fmt,
+    hash::{Hash, Hasher},
+    iter::FusedIterator,
+    marker::PhantomData,
+    mem,
+    ptr::NonNull,
+};
 
 /// An intermediate trait for specialization of `Extend`.
 trait SpecExtend<I: IntoIterator> {

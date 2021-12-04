@@ -10,14 +10,14 @@
 //! If the system requires strict bound on running time (e.g. real-time system),
 //! use the buddy allocator. Otherwise, use this cached one to achieve faster
 //! performance in most scenarios.
-use core::alloc::{GlobalAlloc, Layout};
-
-use mcs::{Mutex, Slot};
-use typenum::{PowerOfTwo, Unsigned};
 
 use crate::{buddy::MultiBuddySystem, to_order};
-
-use core::ptr::null_mut;
+use core::{
+    alloc::{GlobalAlloc, Layout},
+    ptr::null_mut,
+};
+use spin::Mutex;
+use typenum::{PowerOfTwo, Unsigned};
 
 struct Freelist {
     next: *mut Freelist,
@@ -110,24 +110,16 @@ impl<P: Unsigned + PowerOfTwo + 'static> Allocator<P> {
 
     /// Add free memory [begin, end) to this allocator.
     pub unsafe fn add_zone(&mut self, begin: usize, end: usize) {
-        let mut slot = Slot::new();
-        {
-            self.inner.lock(&mut slot).add_zone(begin, end);
-        }
+        self.inner.lock().add_zone(begin, end);
     }
 }
 
 unsafe impl<P: Unsigned + PowerOfTwo + 'static> GlobalAlloc for Allocator<P> {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        let mut slot = Slot::new();
-        let p = { self.inner.lock(&mut slot).alloc(layout) };
-        p
+        self.inner.lock().alloc(layout)
     }
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-        let mut slot = Slot::new();
-        {
-            self.inner.lock(&mut slot).dealloc(ptr, layout);
-        }
+        self.inner.lock().dealloc(ptr, layout);
     }
 }
 

@@ -10,11 +10,15 @@
 //! Allocation and deallocation are both guaranteed to finish within O(log n),
 //! where n is the size of memory handled by this buddy system.
 //!
-use core::{alloc::GlobalAlloc, cmp::min, mem::size_of};
-use core::{alloc::Layout, mem, ptr};
 
 use crate::{rawlist::Rawlist, to_order};
-use mcs::{Mutex, Slot};
+use core::{
+    alloc::{GlobalAlloc, Layout},
+    cmp::min,
+    mem::{self, size_of},
+    ptr,
+};
+use spin::Mutex;
 use typenum::{marker_traits::PowerOfTwo, Unsigned};
 
 /// Round down to the nearest multiple of n.
@@ -410,25 +414,16 @@ impl<P: Unsigned + PowerOfTwo + 'static> Allocator<P> {
 
     /// Add free memory [begin, end) to this allocator.
     pub unsafe fn add_zone(&mut self, begin: usize, end: usize) {
-        let mut slot = Slot::new();
-        {
-            self.inner.lock(&mut slot).add_zone(begin, end);
-        }
-        // self.inner.lock().add_zone(page_size, begin, end);
+        self.inner.lock().add_zone(begin, end);
     }
 }
 
 unsafe impl<P: Unsigned + PowerOfTwo + 'static> GlobalAlloc for Allocator<P> {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        let mut slot = Slot::new();
-        let p = { self.inner.lock(&mut slot).alloc(layout) };
-        p
+        self.inner.lock().alloc(layout)
     }
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-        let mut slot = Slot::new();
-        {
-            self.inner.lock(&mut slot).dealloc(ptr, layout);
-        }
+        self.inner.lock().dealloc(ptr, layout);
     }
 }
 
