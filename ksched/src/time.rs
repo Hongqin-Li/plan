@@ -10,12 +10,11 @@
 //! assert_eq!(Duration::new(5, 0), Duration::from_secs(5));
 //! ```
 
+use crate::sync::Spinlock;
 use core::fmt;
 use core::ops::{Add, AddAssign, Sub, SubAssign};
 
 pub use core::time::Duration;
-
-use crate::sync::Spinlock;
 
 static T: Spinlock<Option<fn() -> Duration>> = Spinlock::new(None);
 

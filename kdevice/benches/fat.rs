@@ -34,7 +34,7 @@ fn prepare_crud(
         })
         .collect();
 
-    task::spawn(0, async move {
+    task::spawn(async move {
         let disk = Arc::new(fs::FileDisk::new(img_path));
         let disk_root = Chan::attach(disk, b"").await.unwrap();
         let fs = FAT::new(ntask + 10, 100, &disk_root).await.unwrap();
@@ -54,7 +54,7 @@ fn bench_crud_10mb(c: &mut Criterion) {
         let sz = black_box(10 * 1024 * 1024);
         let dir = prepare_crud(1, 2..5, sz..sz + 1, 0..1);
         b.iter(|| {
-            task::run_all();
+            task::run();
         });
         drop(dir);
     });

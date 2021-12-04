@@ -301,7 +301,7 @@ pub async fn cache_get<'a, T: Cache>(
                 if result.is_ok() {
                     inner.state = CacheState::Valid;
                 }
-                inner.lock.release();
+                unsafe { inner.lock.release() }
                 // Don't move to back of LRU since it's likely to be replaced soon.
                 let g = sel.cache_self().lock();
                 inner.nref -= 1;
@@ -389,7 +389,7 @@ impl<'a, T: Cache> CacheEntry<'a, T> {
             // Read from disk.
             let result = self.cache.disk_read(&inner.key, &mut inner.val).await;
             if let Err(e) = result {
-                inner.lock.release();
+                unsafe { inner.lock.release() }
                 return Err(e);
             }
             inner.state = CacheState::Valid;
@@ -473,14 +473,14 @@ impl<'a, T: Cache> CacheGuard<'a, T> {
                 // Flush to disk.
                 let result = self.0.cache.disk_write(&inner.key, &inner.val).await;
                 if let Err(e) = result {
-                    inner.lock.release();
+                    unsafe { inner.lock.release() }
                     mem::forget(self);
                     return Err(e);
                 }
                 inner.state = CacheState::Valid;
             }
         }
-        inner.lock.release();
+        unsafe { inner.lock.release() }
         mem::forget(self);
 
         Ok(())
@@ -585,7 +585,7 @@ mod tests {
         let idx: Vec<usize> = (0..ntask).map(|_| rng.gen_range(0..DISKSZ)).collect();
         for idx in idx {
             let cache = cache.clone();
-            task::spawn(0, async move {
+            task::spawn(async move {
                 let ent = loop {
                     if let Some(ent) = cache.cache_get(idx, true).await.unwrap() {
                         break ent;
@@ -620,7 +620,7 @@ mod tests {
         }
 
         let cache2 = cache.clone();
-        task::spawn(0, async move {
+        task::spawn(async move {
             let g = cache2.disk.lock().await;
             let sum = g.iter().sum::<u32>();
             if write_back {
@@ -630,13 +630,13 @@ mod tests {
             }
         })
         .unwrap();
-        task::run_all();
+        task::run();
 
         let tot = Arc::new(Spinlock::new(0));
         for i in 0..DISKSZ {
             let tot = tot.clone();
             let cache = cache.clone();
-            task::spawn(0, async move {
+            task::spawn(async move {
                 let ent = loop {
                     if let Some(ent) = cache.cache_get(i, true).await.unwrap() {
                         break ent;
@@ -652,17 +652,17 @@ mod tests {
             })
             .unwrap();
         }
-        task::run_all();
+        task::run();
         assert_eq!(*tot.lock(), ntask as u32);
 
         let cache2 = cache.clone();
-        task::spawn(0, async move {
+        task::spawn(async move {
             let g = cache2.disk.lock().await;
             let sum = g.iter().sum::<u32>();
             assert_eq!(sum, ntask as u32);
         })
         .unwrap();
-        task::run_all();
+        task::run();
     }
 
     // // May corrupt other testing thread when panic.
@@ -670,12 +670,12 @@ mod tests {
     // #[should_panic]
     // fn forget_to_unlock() {
     //     let cache = Arc::new(MyCache::<10, 100>::new().unwrap());
-    //     task::spawn(0, async move {
+    //     task::spawn(async move {
     //         let ent = cache.cache_get(1).await.unwrap();
     //         let b = ent.lock().await.unwrap();
     //     })
     //     .unwrap();
-    //     task::run_all();
+    //     task::run();
     // }
 
     #[test]
@@ -690,7 +690,7 @@ mod tests {
         let idx: Vec<usize> = (0..ntask).map(|_| rng.gen_range(0..DISKSZ)).collect();
         for idx in idx {
             let cache = cache.clone();
-            task::spawn(0, async move {
+            task::spawn(async move {
                 let ent = loop {
                     if let Some(ent) = cache.cache_get(idx, true).await.unwrap() {
                         break ent;

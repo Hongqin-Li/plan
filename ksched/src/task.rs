@@ -1,194 +1,234 @@
 //! Async executor and some basic futures.
-#![allow(missing_docs)]
-use core::{alloc::AllocError, cell::UnsafeCell};
-use futures::task::ArcWake;
 
-use intrusive_collections::intrusive_adapter;
-use intrusive_collections::{LinkedList, LinkedListLink};
-
-use super::prique::{PriqueTrait, Pritask64 as Prique};
 use crate::sync::Spinlock;
-use lazy_static::*;
-use {
-    alloc::{boxed::Box, sync::Arc},
-    core::{
-        future::Future,
-        pin::Pin,
-        task::{Context, Poll},
-    },
+use crate::{
+    executor::{ExecuteWeight, Executor, LocalExecutor, DEFAULT_EXECUTOR},
+    sleep_queue::SleepQueue,
 };
+use alloc::{boxed::Box, sync::Arc};
+use core::{
+    alloc::AllocError,
+    future::Future,
+    mem,
+    pin::Pin,
+    sync::atomic::{AtomicU8, AtomicUsize, Ordering},
+    task::{Context, Poll, RawWakerVTable, Waker},
+};
+use futures::task::ArcWake;
+use intrusive_collections::{intrusive_adapter, LinkedListLink};
+use num_derive::{FromPrimitive, ToPrimitive};
+use num_traits::{FromPrimitive, ToPrimitive};
 
-/// Executor holds a list of tasks to be processed
-pub struct Executor {
-    schedque: Prique,
-    ntasks: usize,
-}
-
-impl Default for Executor {
-    fn default() -> Self {
-        Executor {
-            schedque: Prique::new(),
-            ntasks: 0,
-        }
-    }
-}
-
-/// Task is our unit of execution and holds a future are waiting on
-pub struct Task {
-    /// SAFETY: We won't poll a future until its reference count is one.
-    pub future: UnsafeCell<Pin<Box<dyn Future<Output = ()> + Send + 'static>>>,
-    /// SAFETY: It's a constant.
-    pub nice: usize,
-    /// SAFETY: You must guarantee that only one waker exist outside the context.
+pub(crate) struct Task {
+    sleep_kind: AtomicU8,
+    /// Quantum(= weight < MAX_QUANTUM) for time-sharing tasks or
+    /// priority(= weight - MAX_QUANTUM) for real-time tasks.
+    weight: AtomicUsize,
+    /// Quantum in this round.
+    quantum: AtomicUsize,
+    /// Timestamp of last tick, used to measure how long this task has been executed.
+    timestamp: AtomicUsize,
+    /// Index of its local executor, only used for time-sharing tasks.
+    local_executor_id: AtomicUsize,
+    ctx: &'static Executor,
+    future: Spinlock<Pin<Box<dyn Future<Output = ()> + Send + 'static>>>,
+    /// SAFETY: Guarded by the lock of task queue.
     link: LinkedListLink,
 }
 
-/// SAFETY: see [Task].
-unsafe impl Sync for Task {}
+intrusive_adapter!(pub(crate) TaskAdapter = Arc<Task>: Task { link: LinkedListLink });
 
-intrusive_adapter!(pub TaskAdapter = Arc<Task>: Task { link: LinkedListLink });
+#[derive(Debug, Clone, Copy, FromPrimitive, ToPrimitive)]
+pub(crate) enum SleepKind {
+    Any,
+    Mutex,
+    Reader,
+    Writer,
+    UpgradableReader,
+}
 
-/// Wake by rescheduling.
 impl ArcWake for Task {
-    fn wake_by_ref(t: &Arc<Self>) {
-        DEFAULT_EXECUTOR.lock().sched(t.clone());
+    fn wake_by_ref(_: &Arc<Self>) {
+        unreachable!()
+    }
+}
+
+impl Drop for Task {
+    fn drop(&mut self) {
+        self.ctx.ntasks.fetch_sub(1, Ordering::SeqCst);
     }
 }
 
 impl Task {
-    fn poll(self: &Arc<Self>) -> Poll<()> {
-        // Task may be in poll.
-        while alloc::sync::Arc::<Task>::strong_count(self) != 1 {}
+    pub fn new(
+        ctx: &'static Executor,
+        local_executor_id: usize,
+        weight: ExecuteWeight,
+        future: impl Future<Output = ()> + 'static + Send,
+    ) -> Result<Arc<Self>, AllocError> {
+        let boxed_future = Box::try_new(future)?;
+        let raw_weight = weight.into_raw_weight();
+        let task = Arc::try_new(Task {
+            sleep_kind: AtomicU8::new(0),
+            future: Spinlock::new(Box::into_pin(boxed_future)),
+            link: LinkedListLink::new(),
+            weight: AtomicUsize::new(raw_weight),
+            quantum: AtomicUsize::new(raw_weight),
+            local_executor_id: AtomicUsize::new(local_executor_id),
+            ctx,
+            timestamp: AtomicUsize::new(0),
+        })?;
+        ctx.ntasks.fetch_add(1, Ordering::SeqCst);
+        Ok(task)
+    }
 
-        // Safe since the reference count is 1.
-        let future = unsafe { self.future.get().as_mut().unwrap() };
+    pub fn get_sleep_kind(&self) -> SleepKind {
+        let raw_sleep_kind = self.sleep_kind.load(Ordering::Relaxed);
+        SleepKind::from_u8(raw_sleep_kind).unwrap()
+    }
 
-        // Poll our future and give it a waker.
-        let w = futures::task::waker(self.clone());
-        let context = &mut Context::from_waker(&w);
+    pub fn set_sleep_kind(&self, sleep_kind: SleepKind) {
+        self.sleep_kind
+            .store(sleep_kind.to_u8().unwrap(), Ordering::Relaxed);
+    }
+
+    pub fn set_weight(&self, weight: ExecuteWeight) {
+        self.weight
+            .store(weight.into_raw_weight(), Ordering::Relaxed);
+    }
+
+    pub fn get_weight(&self) -> ExecuteWeight {
+        ExecuteWeight::from_raw_weight(self.weight.load(Ordering::Relaxed))
+    }
+
+    pub fn get_local_executor(&self) -> &'static LocalExecutor {
+        let idx = self.local_executor_id.load(Ordering::Relaxed);
+        &self.ctx.local_executors[idx]
+    }
+
+    pub fn switch_executor(&self, executor_id: usize, from_round: usize, to_round: usize) {
+        let diff_round = to_round - from_round;
+        let weight = self.weight.load(Ordering::Relaxed) as usize;
+        let quantum = self.quantum.load(Ordering::Relaxed);
+        self.quantum
+            .store(quantum + diff_round * weight, Ordering::Relaxed);
+        self.local_executor_id.store(executor_id, Ordering::Relaxed);
+    }
+
+    pub fn reload_quantum(&self) {
+        let quantum = self.weight.load(Ordering::Relaxed) as usize;
+        self.quantum.store(quantum, Ordering::Relaxed);
+    }
+
+    /// TODO: use hardware timestamp.
+    fn get_current_timestamp(&self) -> usize {
+        self.timestamp.load(Ordering::Relaxed) + 1
+    }
+
+    pub fn tick_begin(&self) {
+        self.timestamp
+            .store(self.get_current_timestamp(), Ordering::Relaxed);
+    }
+
+    /// Return if the task still have some quantum.
+    pub fn tick(&self) -> Option<usize> {
+        let timestamp = self.timestamp.load(Ordering::Relaxed);
+        let diff = self.get_current_timestamp() - timestamp;
+        let mut quantum = self.quantum.load(Ordering::Relaxed);
+        quantum = quantum.checked_sub(diff).unwrap_or(0);
+        self.quantum.store(quantum, Ordering::Relaxed);
+        self.timestamp.store(timestamp + diff, Ordering::Relaxed);
+        if quantum == 0 {
+            None
+        } else {
+            Some(quantum)
+        }
+    }
+
+    pub fn poll(self: &Arc<Self>) -> Poll<()> {
+        let waker = futures::task::waker(self.clone());
+        let context = &mut Context::from_waker(&waker);
+        let mut future = self.future.lock();
+        self.tick_begin();
         future.as_mut().poll(context)
     }
 }
 
-impl Executor {
-    /// Add a task to the scheduler queue.
-    fn sched(&mut self, t: Arc<Task>) {
-        self.schedque.push(t.nice, t);
+impl Task {
+    unsafe fn from_waker(waker: &Waker) -> Arc<Self> {
+        struct FakeWaker {
+            data: *const (),
+            _vtable: &'static RawWakerVTable,
+        }
+        let fake_waker: &FakeWaker = mem::transmute(waker);
+        let task_ref = Arc::from_raw(fake_waker.data as *const Task);
+        let task = task_ref.clone();
+        mem::forget(task_ref);
+        task
     }
 
-    /// Create a new task and add to the executor.
-    ///
-    /// Here, we increment `ntasks`, which is the number of unfinished tasks
-    /// and is always greater or equal to length of `tasks` queue. The decrement
-    /// is done in [run].
-    ///
-    /// If allocation failed when pushing back to the tasks queue, it returns [Error].
-    fn spawn(
-        &mut self,
-        nice: usize,
-        future: impl Future<Output = ()> + 'static + Send,
-    ) -> Result<(), AllocError> {
-        self.spawn_boxed(nice, Box::try_new(future)?)
+    pub fn sleep_back(queue: &mut SleepQueue, sleep_kind: SleepKind, ctx: &mut Context<'_>) {
+        let task = unsafe { Task::from_waker(ctx.waker()) };
+        task.set_sleep_kind(sleep_kind);
+        queue.push_back(task);
     }
 
-    fn spawn_boxed(
-        &mut self,
-        nice: usize,
-        boxed_future: Box<dyn Future<Output = ()> + 'static + Send>,
-    ) -> Result<(), AllocError> {
-        let t = Arc::try_new(Task {
-            nice,
-            future: UnsafeCell::new(Box::into_pin(boxed_future)),
-            link: LinkedListLink::new(),
-        })?;
-        self.ntasks += 1;
-        self.sched(t);
-        Ok(())
+    pub fn sleep_front(queue: &mut SleepQueue, sleep_kind: SleepKind, ctx: &mut Context<'_>) {
+        let task = unsafe { Task::from_waker(ctx.waker()) };
+        task.set_sleep_kind(sleep_kind);
+        queue.push_front(task);
     }
 
-    /// Called when one task is terminating.
-    fn exit1(&mut self) {
-        self.ntasks -= 1;
+    pub fn wakeup_front(queue: &mut SleepQueue) -> Option<SleepKind> {
+        let task = queue.pop_front()?;
+        let sleep_kind = task.get_sleep_kind();
+        let executor = task.get_local_executor();
+        executor.reschedule(task, false);
+        Some(sleep_kind)
+    }
+
+    pub fn wakeup_all(queue: &mut SleepQueue) {
+        while let Some(_) = Task::wakeup_front(queue) {}
     }
 }
 
-lazy_static! {
-    static ref DEFAULT_EXECUTOR: Spinlock<Box<Executor>> = {
-        let m = Executor::default();
-        Spinlock::new(Box::try_new(m).unwrap())
-    };
-}
+/// SAFETY: See [`Task`].
+unsafe impl Sync for Task {}
 
-/// Spawn a new task to be run.
+/// Spawn a task to the default executor.
 ///
-/// # Examples
-///
-/// ```
-/// ksched::task::spawn(0, async {
-///    println!("hello, world");
-/// }).expect("oom");
-/// ```
-pub fn spawn(
-    nice: usize,
-    future: impl Future<Output = ()> + 'static + Send,
-) -> Result<(), AllocError> {
-    DEFAULT_EXECUTOR.lock().spawn(nice, future)
-}
-
-/// Spawn a new boxed task to be run.
-///
-/// # Examples
-///
-/// ```
-/// ksched::task::spawn_boxed(0, Box::new(async {
-///    println!("hello, world");
-/// })).expect("oom");
-/// ```
-pub fn spawn_boxed(
-    nice: usize,
-    boxed_future: Box<dyn Future<Output = ()> + 'static + Send>,
-) -> Result<(), AllocError> {
-    DEFAULT_EXECUTOR.lock().spawn_boxed(nice, boxed_future)
-}
-
-/// Run tasks until idle.
+/// Note that it doesn't mean to execute the task, just spawn it.
 ///
 /// # Examples
 ///
 /// ```
 /// use ksched::task;
 ///
-/// task::spawn(0, async {
-///     task::yield_now().await;
+/// task::spawn(async {
+///    println!("hello, world");
 /// }).expect("oom");
-/// task::run();
 /// ```
-pub fn run() {
-    loop {
-        let mut e = DEFAULT_EXECUTOR.lock();
-        let t = e.schedque.pop();
-        drop(e);
-        if let Some((_, t)) = t {
-            if t.poll().is_ready() {
-                DEFAULT_EXECUTOR.lock().exit1();
-            }
-        } else {
-            break;
-        }
-    }
+pub fn spawn<T>(future: T) -> Result<(), AllocError>
+where
+    T: Future<Output = ()> + Send + 'static,
+{
+    DEFAULT_EXECUTOR.local_executors[0].spawn(future)
 }
 
-/// Run until all tasks are finished.
+/// Run until all tasks in default executor are done.
 ///
 /// # Examples
 ///
 /// ```
-/// ksched::task::run_all();
+/// use ksched::task;
+///
+/// task::spawn(async move {
+///     println!("hello, world");
+/// }).unwrap();
+/// task::run();
 /// ```
-pub fn run_all() {
-    while DEFAULT_EXECUTOR.lock().ntasks > 0 {
-        run();
-    }
+pub fn run() {
+    DEFAULT_EXECUTOR.local_executors[0].run();
 }
 
 /// Cooperatively gives up a timeslice to the task scheduler.
@@ -200,12 +240,12 @@ pub fn run_all() {
 /// # Examples
 ///
 /// ```
-/// # ksched::task::spawn(0, async {
+/// # ksched::task::spawn(async {
 /// #
 /// ksched::task::yield_now().await;
 /// #
 /// # });
-/// # ksched::task::run_all();
+/// # ksched::task::run();
 /// ```
 pub async fn yield_now() {
     struct YieldNow(bool);
@@ -213,9 +253,11 @@ pub async fn yield_now() {
     impl Future for YieldNow {
         type Output = ();
         fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+            let task = unsafe { Task::from_waker(cx.waker()) };
             if !self.0 {
                 self.0 = true;
-                cx.waker().wake_by_ref();
+                let executor = task.get_local_executor();
+                executor.reschedule(task, false);
                 Poll::Pending
             } else {
                 Poll::Ready(())
@@ -224,4 +266,108 @@ pub async fn yield_now() {
     }
 
     YieldNow(false).await
+}
+
+/// Make a task into a time-sharing task with specific quantum per round.
+pub async fn set_quantum(quantum: usize) {
+    struct SetQuantum(ExecuteWeight);
+
+    impl Future for SetQuantum {
+        type Output = ();
+        fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+            let task = unsafe { Task::from_waker(cx.waker()) };
+            task.set_weight(self.0);
+            Poll::Ready(())
+        }
+    }
+
+    SetQuantum(ExecuteWeight::from_quantum(quantum)).await
+}
+
+/// Retrieve the quantum of a time-sharing task.
+///
+/// Return [None] if this is a real-time task.
+pub async fn get_quantum() -> Option<usize> {
+    struct GetQuantum;
+
+    impl Future for GetQuantum {
+        type Output = Option<usize>;
+        fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+            let task = unsafe { Task::from_waker(cx.waker()) };
+            let result = if let ExecuteWeight::TimeSharing(quantum) = task.get_weight() {
+                Some(quantum)
+            } else {
+                None
+            };
+            Poll::Ready(result)
+        }
+    }
+
+    GetQuantum.await
+}
+
+/// Make a task into a real-time one with specific priority.
+pub async fn set_priority(priority: usize) {
+    struct SetPriority(ExecuteWeight);
+
+    impl Future for SetPriority {
+        type Output = ();
+        fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+            let task = unsafe { Task::from_waker(cx.waker()) };
+            task.set_weight(self.0);
+            Poll::Ready(())
+        }
+    }
+
+    SetPriority(ExecuteWeight::from_priority(priority)).await
+}
+
+/// Retrieve the priority of a real-time task.
+///
+/// Return [None] if this is a time-sharing task.
+pub async fn get_priority() -> Option<usize> {
+    struct GetPriority;
+
+    impl Future for GetPriority {
+        type Output = Option<usize>;
+        fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+            let task = unsafe { Task::from_waker(cx.waker()) };
+            let result = if let ExecuteWeight::RealTime(priority) = task.get_weight() {
+                Some(priority)
+            } else {
+                None
+            };
+            Poll::Ready(result)
+        }
+    }
+
+    GetPriority.await
+}
+
+/// Inject a preemptable point for fair scheduling and real-time scheduling.
+///
+/// If you have NCPU local executors and preemptable points are carefully injected into your code
+/// so that the time consumed between any two sequential preemptable points is O(1), then for each
+/// executor, the real-time tasks with highest priority is guaranteed to be waken up in O(NCPU).
+pub async fn preempt_point() {
+    struct PreemptPoint;
+
+    impl Future for PreemptPoint {
+        type Output = ();
+        fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+            let task = unsafe { Task::from_waker(cx.waker()) };
+            let executor = task.get_local_executor();
+            if executor.try_preempt(task).is_ok() {
+                Poll::Pending
+            } else {
+                Poll::Ready(())
+            }
+        }
+    }
+
+    PreemptPoint.await
+}
+
+pub async fn sleep(_key: usize) {
+    todo!()
 }

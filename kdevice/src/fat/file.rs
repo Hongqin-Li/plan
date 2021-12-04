@@ -405,7 +405,7 @@ mod tests {
         let (dir, img_path) = gen_fat32img();
         let disk = Arc::new(FileDisk::new(img_path));
 
-        task::spawn(0, async move {
+        task::spawn(async move {
             let disk_root = Chan::attach(disk, b"").await.unwrap();
 
             let fs = Arc::new(FAT::new(50, 100, &disk_root).await.unwrap());
@@ -422,7 +422,7 @@ mod tests {
             fs.shutdown().unwrap().await;
         })
         .unwrap();
-        task::run_all();
+        task::run();
         drop(dir);
     }
 
@@ -443,7 +443,7 @@ mod tests {
             })
             .collect();
 
-        task::spawn(0, async move {
+        task::spawn(async move {
             let disk_root = Chan::attach(disk, b"").await.unwrap();
 
             let fs = FAT::new(2 * ntask + 10, 100, &disk_root).await.unwrap();
@@ -465,7 +465,7 @@ mod tests {
         let ncpu = 10;
         let (name_len, data_len) = (1..20, 0..1);
 
-        task::spawn(0, async move {
+        task::spawn(async move {
             let disk_root = Chan::attach(disk, b"").await.unwrap();
             let fs = Arc::new(FAT::new(2 * ntask + 10, 100, &disk_root).await.unwrap());
             let fs_root = Chan::attach(fs.clone(), b"").await.unwrap();
@@ -510,7 +510,7 @@ mod tests {
             })
             .collect();
 
-        task::spawn(0, async move {
+        task::spawn(async move {
             let disk_root = Chan::attach(disk, b"").await.unwrap();
             let fs = FAT::new(ntask + 10, 100, &disk_root).await.unwrap();
             disk_root.close().await;
@@ -555,7 +555,7 @@ mod tests {
             let disk = disk.clone();
             let names = names.clone();
             let name_len = name_len.clone();
-            task::spawn(0, async move {
+            task::spawn(async move {
                 let disk_root = Chan::attach(disk, b"").await.unwrap();
                 let fs = Arc::new(FAT::new(ntask + 10, 100, &disk_root).await.unwrap());
                 disk_root.close().await;
@@ -564,7 +564,7 @@ mod tests {
                     let name_len = name_len.clone();
                     let names = names.clone();
 
-                    task::spawn(0, async move {
+                    task::spawn(async move {
                         let root = Chan::attach(fs.clone(), b"").await.unwrap();
 
                         // Create a file/dir with random name.
@@ -605,7 +605,7 @@ mod tests {
         }
         run_multi(ncpu);
 
-        task::spawn(0, async move {
+        task::spawn(async move {
             let disk_root = Chan::attach(disk, b"").await.unwrap();
             let fs = Arc::new(FAT::new(ntask + 10, 100, &disk_root).await.unwrap());
             disk_root.close().await;
@@ -614,7 +614,7 @@ mod tests {
                 let name_len = name_len.clone();
                 let names = names.clone();
 
-                task::spawn(0, async move {
+                task::spawn(async move {
                     let root = Chan::attach(fs.clone(), b"").await.unwrap();
 
                     let mut g = names.lock();

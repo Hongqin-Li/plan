@@ -272,6 +272,10 @@ impl Log {
         Ok(())
     }
 
+    unsafe fn get_inner(&self) -> &mut LogInner {
+        &mut *Spinlock::data_ptr(&self.log)
+    }
+
     /// Called at the start of each transaction.
     pub async fn begin_opx(&self, reserved: usize) -> Result<()> {
         let (redo, mut log) = loop {
@@ -290,7 +294,7 @@ impl Log {
             log.state = LogState::Redoing;
             drop(log);
 
-            let log1 = unsafe { self.log.get_mut() };
+            let log1 = unsafe { self.get_inner() };
             let failed = self.redo(log1).await.is_err();
             let mut g = self.log.lock();
             g.state = if failed {
@@ -374,7 +378,7 @@ impl Log {
         // synchronize all memory writes before it, including the
         // modification of `log` in `commit`. Thus, no need for memory
         // fence here.
-        let log = unsafe { self.log.get_mut() };
+        let log = unsafe { self.get_inner() };
         let committed = if log.state == LogState::Undo || self.commit(log).await.is_err() {
             self.undo(log);
             // Notify that this transaction failed.
@@ -514,7 +518,7 @@ impl<'a> Drop for OpGuard<'a> {
 #[cfg(test)]
 mod tests {
     use kcore::dev::Device;
-    use ksched::task::yield_now;
+    use ksched::task;
 
     use super::*;
     use ktest::{fs::MemDisk, rand_int, run_multi};
@@ -524,7 +528,7 @@ mod tests {
         let ntask = 100;
         let ncpu = 10;
         let log_start = 1000;
-        ksched::task::spawn(0, async move {
+        task::spawn(async move {
             let disk = Arc::new(MemDisk::new(1100 * BSIZE));
             let disk_chan = Chan::attach(disk, b"").await.unwrap();
 
@@ -537,7 +541,7 @@ mod tests {
             let log = Arc::new(Log::new(100, log_start, disk_chan).await.unwrap());
             for _ in 0..ntask {
                 let log = log.clone();
-                ksched::task::spawn(0, async move {
+                task::spawn(async move {
                     log.begin_op().await.unwrap();
                     for _ in 0..MAXOPBLOCKS {
                         let buf = log
@@ -558,7 +562,7 @@ mod tests {
             }
 
             while Arc::strong_count(&log) != 1 {
-                yield_now().await;
+                task::yield_now().await;
             }
             Arc::try_unwrap(log).unwrap().close().await;
         })

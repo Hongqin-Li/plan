@@ -105,7 +105,7 @@ mod tests {
         let (dir, img_path) = gen_fat32img();
         let disk = Arc::new(FileDisk::new(img_path));
 
-        task::spawn(0, async move {
+        task::spawn(async move {
             let devroot = Arc::new(Root::default());
             let root = Chan::attach(devroot, b"").await.unwrap();
             assert_eq!(root.path().await.unwrap(), b"/");
@@ -146,7 +146,7 @@ mod tests {
             fs.shutdown().unwrap().await;
         })
         .unwrap();
-        task::run_all();
+        task::run();
         drop(dir);
     }
 }

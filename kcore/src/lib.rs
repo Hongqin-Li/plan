@@ -50,7 +50,7 @@ pub mod tests {
         let mut threads = vec![];
         for _ in 0..ncpu {
             let t = std::thread::spawn(move || {
-                task::run_all();
+                task::run();
             });
             threads.push(t);
         }

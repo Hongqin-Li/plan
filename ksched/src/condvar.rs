@@ -1,16 +1,14 @@
 //! Condition variable.
-use core::pin::Pin;
+
+use crate::sleep_queue::SleepQueue;
+use crate::sync::{MutexGuard, Spinlock, SpinlockGuard};
+use crate::task::{SleepKind, Task};
 use core::{
     fmt,
+    pin::Pin,
     task::{Context, Poll},
 };
-
 use futures::Future;
-
-use crate::{
-    slpque::SleepQueue,
-    sync::{MutexGuard, Spinlock, SpinlockGuard},
-};
 
 /// A Condition Variable
 ///
@@ -21,7 +19,7 @@ use crate::{
 /// # Examples
 ///
 /// ```
-/// # ksched::task::spawn(0, async {
+/// # ksched::task::spawn(async {
 /// #
 /// use std::sync::Arc;
 ///
@@ -32,7 +30,7 @@ use crate::{
 /// let pair2 = pair.clone();
 ///
 /// // Inside of our lock, spawn a new thread, and then wait for it to start.
-/// task::spawn(0, async move {
+/// task::spawn(async move {
 ///     let (lock, cvar) = &*pair2;
 ///     let mut started = lock.lock().await;
 ///     *started = true;
@@ -48,10 +46,10 @@ use crate::{
 /// }
 ///
 /// # }).unwrap();
-/// # ksched::task::run_all();
+/// # ksched::task::run();
 /// ```
 pub struct Condvar {
-    slpque: Spinlock<SleepQueue<()>>,
+    slpque: Spinlock<SleepQueue>,
 }
 
 impl Default for Condvar {
@@ -84,7 +82,7 @@ impl Condvar {
     /// # Examples
     ///
     /// ```
-    /// # ksched::task::spawn(0, async {
+    /// # ksched::task::spawn(async {
     /// use std::sync::Arc;
     ///
     /// use ksched::sync::{Mutex, Condvar};
@@ -93,7 +91,7 @@ impl Condvar {
     /// let pair = Arc::new((Mutex::new(false), Condvar::new()));
     /// let pair2 = pair.clone();
     ///
-    /// task::spawn(0, async move {
+    /// task::spawn(async move {
     ///     let (lock, cvar) = &*pair2;
     ///     let mut started = lock.lock().await;
     ///     *started = true;
@@ -108,7 +106,7 @@ impl Condvar {
     ///     started = cvar.wait(started).await;
     /// }
     /// # }).unwrap();
-    /// # ksched::task::run_all();
+    /// # ksched::task::run();
     /// ```
     #[allow(clippy::needless_lifetimes)]
     pub async fn wait<'a, T>(&self, guard: MutexGuard<'a, T>) -> MutexGuard<'a, T> {
@@ -133,7 +131,7 @@ impl Condvar {
     /// # Examples
     ///
     /// ```
-    /// # ksched::task::spawn(0, async {
+    /// # ksched::task::spawn(async {
     /// use std::sync::Arc;
     ///
     /// use ksched::sync::{Spinlock, Condvar};
@@ -142,7 +140,7 @@ impl Condvar {
     /// let pair = Arc::new((Spinlock::new(false), Condvar::new()));
     /// let pair2 = pair.clone();
     ///
-    /// task::spawn(0, async move {
+    /// task::spawn(async move {
     ///     let (lock, cvar) = &*pair2;
     ///     let mut started = lock.lock();
     ///     *started = true;
@@ -157,14 +155,14 @@ impl Condvar {
     ///     started = cvar.spin_wait(started).await;
     /// }
     /// # }).unwrap();
-    /// # ksched::task::run_all();
+    /// # ksched::task::run();
     /// ```
     #[allow(clippy::needless_lifetimes)]
     pub async fn spin_wait<'a, 'b, T>(
         &'a self,
         guard: SpinlockGuard<'b, T>,
     ) -> SpinlockGuard<'b, T> {
-        let lk = SpinlockGuard::source(&guard);
+        let lk = SpinlockGuard::mutex(&guard);
         self.spin_await_notify(guard).await;
         lk.lock()
     }
@@ -185,7 +183,7 @@ impl Condvar {
     /// # Examples
     ///
     /// ```
-    /// # ksched::task::spawn(0, async {
+    /// # ksched::task::spawn(async {
     /// #
     /// use std::sync::Arc;
     ///
@@ -195,7 +193,7 @@ impl Condvar {
     /// let pair = Arc::new((Mutex::new(false), Condvar::new()));
     /// let pair2 = pair.clone();
     ///
-    /// task::spawn(0, async move {
+    /// task::spawn(async move {
     ///     let (lock, cvar) = &*pair2;
     ///     let mut started = lock.lock().await;
     ///     *started = true;
@@ -212,7 +210,7 @@ impl Condvar {
     /// ).await;
     /// #
     /// # }).unwrap();
-    /// # ksched::task::run_all();
+    /// # ksched::task::run();
     /// ```
     #[allow(clippy::needless_lifetimes)]
     pub async fn wait_until<'a, T, F>(
@@ -236,7 +234,7 @@ impl Condvar {
     /// # Examples
     ///
     /// ```
-    /// # ksched::task::spawn(0, async {
+    /// # ksched::task::spawn(async {
     /// #
     /// use std::sync::Arc;
     ///
@@ -246,7 +244,7 @@ impl Condvar {
     /// let pair = Arc::new((Spinlock::new(false), Condvar::new()));
     /// let pair2 = pair.clone();
     ///
-    /// task::spawn(0, async move {
+    /// task::spawn(async move {
     ///     let (lock, cvar) = &*pair2;
     ///     let mut started = lock.lock();
     ///     *started = true;
@@ -263,7 +261,7 @@ impl Condvar {
     /// ).await;
     /// #
     /// # }).unwrap();
-    /// # ksched::task::run_all();
+    /// # ksched::task::run();
     /// ```
     #[allow(clippy::needless_lifetimes)]
     pub async fn spin_wait_until<'a, 'b, T, F>(
@@ -284,7 +282,7 @@ impl Condvar {
     /// # Examples
     ///
     /// ```
-    /// # ksched::task::spawn(0, async {
+    /// # ksched::task::spawn(async {
     /// use std::sync::Arc;
     ///
     /// use ksched::sync::{Mutex, Condvar};
@@ -293,7 +291,7 @@ impl Condvar {
     /// let pair = Arc::new((Mutex::new(false), Condvar::new()));
     /// let pair2 = pair.clone();
     ///
-    /// task::spawn(0, async move {
+    /// task::spawn(async move {
     ///     let (lock, cvar) = &*pair2;
     ///     let mut started = lock.lock().await;
     ///     *started = true;
@@ -308,17 +306,18 @@ impl Condvar {
     ///     started = cvar.wait(started).await;
     /// }
     /// # }).unwrap();
-    /// # ksched::task::run_all();
+    /// # ksched::task::run();
     /// ```
     pub fn notify_one(&self) {
-        self.slpque.lock().wakeup_one();
+        let mut sleep_queue = self.slpque.lock();
+        Task::wakeup_front(&mut sleep_queue);
     }
 
     /// Wakes up all blocked tasks on this condvar.
     ///
     /// # Examples
     /// ```
-    /// # ksched::task::spawn(0, async {
+    /// # ksched::task::spawn(async {
     /// #
     /// use std::sync::Arc;
     ///
@@ -328,7 +327,7 @@ impl Condvar {
     /// let pair = Arc::new((Mutex::new(false), Condvar::new()));
     /// let pair2 = pair.clone();
     ///
-    /// task::spawn(0, async move {
+    /// task::spawn(async move {
     ///     let (lock, cvar) = &*pair2;
     ///     let mut started = lock.lock().await;
     ///     *started = true;
@@ -345,10 +344,11 @@ impl Condvar {
     /// }
     /// #
     /// # }).unwrap();
-    /// # ksched::task::run_all();
+    /// # ksched::task::run();
     /// ```
     pub fn notify_all(&self) {
-        self.slpque.lock().wakeup_all();
+        let mut sleep_queue = self.slpque.lock();
+        Task::wakeup_all(&mut sleep_queue);
     }
 }
 
@@ -376,17 +376,17 @@ where
 {
     type Output = ();
 
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+    fn poll(mut self: Pin<&mut Self>, ctx: &mut Context<'_>) -> Poll<Self::Output> {
         match self.guard.take() {
-            Some(g) => {
-                self.cond.slpque.lock().sleep((), cx.waker().clone());
-                drop(g);
+            Some(guard) => {
+                let mut sleep_queue = self.cond.slpque.lock();
+                Task::sleep_back(&mut sleep_queue, SleepKind::Any, ctx);
+                drop(sleep_queue);
+                drop(guard);
                 Poll::Pending
             }
-            None => {
-                // Only happen if it is polled twice after receiving a notification.
-                Poll::Ready(())
-            }
+            // Only happen if it is polled twice after receiving a notification.
+            None => Poll::Ready(()),
         }
     }
 }

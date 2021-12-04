@@ -224,7 +224,7 @@ pub async fn crud<T: Device + fmt::Debug + Send + Sync + 'static>(
 
     for (name, data, off) in req {
         let fs = fs.clone();
-        task::spawn(0, async move {
+        task::spawn(async move {
             println!("file '{}' start", name);
 
             let root = loop {
@@ -294,7 +294,7 @@ pub async fn create_dir<T: Device + fmt::Debug + Send + Sync + 'static>(
 
     for (name, data, off) in req {
         let fs = fs.clone();
-        task::spawn(0, async move {
+        task::spawn(async move {
             println!("dir '{}' start", name);
 
             let root = loop {

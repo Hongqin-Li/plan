@@ -226,12 +226,13 @@ mod tests {
     #[test]
     fn test_pipe() {
         let devpipe = Arc::new(Pipe::default());
-        task::spawn(0, async move {
+        task::spawn(async move {
             let p = Chan::attach(devpipe, b"").await.unwrap();
             let data = p.open(b"data", None).await.unwrap().unwrap();
             let data1 = p.open(b"data1", None).await.unwrap().unwrap();
-
-            task::spawn(0, async move {
+            assert_eq!(data.is_dir(), false);
+            assert_eq!(data1.is_dir(), false);
+            task::spawn(async move {
                 assert_eq!(data.write(b"12345", 0).await.unwrap(), 5);
                 let mut buf = [0u8; 10];
                 assert_eq!(data.read(&mut buf, 0).await.unwrap(), 4);
@@ -239,7 +240,7 @@ mod tests {
                 data.close().await;
             })
             .unwrap();
-            task::spawn(0, async move {
+            task::spawn(async move {
                 let mut buf = [0u8; 5];
                 assert_eq!(data1.read(&mut buf, 0).await.unwrap(), 5);
                 assert_eq!(&buf, b"12345");
@@ -250,24 +251,24 @@ mod tests {
             p.close().await;
         })
         .unwrap();
-        task::run_all();
+        task::run();
     }
 
     #[test]
     fn test_pipe_read_portion() {
         let devpipe = Arc::new(Pipe::default());
-        task::spawn(0, async move {
+        task::spawn(async move {
             let p = Chan::attach(devpipe, b"").await.unwrap();
             let data = p.open(b"data", None).await.unwrap().unwrap();
             let data1 = p.open(b"data1", None).await.unwrap().unwrap();
 
-            task::spawn(0, async move {
+            task::spawn(async move {
                 assert_eq!(data.write(b"12345abcd", 0).await.unwrap(), 9);
                 assert_eq!(data.write(b"0", 0).await.unwrap(), 1);
                 data.close().await;
             })
             .unwrap();
-            task::spawn(0, async move {
+            task::spawn(async move {
                 let mut buf = [0u8; 5];
                 assert_eq!(data1.read(&mut buf, 0).await.unwrap(), 5);
                 assert_eq!(&buf, b"12345");
@@ -282,13 +283,13 @@ mod tests {
             p.close().await;
         })
         .unwrap();
-        task::run_all();
+        task::run();
     }
 
     #[test]
     fn test_pipe_write_broken() {
         let devpipe = Arc::new(Pipe::default());
-        task::spawn(0, async move {
+        task::spawn(async move {
             let p = Chan::attach(devpipe, b"").await.unwrap();
             let data = p.open(b"data", None).await.unwrap().unwrap();
             assert_eq!(data.write(b"", 0).await.is_err(), true);
@@ -296,13 +297,13 @@ mod tests {
             p.close().await;
         })
         .unwrap();
-        task::run_all();
+        task::run();
     }
 
     #[test]
     fn test_pipe_read_empty() {
         let devpipe = Arc::new(Pipe::default());
-        task::spawn(0, async move {
+        task::spawn(async move {
             let p = Chan::attach(devpipe, b"").await.unwrap();
             let data = p.open(b"data", None).await.unwrap().unwrap();
             let mut buf = [0; 10];
@@ -311,6 +312,6 @@ mod tests {
             p.close().await;
         })
         .unwrap();
-        task::run_all();
+        task::run();
     }
 }
