@@ -22,6 +22,7 @@ mod mutex;
 mod priority_queue;
 mod rwlock;
 mod sleep_queue;
+mod waker;
 
 pub mod executor;
 pub mod mpsc;

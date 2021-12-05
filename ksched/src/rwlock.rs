@@ -217,7 +217,6 @@ impl<T: ?Sized> RwLock<T> {
 
         impl<'a, T: ?Sized> Future for Lock<'a, T> {
             type Output = RwLockReadGuard<'a, T>;
-
             fn poll(mut self: Pin<&mut Self>, ctx: &mut Context<'_>) -> Poll<Self::Output> {
                 let mut inner = self.lk.inner.lock();
                 if self.first {
@@ -294,7 +293,6 @@ impl<T: ?Sized> RwLock<T> {
 
         impl<'a, T: ?Sized> Future for Lock<'a, T> {
             type Output = RwLockUpgradableReadGuard<'a, T>;
-
             fn poll(mut self: Pin<&mut Self>, ctx: &mut Context<'_>) -> Poll<Self::Output> {
                 let mut inner = self.lk.inner.lock();
                 if self.first {
@@ -358,7 +356,6 @@ impl<T: ?Sized> RwLock<T> {
 
         impl<'a, T: ?Sized> Future for Lock<'a, T> {
             type Output = RwLockWriteGuard<'a, T>;
-
             fn poll(mut self: Pin<&mut Self>, ctx: &mut Context<'_>) -> Poll<Self::Output> {
                 let mut inner = self.lk.inner.lock();
                 if self.first {
@@ -409,6 +406,7 @@ impl<T: ?Sized> RwLock<T> {
 impl<T: fmt::Debug + ?Sized> fmt::Debug for RwLock<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         struct Locked;
+
         impl fmt::Debug for Locked {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
                 f.write_str("<locked>")
@@ -584,7 +582,6 @@ impl<'a, T: ?Sized> RwLockUpgradableReadGuard<'a, T> {
 
         impl<'a, T: ?Sized> Future for Upgrade<'a, T> {
             type Output = RwLockWriteGuard<'a, T>;
-
             fn poll(mut self: Pin<&mut Self>, ctx: &mut Context<'_>) -> Poll<Self::Output> {
                 let mut inner = self.lk.inner.lock();
                 if self.first {
@@ -653,6 +650,13 @@ unsafe impl<T: Send + ?Sized> Send for RwLockWriteGuard<'_, T> {}
 unsafe impl<T: Sync + ?Sized> Sync for RwLockWriteGuard<'_, T> {}
 
 impl<'a, T: ?Sized> RwLockWriteGuard<'a, T> {
+    /// Create a writer guard without acquiring the lock.
+    ///
+    /// You need to guarantee that you are actually the writer before.
+    pub unsafe fn from_raw(lock: &'a RwLock<T>) -> Self {
+        Self(lock)
+    }
+
     /// Downgrades into a regular reader guard.
     ///
     /// # Examples

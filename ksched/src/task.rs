@@ -1,6 +1,7 @@
 //! Async executor and some basic futures.
 
 use crate::sync::Spinlock;
+use crate::waker;
 use crate::{
     executor::{ExecuteWeight, Executor, LocalExecutor, DEFAULT_EXECUTOR},
     sleep_queue::SleepQueue,
@@ -9,12 +10,10 @@ use alloc::{boxed::Box, sync::Arc};
 use core::{
     alloc::AllocError,
     future::Future,
-    mem,
     pin::Pin,
     sync::atomic::{AtomicU8, AtomicUsize, Ordering},
-    task::{Context, Poll, RawWakerVTable, Waker},
+    task::{Context, Poll},
 };
-use futures::task::ArcWake;
 use intrusive_collections::{intrusive_adapter, LinkedListLink};
 use num_derive::{FromPrimitive, ToPrimitive};
 use num_traits::{FromPrimitive, ToPrimitive};
@@ -45,12 +44,6 @@ pub(crate) enum SleepKind {
     Reader,
     Writer,
     UpgradableReader,
-}
-
-impl ArcWake for Task {
-    fn wake_by_ref(_: &Arc<Self>) {
-        unreachable!()
-    }
 }
 
 impl Drop for Task {
@@ -146,7 +139,7 @@ impl Task {
     }
 
     pub fn poll(self: &Arc<Self>) -> Poll<()> {
-        let waker = futures::task::waker(self.clone());
+        let waker = waker::waker(self.clone());
         let context = &mut Context::from_waker(&waker);
         let mut future = self.future.lock();
         self.tick_begin();
@@ -155,26 +148,18 @@ impl Task {
 }
 
 impl Task {
-    unsafe fn from_waker(waker: &Waker) -> Arc<Self> {
-        struct FakeWaker {
-            data: *const (),
-            _vtable: &'static RawWakerVTable,
-        }
-        let fake_waker: &FakeWaker = mem::transmute(waker);
-        let task_ref = Arc::from_raw(fake_waker.data as *const Task);
-        let task = task_ref.clone();
-        mem::forget(task_ref);
-        task
+    fn from_ctx(ctx: &mut Context<'_>) -> Arc<Task> {
+        waker::get_task(ctx.waker())
     }
 
     pub fn sleep_back(queue: &mut SleepQueue, sleep_kind: SleepKind, ctx: &mut Context<'_>) {
-        let task = unsafe { Task::from_waker(ctx.waker()) };
+        let task = Task::from_ctx(ctx);
         task.set_sleep_kind(sleep_kind);
         queue.push_back(task);
     }
 
     pub fn sleep_front(queue: &mut SleepQueue, sleep_kind: SleepKind, ctx: &mut Context<'_>) {
-        let task = unsafe { Task::from_waker(ctx.waker()) };
+        let task = Task::from_ctx(ctx);
         task.set_sleep_kind(sleep_kind);
         queue.push_front(task);
     }
@@ -252,8 +237,8 @@ pub async fn yield_now() {
 
     impl Future for YieldNow {
         type Output = ();
-        fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-            let task = unsafe { Task::from_waker(cx.waker()) };
+        fn poll(mut self: Pin<&mut Self>, ctx: &mut Context<'_>) -> Poll<Self::Output> {
+            let task = Task::from_ctx(ctx);
             if !self.0 {
                 self.0 = true;
                 let executor = task.get_local_executor();
@@ -274,8 +259,8 @@ pub async fn set_quantum(quantum: usize) {
 
     impl Future for SetQuantum {
         type Output = ();
-        fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-            let task = unsafe { Task::from_waker(cx.waker()) };
+        fn poll(self: Pin<&mut Self>, ctx: &mut Context<'_>) -> Poll<Self::Output> {
+            let task = Task::from_ctx(ctx);
             task.set_weight(self.0);
             Poll::Ready(())
         }
@@ -292,8 +277,8 @@ pub async fn get_quantum() -> Option<usize> {
 
     impl Future for GetQuantum {
         type Output = Option<usize>;
-        fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-            let task = unsafe { Task::from_waker(cx.waker()) };
+        fn poll(self: Pin<&mut Self>, ctx: &mut Context<'_>) -> Poll<Self::Output> {
+            let task = Task::from_ctx(ctx);
             let result = if let ExecuteWeight::TimeSharing(quantum) = task.get_weight() {
                 Some(quantum)
             } else {
@@ -312,8 +297,8 @@ pub async fn set_priority(priority: usize) {
 
     impl Future for SetPriority {
         type Output = ();
-        fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-            let task = unsafe { Task::from_waker(cx.waker()) };
+        fn poll(self: Pin<&mut Self>, ctx: &mut Context<'_>) -> Poll<Self::Output> {
+            let task = Task::from_ctx(ctx);
             task.set_weight(self.0);
             Poll::Ready(())
         }
@@ -330,8 +315,8 @@ pub async fn get_priority() -> Option<usize> {
 
     impl Future for GetPriority {
         type Output = Option<usize>;
-        fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-            let task = unsafe { Task::from_waker(cx.waker()) };
+        fn poll(self: Pin<&mut Self>, ctx: &mut Context<'_>) -> Poll<Self::Output> {
+            let task = Task::from_ctx(ctx);
             let result = if let ExecuteWeight::RealTime(priority) = task.get_weight() {
                 Some(priority)
             } else {
@@ -354,8 +339,8 @@ pub async fn preempt_point() {
 
     impl Future for PreemptPoint {
         type Output = ();
-        fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-            let task = unsafe { Task::from_waker(cx.waker()) };
+        fn poll(self: Pin<&mut Self>, ctx: &mut Context<'_>) -> Poll<Self::Output> {
+            let task = Task::from_ctx(ctx);
             let executor = task.get_local_executor();
             if executor.try_preempt(task).is_ok() {
                 Poll::Pending

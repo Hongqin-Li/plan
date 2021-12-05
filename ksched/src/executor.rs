@@ -3,9 +3,11 @@
 use crate::priority_queue::{PriorityQueue64 as PriorityQueue, PriorityQueueTrait};
 use crate::task::{Task, TaskAdapter};
 use alloc::sync::Arc;
-use core::alloc::AllocError;
-use core::sync::atomic::{AtomicUsize, Ordering};
-use futures::Future;
+use core::future::Future;
+use core::{
+    alloc::AllocError,
+    sync::atomic::{AtomicUsize, Ordering},
+};
 use intrusive_collections::LinkedList;
 use spin::Mutex;
 

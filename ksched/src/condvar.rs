@@ -1,14 +1,16 @@
 //! Condition variable.
 
-use crate::sleep_queue::SleepQueue;
-use crate::sync::{MutexGuard, Spinlock, SpinlockGuard};
-use crate::task::{SleepKind, Task};
+use crate::{
+    sleep_queue::SleepQueue,
+    sync::{MutexGuard, Spinlock, SpinlockGuard},
+    task::{SleepKind, Task},
+};
 use core::{
     fmt,
+    future::Future,
     pin::Pin,
     task::{Context, Poll},
 };
-use futures::Future;
 
 /// A Condition Variable
 ///
