@@ -569,6 +569,10 @@
 <span id="566">566</span>
 <span id="567">567</span>
 <span id="568">568</span>
+<span id="569">569</span>
+<span id="570">570</span>
+<span id="571">571</span>
+<span id="572">572</span>
 </pre><pre class="rust">
 <span class="doccomment">//! Log layer supporting transaction operations on blocks.</span>
 <span class="doccomment">//!</span>
@@ -844,6 +848,10 @@
         <span class="prelude-val">Ok</span>(())
     }
 
+    <span class="kw">unsafe</span> <span class="kw">fn</span> <span class="ident">get_inner</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">LogInner</span> {
+        <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="kw-2">*</span><span class="ident">Spinlock::data_ptr</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">log</span>)
+    }
+
     <span class="doccomment">/// Called at the start of each transaction.</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">begin_opx</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">reserved</span>: <span class="ident">usize</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>()<span class="op">&gt;</span> {
         <span class="kw">let</span> (<span class="ident">redo</span>, <span class="kw-2">mut</span> <span class="ident">log</span>) <span class="op">=</span> <span class="kw">loop</span> {
@@ -862,7 +870,7 @@
             <span class="ident">log</span>.<span class="ident">state</span> <span class="op">=</span> <span class="ident">LogState::Redoing</span>;
             <span class="ident">drop</span>(<span class="ident">log</span>);
 
-            <span class="kw">let</span> <span class="ident">log1</span> <span class="op">=</span> <span class="kw">unsafe</span> { <span class="self">self</span>.<span class="ident">log</span>.<span class="ident">get_mut</span>() };
+            <span class="kw">let</span> <span class="ident">log1</span> <span class="op">=</span> <span class="kw">unsafe</span> { <span class="self">self</span>.<span class="ident">get_inner</span>() };
             <span class="kw">let</span> <span class="ident">failed</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">redo</span>(<span class="ident">log1</span>).<span class="kw">await</span>.<span class="ident">is_err</span>();
             <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">g</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">log</span>.<span class="ident">lock</span>();
             <span class="ident">g</span>.<span class="ident">state</span> <span class="op">=</span> <span class="kw">if</span> <span class="ident">failed</span> {
@@ -946,7 +954,7 @@
         <span class="comment">// synchronize all memory writes before it, including the</span>
         <span class="comment">// modification of `log` in `commit`. Thus, no need for memory</span>
         <span class="comment">// fence here.</span>
-        <span class="kw">let</span> <span class="ident">log</span> <span class="op">=</span> <span class="kw">unsafe</span> { <span class="self">self</span>.<span class="ident">log</span>.<span class="ident">get_mut</span>() };
+        <span class="kw">let</span> <span class="ident">log</span> <span class="op">=</span> <span class="kw">unsafe</span> { <span class="self">self</span>.<span class="ident">get_inner</span>() };
         <span class="kw">let</span> <span class="ident">committed</span> <span class="op">=</span> <span class="kw">if</span> <span class="ident">log</span>.<span class="ident">state</span> <span class="op">=</span><span class="op">=</span> <span class="ident">LogState::Undo</span> <span class="op">|</span><span class="op">|</span> <span class="self">self</span>.<span class="ident">commit</span>(<span class="ident">log</span>).<span class="kw">await</span>.<span class="ident">is_err</span>() {
             <span class="self">self</span>.<span class="ident">undo</span>(<span class="ident">log</span>);
             <span class="comment">// Notify that this transaction failed.</span>
@@ -1086,7 +1094,7 @@
 <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">test</span>)]</span>
 <span class="kw">mod</span> <span class="ident">tests</span> {
     <span class="kw">use</span> <span class="ident">kcore::dev::Device</span>;
-    <span class="kw">use</span> <span class="ident">ksched::task::yield_now</span>;
+    <span class="kw">use</span> <span class="ident">ksched::task</span>;
 
     <span class="kw">use</span> <span class="kw">super</span>::<span class="kw-2">*</span>;
     <span class="kw">use</span> <span class="ident">ktest</span>::{<span class="ident">fs::MemDisk</span>, <span class="ident">rand_int</span>, <span class="ident">run_multi</span>};
@@ -1096,7 +1104,7 @@
         <span class="kw">let</span> <span class="ident">ntask</span> <span class="op">=</span> <span class="number">100</span>;
         <span class="kw">let</span> <span class="ident">ncpu</span> <span class="op">=</span> <span class="number">10</span>;
         <span class="kw">let</span> <span class="ident">log_start</span> <span class="op">=</span> <span class="number">1000</span>;
-        <span class="ident">ksched::task::spawn</span>(<span class="number">0</span>, <span class="kw">async</span> <span class="kw">move</span> {
+        <span class="ident">task::spawn</span>(<span class="kw">async</span> <span class="kw">move</span> {
             <span class="kw">let</span> <span class="ident">disk</span> <span class="op">=</span> <span class="ident">Arc::new</span>(<span class="ident">MemDisk::new</span>(<span class="number">1100</span> <span class="op">*</span> <span class="ident">BSIZE</span>));
             <span class="kw">let</span> <span class="ident">disk_chan</span> <span class="op">=</span> <span class="ident">Chan::attach</span>(<span class="ident">disk</span>, <span class="string">b&quot;&quot;</span>).<span class="kw">await</span>.<span class="ident">unwrap</span>();
 
@@ -1109,7 +1117,7 @@
             <span class="kw">let</span> <span class="ident">log</span> <span class="op">=</span> <span class="ident">Arc::new</span>(<span class="ident">Log::new</span>(<span class="number">100</span>, <span class="ident">log_start</span>, <span class="ident">disk_chan</span>).<span class="kw">await</span>.<span class="ident">unwrap</span>());
             <span class="kw">for</span> <span class="kw">_</span> <span class="kw">in</span> <span class="number">0</span>..<span class="ident">ntask</span> {
                 <span class="kw">let</span> <span class="ident">log</span> <span class="op">=</span> <span class="ident">log</span>.<span class="ident">clone</span>();
-                <span class="ident">ksched::task::spawn</span>(<span class="number">0</span>, <span class="kw">async</span> <span class="kw">move</span> {
+                <span class="ident">task::spawn</span>(<span class="kw">async</span> <span class="kw">move</span> {
                     <span class="ident">log</span>.<span class="ident">begin_op</span>().<span class="kw">await</span>.<span class="ident">unwrap</span>();
                     <span class="kw">for</span> <span class="kw">_</span> <span class="kw">in</span> <span class="number">0</span>..<span class="ident">MAXOPBLOCKS</span> {
                         <span class="kw">let</span> <span class="ident">buf</span> <span class="op">=</span> <span class="ident">log</span>
@@ -1130,7 +1138,7 @@
             }
 
             <span class="kw">while</span> <span class="ident">Arc::strong_count</span>(<span class="kw-2">&amp;</span><span class="ident">log</span>) <span class="op">!</span><span class="op">=</span> <span class="number">1</span> {
-                <span class="ident">yield_now</span>().<span class="kw">await</span>;
+                <span class="ident">task::yield_now</span>().<span class="kw">await</span>;
             }
             <span class="ident">Arc::try_unwrap</span>(<span class="ident">log</span>).<span class="ident">unwrap</span>().<span class="ident">close</span>().<span class="kw">await</span>;
         })

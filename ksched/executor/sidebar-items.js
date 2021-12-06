@@ -1,0 +1,1 @@
+initSidebarItems({"constant":[["MAX_PRIORITY","Priority of a real-time task must be in [0, MAX_PRIORITY)."],["MAX_QUANTUM","Quantum of a time-sharing task must in [0, MAX_QUANTUM)."]],"struct":[["Executor","Global executor that is made up of per-cpu local executors."],["LocalExecutor","Per-cpu executor."]]});

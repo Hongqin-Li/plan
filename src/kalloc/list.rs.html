@@ -1607,6 +1607,8 @@
 <span id="1604">1604</span>
 <span id="1605">1605</span>
 <span id="1606">1606</span>
+<span id="1607">1607</span>
+<span id="1608">1608</span>
 </pre><pre class="rust">
 <span class="doccomment">//! A doubly-linked list with owned nodes ported from [alloc::collections::List].</span>
 <span class="doccomment">//!</span>
@@ -1620,15 +1622,17 @@
 <span class="doccomment">//! [`Vec`]: alloc::vec::Vec</span>
 <span class="doccomment">//! [`Vecque`]: super::vecque::Vecque</span>
 
-<span class="kw">use</span> <span class="ident">core::fmt</span>;
-<span class="kw">use</span> <span class="ident">core::hash</span>::{<span class="ident">Hash</span>, <span class="ident">Hasher</span>};
-<span class="kw">use</span> <span class="ident">core::iter::FusedIterator</span>;
-<span class="kw">use</span> <span class="ident">core::marker::PhantomData</span>;
-<span class="kw">use</span> <span class="ident">core::mem</span>;
-<span class="kw">use</span> <span class="ident">core::ptr::NonNull</span>;
-<span class="kw">use</span> <span class="ident">core</span>::{<span class="ident">alloc::AllocError</span>, <span class="ident">cmp::Ordering</span>};
-
 <span class="kw">use</span> <span class="ident">alloc::boxed::Box</span>;
+<span class="kw">use</span> <span class="ident">core</span>::{
+    <span class="ident">alloc::AllocError</span>,
+    <span class="ident">cmp::Ordering</span>,
+    <span class="ident">fmt</span>,
+    <span class="ident">hash</span>::{<span class="ident">Hash</span>, <span class="ident">Hasher</span>},
+    <span class="ident">iter::FusedIterator</span>,
+    <span class="ident">marker::PhantomData</span>,
+    <span class="ident">mem</span>,
+    <span class="ident">ptr::NonNull</span>,
+};
 
 <span class="doccomment">/// An intermediate trait for specialization of `Extend`.</span>
 <span class="kw">trait</span> <span class="ident">SpecExtend</span><span class="op">&lt;</span><span class="ident">I</span>: <span class="ident">IntoIterator</span><span class="op">&gt;</span> {

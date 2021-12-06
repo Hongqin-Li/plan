@@ -232,36 +232,44 @@
 <span id="229">229</span>
 <span id="230">230</span>
 <span id="231">231</span>
+<span id="232">232</span>
+<span id="233">233</span>
+<span id="234">234</span>
+<span id="235">235</span>
+<span id="236">236</span>
+<span id="237">237</span>
+<span id="238">238</span>
+<span id="239">239</span>
+<span id="240">240</span>
+<span id="241">241</span>
+<span id="242">242</span>
+<span id="243">243</span>
+<span id="244">244</span>
+<span id="245">245</span>
 </pre><pre class="rust">
 <span class="doccomment">//! A multi-producer, single-consumer queue for sending values between asynchronous tasks.</span>
-<span class="kw">use</span> <span class="ident">core::alloc::AllocError</span>;
-
-<span class="kw">use</span> <span class="ident">alloc::boxed::Box</span>;
-<span class="kw">use</span> <span class="ident">alloc::sync::Arc</span>;
-
-<span class="kw">use</span> <span class="ident">intrusive_collections::intrusive_adapter</span>;
-<span class="kw">use</span> <span class="ident">intrusive_collections</span>::{<span class="ident">LinkedList</span>, <span class="ident">LinkedListLink</span>};
 
 <span class="kw">use</span> <span class="kw">crate</span>::{<span class="ident">condvar::Condvar</span>, <span class="ident">sync::Spinlock</span>};
+<span class="kw">use</span> <span class="ident">alloc</span>::{<span class="ident">boxed::Box</span>, <span class="ident">sync::Arc</span>};
+<span class="kw">use</span> <span class="ident">core::alloc::AllocError</span>;
+<span class="kw">use</span> <span class="ident">intrusive_collections</span>::{<span class="ident">intrusive_adapter</span>, <span class="ident">LinkedList</span>, <span class="ident">LinkedListLink</span>};
 
-<span class="doccomment">/// Message node.</span>
+<span class="doccomment">/// Message that carries user-provided data.</span>
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Debug</span>)]</span>
-<span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">Node</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span> {
+<span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">Message</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span> {
     <span class="ident">link</span>: <span class="ident">LinkedListLink</span>,
     <span class="ident">data</span>: <span class="ident">T</span>,
-    <span class="doccomment">/// If this message is received by [`Receiver`].</span>
-    <span class="ident">received</span>: <span class="ident">bool</span>,
 }
 
-<span class="macro">intrusive_adapter!</span>(<span class="ident">NodeAdapter</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span> <span class="op">=</span> <span class="ident">Box</span><span class="op">&lt;</span><span class="ident">Node</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span><span class="op">&gt;</span>: <span class="ident">Node</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span> { <span class="ident">link</span>: <span class="ident">LinkedListLink</span> });
+<span class="macro">intrusive_adapter!</span>(<span class="ident">MessageAdapter</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span> <span class="op">=</span> <span class="ident">Box</span><span class="op">&lt;</span><span class="ident">Message</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span><span class="op">&gt;</span>: <span class="ident">Message</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span> { <span class="ident">link</span>: <span class="ident">LinkedListLink</span> });
 
-<span class="doccomment">/// The transmission end of a bounded mpsc channel.</span>
+<span class="doccomment">/// The transmission end of a unbounded mpsc channel.</span>
 <span class="doccomment">///</span>
 <span class="doccomment">/// This value is created by the [`channel`](channel) function.</span>
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Debug</span>)]</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">Sender</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span>(<span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Channel</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span><span class="op">&gt;</span>);
 
-<span class="doccomment">/// The receiving end of a bounded mpsc channel.</span>
+<span class="doccomment">/// The receiving end of a unbounded mpsc channel.</span>
 <span class="doccomment">///</span>
 <span class="doccomment">/// This value is created by the [`channel`](channel) function.</span>
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Debug</span>)]</span>
@@ -269,18 +277,17 @@
 
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Debug</span>)]</span>
 <span class="kw">struct</span> <span class="ident">ChannelInner</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span> {
-    <span class="doccomment">/// Number of corresponding senders of this channerl.</span>
-    <span class="ident">nsend</span>: <span class="ident">usize</span>,
+    <span class="doccomment">/// Number of corresponding senders of this channel.</span>
+    <span class="ident">sender_cnt</span>: <span class="ident">usize</span>,
     <span class="doccomment">/// `true` when the channel is open.</span>
     <span class="ident">open</span>: <span class="ident">bool</span>,
     <span class="doccomment">/// FIFO queue used to send messages to the receiver.</span>
-    <span class="ident">msgque</span>: <span class="ident">LinkedList</span><span class="op">&lt;</span><span class="ident">NodeAdapter</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span><span class="op">&gt;</span>,
+    <span class="ident">msg_queue</span>: <span class="ident">LinkedList</span><span class="op">&lt;</span><span class="ident">MessageAdapter</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span><span class="op">&gt;</span>,
 }
 
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Debug</span>)]</span>
 <span class="kw">struct</span> <span class="ident">Channel</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span> {
     <span class="ident">inner</span>: <span class="ident">Spinlock</span><span class="op">&lt;</span><span class="ident">ChannelInner</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span><span class="op">&gt;</span>,
-
     <span class="doccomment">/// If sender is waiting for space to pushed to queue. Guarded by inner.</span>
     <span class="ident">send_cvar</span>: <span class="ident">Condvar</span>,
     <span class="doccomment">/// If receiver is waiting for sender. Guarded by inner.</span>
@@ -288,47 +295,62 @@
 }
 
 <span class="kw">impl</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span> <span class="ident">Sender</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span> {
+    <span class="doccomment">/// Check whether the channel is closed.</span>
     <span class="doccomment">///</span>
+    <span class="doccomment">/// A closed channel cannot be sent to.</span>
+    <span class="doccomment">///</span>
+    <span class="doccomment">/// # Examples</span>
+    <span class="doccomment">///</span>
+    <span class="doccomment">/// ```</span>
+    <span class="doccomment">/// # ksched::task::spawn(async {</span>
+    <span class="doccomment">/// use ksched::sync::mpsc;</span>
+    <span class="doccomment">/// use ksched::task;</span>
+    <span class="doccomment">///</span>
+    <span class="doccomment">/// let (tx, mut rx) = mpsc::channel::&lt;usize&gt;().unwrap();</span>
+    <span class="doccomment">/// assert_eq!(tx.is_closed(), false);</span>
+    <span class="doccomment">/// rx.close();</span>
+    <span class="doccomment">/// assert_eq!(tx.is_closed(), true);</span>
+    <span class="doccomment">/// # }).unwrap();</span>
+    <span class="doccomment">/// # ksched::task::run();</span>
+    <span class="doccomment">/// ```</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">is_closed</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
         <span class="op">!</span><span class="self">self</span>.<span class="number">0</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">open</span>
     }
+
     <span class="doccomment">/// Sends a value.</span>
     <span class="doccomment">///</span>
-    <span class="doccomment">/// A successful send occurs when it is determined that the other end of the</span>
-    <span class="doccomment">/// channel has not hung up already. An unsuccessful send would be one where</span>
-    <span class="doccomment">/// the corresponding receiver has already been closed. Note that a return</span>
-    <span class="doccomment">/// value of `Err` means that the data will never be received, but a return</span>
-    <span class="doccomment">/// value of `Ok` does not mean that the data will be received. It is</span>
-    <span class="doccomment">/// possible for the corresponding receiver to hang up immediately after</span>
+    <span class="doccomment">/// A successful send occurs when it is determined that the other end of the channel has not</span>
+    <span class="doccomment">/// hung up already. An unsuccessful send would be one where the corresponding receiver has</span>
+    <span class="doccomment">/// already been closed or allocation failed. Note that a return value of `Err` means that the</span>
+    <span class="doccomment">/// data will never be received, but a return value of `Ok` does not mean that the data will</span>
+    <span class="doccomment">/// be received. It is possible for the corresponding receiver to hang up immediately after</span>
     <span class="doccomment">/// this function returns `Ok`.</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// # Errors</span>
     <span class="doccomment">///</span>
-    <span class="doccomment">/// If the receive half of the channel is closed, either due to [`close`]</span>
-    <span class="doccomment">/// being called or the [`Receiver`] handle dropping, the function returns</span>
-    <span class="doccomment">/// an error. The error includes the value passed to `send`.</span>
-    <span class="doccomment">///</span>
-    <span class="doccomment">/// If allocation error happened during sending, the value is dropped and</span>
-    <span class="doccomment">/// return an error of [`None`].</span>
+    <span class="doccomment">/// If the receive half of the channel is closed, either due to [`close`] being called or the</span>
+    <span class="doccomment">/// [`Receiver`] handle dropping, the function returns an error. Or if allocation fails during</span>
+    <span class="doccomment">/// create a message for sending, the function returns an error. The error includes the value</span>
+    <span class="doccomment">/// passed to `send`.</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// [`close`]: Receiver::close</span>
     <span class="doccomment">/// [`Receiver`]: Receiver</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// # Examples</span>
     <span class="doccomment">///</span>
-    <span class="doccomment">/// In the following example, each call to `send` will block until the</span>
-    <span class="doccomment">/// previously sent value was received.</span>
+    <span class="doccomment">/// In the following example, each call to `send` will block until the previously sent value</span>
+    <span class="doccomment">/// was received.</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// ```</span>
-    <span class="doccomment">/// # ksched::task::spawn(0, async {</span>
+    <span class="doccomment">/// # ksched::task::spawn(async {</span>
     <span class="doccomment">/// use ksched::sync::mpsc;</span>
     <span class="doccomment">/// use ksched::task;</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// let (tx, mut rx) = mpsc::channel().unwrap();</span>
     <span class="doccomment">///</span>
-    <span class="doccomment">/// task::spawn(0, async move {</span>
+    <span class="doccomment">/// task::spawn(async move {</span>
     <span class="doccomment">///     for i in 0..10 {</span>
-    <span class="doccomment">///         if let Err(Some(_)) = tx.send(i) {</span>
+    <span class="doccomment">///         if let Err(_) = tx.send(i) {</span>
     <span class="doccomment">///             println!(&quot;receiver dropped&quot;);</span>
     <span class="doccomment">///             return;</span>
     <span class="doccomment">///         }</span>
@@ -338,43 +360,47 @@
     <span class="doccomment">/// while let Some(i) = rx.recv().await {</span>
     <span class="doccomment">///     println!(&quot;got = {}&quot;, i);</span>
     <span class="doccomment">/// }</span>
-    <span class="doccomment">/// }).unwrap();</span>
-    <span class="doccomment">/// # ksched::task::run_all();</span>
+    <span class="doccomment">/// # }).unwrap();</span>
+    <span class="doccomment">/// # ksched::task::run();</span>
     <span class="doccomment">/// ```</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">send</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">value</span>: <span class="ident">T</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span><span class="op">&gt;</span> {
-        <span class="kw">let</span> <span class="ident">u</span> <span class="op">=</span> <span class="ident">Box::try_new</span>(<span class="ident">Node</span> {
-            <span class="ident">link</span>: <span class="ident">LinkedListLink::new</span>(),
-            <span class="ident">data</span>: <span class="ident">value</span>,
-            <span class="ident">received</span>: <span class="bool-val">false</span>,
-        })
-        .<span class="ident">map_err</span>(<span class="op">|</span><span class="kw">_</span><span class="op">|</span> <span class="prelude-val">None</span>)<span class="question-mark">?</span>;
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">send</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">value</span>: <span class="ident">T</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">T</span><span class="op">&gt;</span> {
+        <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Ok</span>(<span class="kw-2">mut</span> <span class="ident">uninit_box</span>) <span class="op">=</span> <span class="ident">Box::try_new_uninit</span>() {
+            <span class="kw">let</span> <span class="ident">msg</span> <span class="op">=</span> <span class="ident">Message</span> {
+                <span class="ident">link</span>: <span class="ident">LinkedListLink::new</span>(),
+                <span class="ident">data</span>: <span class="ident">value</span>,
+            };
+            <span class="ident">uninit_box</span>.<span class="ident">write</span>(<span class="ident">msg</span>);
 
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">g</span> <span class="op">=</span> <span class="self">self</span>.<span class="number">0</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
-        <span class="kw">if</span> <span class="ident">g</span>.<span class="ident">open</span> {
-            <span class="ident">g</span>.<span class="ident">msgque</span>.<span class="ident">push_back</span>(<span class="ident">u</span>);
-            <span class="self">self</span>.<span class="number">0</span>.<span class="ident">recv_cvar</span>.<span class="ident">notify_one</span>();
-            <span class="ident">drop</span>(<span class="ident">g</span>);
-            <span class="prelude-val">Ok</span>(())
+            <span class="kw">let</span> <span class="ident">box_msg</span> <span class="op">=</span> <span class="kw">unsafe</span> { <span class="ident">uninit_box</span>.<span class="ident">assume_init</span>() };
+            <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="number">0</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
+            <span class="kw">if</span> <span class="ident">inner</span>.<span class="ident">open</span> {
+                <span class="ident">inner</span>.<span class="ident">msg_queue</span>.<span class="ident">push_back</span>(<span class="ident">box_msg</span>);
+                <span class="self">self</span>.<span class="number">0</span>.<span class="ident">recv_cvar</span>.<span class="ident">notify_one</span>();
+                <span class="ident">drop</span>(<span class="ident">inner</span>);
+                <span class="prelude-val">Ok</span>(())
+            } <span class="kw">else</span> {
+                <span class="prelude-val">Err</span>(<span class="ident">box_msg</span>.<span class="ident">data</span>)
+            }
         } <span class="kw">else</span> {
-            <span class="prelude-val">Err</span>(<span class="prelude-val">Some</span>(<span class="ident">u</span>.<span class="ident">data</span>))
+            <span class="prelude-val">Err</span>(<span class="ident">value</span>)
         }
     }
 }
 
 <span class="kw">impl</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span> <span class="ident">Drop</span> <span class="kw">for</span> <span class="ident">Sender</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span> {
     <span class="kw">fn</span> <span class="ident">drop</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>) {
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">g</span> <span class="op">=</span> <span class="self">self</span>.<span class="number">0</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
-        <span class="ident">g</span>.<span class="ident">nsend</span> <span class="op">-</span><span class="op">=</span> <span class="number">1</span>;
-        <span class="kw">if</span> <span class="ident">g</span>.<span class="ident">nsend</span> <span class="op">=</span><span class="op">=</span> <span class="number">0</span> {
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="number">0</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
+        <span class="ident">inner</span>.<span class="ident">sender_cnt</span> <span class="op">-</span><span class="op">=</span> <span class="number">1</span>;
+        <span class="kw">if</span> <span class="ident">inner</span>.<span class="ident">sender_cnt</span> <span class="op">=</span><span class="op">=</span> <span class="number">0</span> {
             <span class="self">self</span>.<span class="number">0</span>.<span class="ident">recv_cvar</span>.<span class="ident">notify_one</span>();
         }
-        <span class="ident">drop</span>(<span class="ident">g</span>);
+        <span class="ident">drop</span>(<span class="ident">inner</span>);
     }
 }
 
 <span class="kw">impl</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span> <span class="ident">Clone</span> <span class="kw">for</span> <span class="ident">Sender</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span> {
     <span class="kw">fn</span> <span class="ident">clone</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
-        <span class="self">self</span>.<span class="number">0</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">nsend</span> <span class="op">+</span><span class="op">=</span> <span class="number">1</span>;
+        <span class="self">self</span>.<span class="number">0</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">sender_cnt</span> <span class="op">+</span><span class="op">=</span> <span class="number">1</span>;
         <span class="self">Self</span>(<span class="self">self</span>.<span class="number">0</span>.<span class="ident">clone</span>())
     }
 }
@@ -388,26 +414,26 @@
     <span class="doccomment">/// # Examples</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// ```</span>
-    <span class="doccomment">/// # ksched::task::spawn(0, async {</span>
+    <span class="doccomment">/// # ksched::task::spawn(async {</span>
     <span class="doccomment">/// use ksched::sync::mpsc;</span>
     <span class="doccomment">/// use ksched::task;</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// let (tx, mut rx) = mpsc::channel().unwrap();</span>
     <span class="doccomment">///</span>
-    <span class="doccomment">/// task::spawn(0, async move {</span>
+    <span class="doccomment">/// task::spawn(async move {</span>
     <span class="doccomment">///     tx.send(&quot;hello&quot;).unwrap();</span>
     <span class="doccomment">/// });</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// assert_eq!(Some(&quot;hello&quot;), rx.recv().await);</span>
     <span class="doccomment">/// assert_eq!(None, rx.recv().await);</span>
     <span class="doccomment">/// # }).unwrap();</span>
-    <span class="doccomment">/// # ksched::task::run_all();</span>
+    <span class="doccomment">/// # ksched::task::run();</span>
     <span class="doccomment">/// ```</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// Values are buffered:</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// ```</span>
-    <span class="doccomment">/// # ksched::task::spawn(0, async {</span>
+    <span class="doccomment">/// # ksched::task::spawn(async {</span>
     <span class="doccomment">/// use ksched::sync::mpsc;</span>
     <span class="doccomment">/// let (tx, mut rx) = mpsc::channel().unwrap();</span>
     <span class="doccomment">///</span>
@@ -417,19 +443,21 @@
     <span class="doccomment">/// assert_eq!(Some(&quot;hello&quot;), rx.recv().await);</span>
     <span class="doccomment">/// assert_eq!(Some(&quot;world&quot;), rx.recv().await);</span>
     <span class="doccomment">/// # }).unwrap();</span>
-    <span class="doccomment">/// # ksched::task::run_all();</span>
+    <span class="doccomment">/// # ksched::task::run();</span>
     <span class="doccomment">/// ```</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">recv</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span> {
         <span class="kw">loop</span> {
-            <span class="kw">let</span> <span class="ident">g</span> <span class="op">=</span> <span class="self">self</span>.<span class="number">0</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
-            <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">g</span> <span class="op">=</span> <span class="self">self</span>
+            <span class="kw">let</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="number">0</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
+            <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>
                 .<span class="number">0</span>
                 .<span class="ident">recv_cvar</span>
-                .<span class="ident">spin_wait_until</span>(<span class="ident">g</span>, <span class="op">|</span><span class="ident">g</span><span class="op">|</span> <span class="op">!</span><span class="ident">g</span>.<span class="ident">msgque</span>.<span class="ident">is_empty</span>() <span class="op">|</span><span class="op">|</span> <span class="ident">g</span>.<span class="ident">nsend</span> <span class="op">=</span><span class="op">=</span> <span class="number">0</span>)
+                .<span class="ident">spin_wait_until</span>(<span class="ident">inner</span>, <span class="op">|</span><span class="ident">inner</span><span class="op">|</span> {
+                    <span class="op">!</span><span class="ident">inner</span>.<span class="ident">msg_queue</span>.<span class="ident">is_empty</span>() <span class="op">|</span><span class="op">|</span> <span class="ident">inner</span>.<span class="ident">sender_cnt</span> <span class="op">=</span><span class="op">=</span> <span class="number">0</span>
+                })
                 .<span class="kw">await</span>;
-            <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">b</span>) <span class="op">=</span> <span class="ident">g</span>.<span class="ident">msgque</span>.<span class="ident">pop_front</span>() {
-                <span class="kw">return</span> <span class="prelude-val">Some</span>(<span class="ident">b</span>.<span class="ident">data</span>);
-            } <span class="kw">else</span> <span class="kw">if</span> <span class="ident">g</span>.<span class="ident">nsend</span> <span class="op">=</span><span class="op">=</span> <span class="number">0</span> {
+            <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">msg</span>) <span class="op">=</span> <span class="ident">inner</span>.<span class="ident">msg_queue</span>.<span class="ident">pop_front</span>() {
+                <span class="kw">return</span> <span class="prelude-val">Some</span>(<span class="ident">msg</span>.<span class="ident">data</span>);
+            } <span class="kw">else</span> <span class="kw">if</span> <span class="ident">inner</span>.<span class="ident">sender_cnt</span> <span class="op">=</span><span class="op">=</span> <span class="number">0</span> {
                 <span class="kw">return</span> <span class="prelude-val">None</span>;
             }
         }
@@ -440,8 +468,8 @@
     <span class="doccomment">/// This prevents any further messages from being sent on the channel while</span>
     <span class="doccomment">/// still enabling the receiver to drain messages that are buffered.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">close</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>) {
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">g</span> <span class="op">=</span> <span class="self">self</span>.<span class="number">0</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
-        <span class="ident">g</span>.<span class="ident">open</span> <span class="op">=</span> <span class="bool-val">false</span>;
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="number">0</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
+        <span class="ident">inner</span>.<span class="ident">open</span> <span class="op">=</span> <span class="bool-val">false</span>;
     }
 }
 
@@ -455,9 +483,9 @@
 <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">channel</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(<span class="ident">Sender</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span>, <span class="ident">Receiver</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span>), <span class="ident">AllocError</span><span class="op">&gt;</span> {
     <span class="kw">let</span> <span class="ident">c</span> <span class="op">=</span> <span class="ident">Arc::try_new</span>(<span class="ident">Channel</span> {
         <span class="ident">inner</span>: <span class="ident">Spinlock::new</span>(<span class="ident">ChannelInner</span> {
-            <span class="ident">nsend</span>: <span class="number">1</span>,
+            <span class="ident">sender_cnt</span>: <span class="number">1</span>,
             <span class="ident">open</span>: <span class="bool-val">true</span>,
-            <span class="ident">msgque</span>: <span class="ident">LinkedList::new</span>(<span class="ident">NodeAdapter::new</span>()),
+            <span class="ident">msg_queue</span>: <span class="ident">LinkedList::new</span>(<span class="ident">MessageAdapter::new</span>()),
         }),
         <span class="ident">send_cvar</span>: <span class="ident">Condvar::new</span>(),
         <span class="ident">recv_cvar</span>: <span class="ident">Condvar::new</span>(),

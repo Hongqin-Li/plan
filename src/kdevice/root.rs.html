@@ -261,7 +261,7 @@
         <span class="kw">let</span> (<span class="ident">dir</span>, <span class="ident">img_path</span>) <span class="op">=</span> <span class="ident">gen_fat32img</span>();
         <span class="kw">let</span> <span class="ident">disk</span> <span class="op">=</span> <span class="ident">Arc::new</span>(<span class="ident">FileDisk::new</span>(<span class="ident">img_path</span>));
 
-        <span class="ident">task::spawn</span>(<span class="number">0</span>, <span class="kw">async</span> <span class="kw">move</span> {
+        <span class="ident">task::spawn</span>(<span class="kw">async</span> <span class="kw">move</span> {
             <span class="kw">let</span> <span class="ident">devroot</span> <span class="op">=</span> <span class="ident">Arc::new</span>(<span class="ident">Root::default</span>());
             <span class="kw">let</span> <span class="ident">root</span> <span class="op">=</span> <span class="ident">Chan::attach</span>(<span class="ident">devroot</span>, <span class="string">b&quot;&quot;</span>).<span class="kw">await</span>.<span class="ident">unwrap</span>();
             <span class="macro">assert_eq!</span>(<span class="ident">root</span>.<span class="ident">path</span>().<span class="kw">await</span>.<span class="ident">unwrap</span>(), <span class="string">b&quot;/&quot;</span>);
@@ -302,7 +302,7 @@
             <span class="ident">fs</span>.<span class="ident">shutdown</span>().<span class="ident">unwrap</span>().<span class="kw">await</span>;
         })
         .<span class="ident">unwrap</span>();
-        <span class="ident">task::run_all</span>();
+        <span class="ident">task::run</span>();
         <span class="ident">drop</span>(<span class="ident">dir</span>);
     }
 }

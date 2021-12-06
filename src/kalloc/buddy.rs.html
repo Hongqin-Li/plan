@@ -630,11 +630,6 @@
 <span id="627">627</span>
 <span id="628">628</span>
 <span id="629">629</span>
-<span id="630">630</span>
-<span id="631">631</span>
-<span id="632">632</span>
-<span id="633">633</span>
-<span id="634">634</span>
 </pre><pre class="rust">
 <span class="doccomment">//! # Buddy system allocator</span>
 <span class="doccomment">//!</span>
@@ -648,11 +643,15 @@
 <span class="doccomment">//! Allocation and deallocation are both guaranteed to finish within O(log n),</span>
 <span class="doccomment">//! where n is the size of memory handled by this buddy system.</span>
 <span class="doccomment">//!</span>
-<span class="kw">use</span> <span class="ident">core</span>::{<span class="ident">alloc::GlobalAlloc</span>, <span class="ident">cmp::min</span>, <span class="ident">mem::size_of</span>};
-<span class="kw">use</span> <span class="ident">core</span>::{<span class="ident">alloc::Layout</span>, <span class="ident">mem</span>, <span class="ident">ptr</span>};
 
 <span class="kw">use</span> <span class="kw">crate</span>::{<span class="ident">rawlist::Rawlist</span>, <span class="ident">to_order</span>};
-<span class="kw">use</span> <span class="ident">mcs</span>::{<span class="ident">Mutex</span>, <span class="ident">Slot</span>};
+<span class="kw">use</span> <span class="ident">core</span>::{
+    <span class="ident">alloc</span>::{<span class="ident">GlobalAlloc</span>, <span class="ident">Layout</span>},
+    <span class="ident">cmp::min</span>,
+    <span class="ident">mem</span>::{<span class="self">self</span>, <span class="ident">size_of</span>},
+    <span class="ident">ptr</span>,
+};
+<span class="kw">use</span> <span class="ident">spin::Mutex</span>;
 <span class="kw">use</span> <span class="ident">typenum</span>::{<span class="ident">marker_traits::PowerOfTwo</span>, <span class="ident">Unsigned</span>};
 
 <span class="doccomment">/// Round down to the nearest multiple of n.</span>
@@ -1048,25 +1047,16 @@
 
     <span class="doccomment">/// Add free memory [begin, end) to this allocator.</span>
     <span class="kw">pub</span> <span class="kw">unsafe</span> <span class="kw">fn</span> <span class="ident">add_zone</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">begin</span>: <span class="ident">usize</span>, <span class="ident">end</span>: <span class="ident">usize</span>) {
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">slot</span> <span class="op">=</span> <span class="ident">Slot::new</span>();
-        {
-            <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">slot</span>).<span class="ident">add_zone</span>(<span class="ident">begin</span>, <span class="ident">end</span>);
-        }
-        <span class="comment">// self.inner.lock().add_zone(page_size, begin, end);</span>
+        <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">add_zone</span>(<span class="ident">begin</span>, <span class="ident">end</span>);
     }
 }
 
 <span class="kw">unsafe</span> <span class="kw">impl</span><span class="op">&lt;</span><span class="ident">P</span>: <span class="ident">Unsigned</span> <span class="op">+</span> <span class="ident">PowerOfTwo</span> <span class="op">+</span> <span class="lifetime">&#39;static</span><span class="op">&gt;</span> <span class="ident">GlobalAlloc</span> <span class="kw">for</span> <span class="ident">Allocator</span><span class="op">&lt;</span><span class="ident">P</span><span class="op">&gt;</span> {
     <span class="kw">unsafe</span> <span class="kw">fn</span> <span class="ident">alloc</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">layout</span>: <span class="ident">Layout</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw-2">*</span><span class="kw-2">mut</span> <span class="ident">u8</span> {
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">slot</span> <span class="op">=</span> <span class="ident">Slot::new</span>();
-        <span class="kw">let</span> <span class="ident">p</span> <span class="op">=</span> { <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">slot</span>).<span class="ident">alloc</span>(<span class="ident">layout</span>) };
-        <span class="ident">p</span>
+        <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">alloc</span>(<span class="ident">layout</span>)
     }
     <span class="kw">unsafe</span> <span class="kw">fn</span> <span class="ident">dealloc</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">ptr</span>: <span class="kw-2">*</span><span class="kw-2">mut</span> <span class="ident">u8</span>, <span class="ident">layout</span>: <span class="ident">Layout</span>) {
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">slot</span> <span class="op">=</span> <span class="ident">Slot::new</span>();
-        {
-            <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">slot</span>).<span class="ident">dealloc</span>(<span class="ident">ptr</span>, <span class="ident">layout</span>);
-        }
+        <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>().<span class="ident">dealloc</span>(<span class="ident">ptr</span>, <span class="ident">layout</span>);
     }
 }
 

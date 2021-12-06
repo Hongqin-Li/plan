@@ -270,7 +270,6 @@
 <span id="267">267</span>
 <span id="268">268</span>
 <span id="269">269</span>
-<span id="270">270</span>
 </pre><pre class="rust">
 <span class="doccomment">//! Temporal quantification.</span>
 <span class="doccomment">//!</span>
@@ -284,12 +283,11 @@
 <span class="doccomment">//! assert_eq!(Duration::new(5, 0), Duration::from_secs(5));</span>
 <span class="doccomment">//! ```</span>
 
+<span class="kw">use</span> <span class="kw">crate</span><span class="ident">::sync::Spinlock</span>;
 <span class="kw">use</span> <span class="ident">core::fmt</span>;
 <span class="kw">use</span> <span class="ident">core::ops</span>::{<span class="ident">Add</span>, <span class="ident">AddAssign</span>, <span class="ident">Sub</span>, <span class="ident">SubAssign</span>};
 
 <span class="kw">pub</span> <span class="kw">use</span> <span class="ident">core::time::Duration</span>;
-
-<span class="kw">use</span> <span class="kw">crate</span><span class="ident">::sync::Spinlock</span>;
 
 <span class="kw">static</span> <span class="ident">T</span>: <span class="ident">Spinlock</span><span class="op">&lt;</span><span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw">fn</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Duration</span><span class="op">&gt;</span><span class="op">&gt;</span> <span class="op">=</span> <span class="ident">Spinlock::new</span>(<span class="prelude-val">None</span>);
 

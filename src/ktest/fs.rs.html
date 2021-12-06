@@ -581,7 +581,7 @@
 
     <span class="kw">for</span> (<span class="ident">name</span>, <span class="ident">data</span>, <span class="ident">off</span>) <span class="kw">in</span> <span class="ident">req</span> {
         <span class="kw">let</span> <span class="ident">fs</span> <span class="op">=</span> <span class="ident">fs</span>.<span class="ident">clone</span>();
-        <span class="ident">task::spawn</span>(<span class="number">0</span>, <span class="kw">async</span> <span class="kw">move</span> {
+        <span class="ident">task::spawn</span>(<span class="kw">async</span> <span class="kw">move</span> {
             <span class="macro">println!</span>(<span class="string">&quot;file &#39;{}&#39; start&quot;</span>, <span class="ident">name</span>);
 
             <span class="kw">let</span> <span class="ident">root</span> <span class="op">=</span> <span class="kw">loop</span> {
@@ -651,7 +651,7 @@
 
     <span class="kw">for</span> (<span class="ident">name</span>, <span class="ident">data</span>, <span class="ident">off</span>) <span class="kw">in</span> <span class="ident">req</span> {
         <span class="kw">let</span> <span class="ident">fs</span> <span class="op">=</span> <span class="ident">fs</span>.<span class="ident">clone</span>();
-        <span class="ident">task::spawn</span>(<span class="number">0</span>, <span class="kw">async</span> <span class="kw">move</span> {
+        <span class="ident">task::spawn</span>(<span class="kw">async</span> <span class="kw">move</span> {
             <span class="macro">println!</span>(<span class="string">&quot;dir &#39;{}&#39; start&quot;</span>, <span class="ident">name</span>);
 
             <span class="kw">let</span> <span class="ident">root</span> <span class="op">=</span> <span class="kw">loop</span> {

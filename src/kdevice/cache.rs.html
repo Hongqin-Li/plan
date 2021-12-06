@@ -1033,7 +1033,7 @@
                 <span class="kw">if</span> <span class="ident">result</span>.<span class="ident">is_ok</span>() {
                     <span class="ident">inner</span>.<span class="ident">state</span> <span class="op">=</span> <span class="ident">CacheState::Valid</span>;
                 }
-                <span class="ident">inner</span>.<span class="ident">lock</span>.<span class="ident">release</span>();
+                <span class="kw">unsafe</span> { <span class="ident">inner</span>.<span class="ident">lock</span>.<span class="ident">release</span>() }
                 <span class="comment">// Don&#39;t move to back of LRU since it&#39;s likely to be replaced soon.</span>
                 <span class="kw">let</span> <span class="ident">g</span> <span class="op">=</span> <span class="ident">sel</span>.<span class="ident">cache_self</span>().<span class="ident">lock</span>();
                 <span class="ident">inner</span>.<span class="ident">nref</span> <span class="op">-</span><span class="op">=</span> <span class="number">1</span>;
@@ -1121,7 +1121,7 @@
             <span class="comment">// Read from disk.</span>
             <span class="kw">let</span> <span class="ident">result</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">cache</span>.<span class="ident">disk_read</span>(<span class="kw-2">&amp;</span><span class="ident">inner</span>.<span class="ident">key</span>, <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">inner</span>.<span class="ident">val</span>).<span class="kw">await</span>;
             <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Err</span>(<span class="ident">e</span>) <span class="op">=</span> <span class="ident">result</span> {
-                <span class="ident">inner</span>.<span class="ident">lock</span>.<span class="ident">release</span>();
+                <span class="kw">unsafe</span> { <span class="ident">inner</span>.<span class="ident">lock</span>.<span class="ident">release</span>() }
                 <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">e</span>);
             }
             <span class="ident">inner</span>.<span class="ident">state</span> <span class="op">=</span> <span class="ident">CacheState::Valid</span>;
@@ -1205,14 +1205,14 @@
                 <span class="comment">// Flush to disk.</span>
                 <span class="kw">let</span> <span class="ident">result</span> <span class="op">=</span> <span class="self">self</span>.<span class="number">0</span>.<span class="ident">cache</span>.<span class="ident">disk_write</span>(<span class="kw-2">&amp;</span><span class="ident">inner</span>.<span class="ident">key</span>, <span class="kw-2">&amp;</span><span class="ident">inner</span>.<span class="ident">val</span>).<span class="kw">await</span>;
                 <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Err</span>(<span class="ident">e</span>) <span class="op">=</span> <span class="ident">result</span> {
-                    <span class="ident">inner</span>.<span class="ident">lock</span>.<span class="ident">release</span>();
+                    <span class="kw">unsafe</span> { <span class="ident">inner</span>.<span class="ident">lock</span>.<span class="ident">release</span>() }
                     <span class="ident">mem::forget</span>(<span class="self">self</span>);
                     <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">e</span>);
                 }
                 <span class="ident">inner</span>.<span class="ident">state</span> <span class="op">=</span> <span class="ident">CacheState::Valid</span>;
             }
         }
-        <span class="ident">inner</span>.<span class="ident">lock</span>.<span class="ident">release</span>();
+        <span class="kw">unsafe</span> { <span class="ident">inner</span>.<span class="ident">lock</span>.<span class="ident">release</span>() }
         <span class="ident">mem::forget</span>(<span class="self">self</span>);
 
         <span class="prelude-val">Ok</span>(())
@@ -1317,7 +1317,7 @@
         <span class="kw">let</span> <span class="ident">idx</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span> <span class="op">=</span> (<span class="number">0</span>..<span class="ident">ntask</span>).<span class="ident">map</span>(<span class="op">|</span><span class="kw">_</span><span class="op">|</span> <span class="ident">rng</span>.<span class="ident">gen_range</span>(<span class="number">0</span>..<span class="ident">DISKSZ</span>)).<span class="ident">collect</span>();
         <span class="kw">for</span> <span class="ident">idx</span> <span class="kw">in</span> <span class="ident">idx</span> {
             <span class="kw">let</span> <span class="ident">cache</span> <span class="op">=</span> <span class="ident">cache</span>.<span class="ident">clone</span>();
-            <span class="ident">task::spawn</span>(<span class="number">0</span>, <span class="kw">async</span> <span class="kw">move</span> {
+            <span class="ident">task::spawn</span>(<span class="kw">async</span> <span class="kw">move</span> {
                 <span class="kw">let</span> <span class="ident">ent</span> <span class="op">=</span> <span class="kw">loop</span> {
                     <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">ent</span>) <span class="op">=</span> <span class="ident">cache</span>.<span class="ident">cache_get</span>(<span class="ident">idx</span>, <span class="bool-val">true</span>).<span class="kw">await</span>.<span class="ident">unwrap</span>() {
                         <span class="kw">break</span> <span class="ident">ent</span>;
@@ -1352,7 +1352,7 @@
         }
 
         <span class="kw">let</span> <span class="ident">cache2</span> <span class="op">=</span> <span class="ident">cache</span>.<span class="ident">clone</span>();
-        <span class="ident">task::spawn</span>(<span class="number">0</span>, <span class="kw">async</span> <span class="kw">move</span> {
+        <span class="ident">task::spawn</span>(<span class="kw">async</span> <span class="kw">move</span> {
             <span class="kw">let</span> <span class="ident">g</span> <span class="op">=</span> <span class="ident">cache2</span>.<span class="ident">disk</span>.<span class="ident">lock</span>().<span class="kw">await</span>;
             <span class="kw">let</span> <span class="ident">sum</span> <span class="op">=</span> <span class="ident">g</span>.<span class="ident">iter</span>().<span class="ident">sum</span>::<span class="op">&lt;</span><span class="ident">u32</span><span class="op">&gt;</span>();
             <span class="kw">if</span> <span class="ident">write_back</span> {
@@ -1362,13 +1362,13 @@
             }
         })
         .<span class="ident">unwrap</span>();
-        <span class="ident">task::run_all</span>();
+        <span class="ident">task::run</span>();
 
         <span class="kw">let</span> <span class="ident">tot</span> <span class="op">=</span> <span class="ident">Arc::new</span>(<span class="ident">Spinlock::new</span>(<span class="number">0</span>));
         <span class="kw">for</span> <span class="ident">i</span> <span class="kw">in</span> <span class="number">0</span>..<span class="ident">DISKSZ</span> {
             <span class="kw">let</span> <span class="ident">tot</span> <span class="op">=</span> <span class="ident">tot</span>.<span class="ident">clone</span>();
             <span class="kw">let</span> <span class="ident">cache</span> <span class="op">=</span> <span class="ident">cache</span>.<span class="ident">clone</span>();
-            <span class="ident">task::spawn</span>(<span class="number">0</span>, <span class="kw">async</span> <span class="kw">move</span> {
+            <span class="ident">task::spawn</span>(<span class="kw">async</span> <span class="kw">move</span> {
                 <span class="kw">let</span> <span class="ident">ent</span> <span class="op">=</span> <span class="kw">loop</span> {
                     <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">ent</span>) <span class="op">=</span> <span class="ident">cache</span>.<span class="ident">cache_get</span>(<span class="ident">i</span>, <span class="bool-val">true</span>).<span class="kw">await</span>.<span class="ident">unwrap</span>() {
                         <span class="kw">break</span> <span class="ident">ent</span>;
@@ -1384,17 +1384,17 @@
             })
             .<span class="ident">unwrap</span>();
         }
-        <span class="ident">task::run_all</span>();
+        <span class="ident">task::run</span>();
         <span class="macro">assert_eq!</span>(<span class="kw-2">*</span><span class="ident">tot</span>.<span class="ident">lock</span>(), <span class="ident">ntask</span> <span class="kw">as</span> <span class="ident">u32</span>);
 
         <span class="kw">let</span> <span class="ident">cache2</span> <span class="op">=</span> <span class="ident">cache</span>.<span class="ident">clone</span>();
-        <span class="ident">task::spawn</span>(<span class="number">0</span>, <span class="kw">async</span> <span class="kw">move</span> {
+        <span class="ident">task::spawn</span>(<span class="kw">async</span> <span class="kw">move</span> {
             <span class="kw">let</span> <span class="ident">g</span> <span class="op">=</span> <span class="ident">cache2</span>.<span class="ident">disk</span>.<span class="ident">lock</span>().<span class="kw">await</span>;
             <span class="kw">let</span> <span class="ident">sum</span> <span class="op">=</span> <span class="ident">g</span>.<span class="ident">iter</span>().<span class="ident">sum</span>::<span class="op">&lt;</span><span class="ident">u32</span><span class="op">&gt;</span>();
             <span class="macro">assert_eq!</span>(<span class="ident">sum</span>, <span class="ident">ntask</span> <span class="kw">as</span> <span class="ident">u32</span>);
         })
         .<span class="ident">unwrap</span>();
-        <span class="ident">task::run_all</span>();
+        <span class="ident">task::run</span>();
     }
 
     <span class="comment">// // May corrupt other testing thread when panic.</span>
@@ -1402,12 +1402,12 @@
     <span class="comment">// #[should_panic]</span>
     <span class="comment">// fn forget_to_unlock() {</span>
     <span class="comment">//     let cache = Arc::new(MyCache::&lt;10, 100&gt;::new().unwrap());</span>
-    <span class="comment">//     task::spawn(0, async move {</span>
+    <span class="comment">//     task::spawn(async move {</span>
     <span class="comment">//         let ent = cache.cache_get(1).await.unwrap();</span>
     <span class="comment">//         let b = ent.lock().await.unwrap();</span>
     <span class="comment">//     })</span>
     <span class="comment">//     .unwrap();</span>
-    <span class="comment">//     task::run_all();</span>
+    <span class="comment">//     task::run();</span>
     <span class="comment">// }</span>
 
     <span class="attribute">#[<span class="ident">test</span>]</span>
@@ -1422,7 +1422,7 @@
         <span class="kw">let</span> <span class="ident">idx</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span> <span class="op">=</span> (<span class="number">0</span>..<span class="ident">ntask</span>).<span class="ident">map</span>(<span class="op">|</span><span class="kw">_</span><span class="op">|</span> <span class="ident">rng</span>.<span class="ident">gen_range</span>(<span class="number">0</span>..<span class="ident">DISKSZ</span>)).<span class="ident">collect</span>();
         <span class="kw">for</span> <span class="ident">idx</span> <span class="kw">in</span> <span class="ident">idx</span> {
             <span class="kw">let</span> <span class="ident">cache</span> <span class="op">=</span> <span class="ident">cache</span>.<span class="ident">clone</span>();
-            <span class="ident">task::spawn</span>(<span class="number">0</span>, <span class="kw">async</span> <span class="kw">move</span> {
+            <span class="ident">task::spawn</span>(<span class="kw">async</span> <span class="kw">move</span> {
                 <span class="kw">let</span> <span class="ident">ent</span> <span class="op">=</span> <span class="kw">loop</span> {
                     <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">ent</span>) <span class="op">=</span> <span class="ident">cache</span>.<span class="ident">cache_get</span>(<span class="ident">idx</span>, <span class="bool-val">true</span>).<span class="kw">await</span>.<span class="ident">unwrap</span>() {
                         <span class="kw">break</span> <span class="ident">ent</span>;

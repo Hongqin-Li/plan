@@ -57,36 +57,38 @@
 <span id="54">54</span>
 <span id="55">55</span>
 <span id="56">56</span>
+<span id="57">57</span>
 </pre><pre class="rust">
 <span class="doccomment">//! Asynchronous executor for kernel development.</span>
+
 <span class="attribute">#![<span class="ident">no_std</span>]</span>
-<span class="attribute">#![<span class="ident">deny</span>(<span class="ident">missing_docs</span>)]</span>
 <span class="attribute">#![<span class="ident">feature</span>(<span class="ident">allocator_api</span>)]</span>
 <span class="attribute">#![<span class="ident">feature</span>(<span class="ident">try_reserve</span>)]</span>
 <span class="attribute">#![<span class="ident">feature</span>(<span class="ident">box_into_pin</span>)]</span>
 <span class="attribute">#![<span class="ident">feature</span>(<span class="ident">const_panic</span>)]</span>
-<span class="attribute">#![<span class="ident">feature</span>(<span class="ident">const_generics</span>)]</span>
 <span class="attribute">#![<span class="ident">feature</span>(<span class="ident">associated_type_bounds</span>)]</span>
 <span class="attribute">#![<span class="ident">feature</span>(<span class="ident">shrink_to</span>)]</span>
 <span class="attribute">#![<span class="ident">feature</span>(<span class="ident">const_fn_trait_bound</span>)]</span>
+<span class="attribute">#![<span class="ident">feature</span>(<span class="ident">new_uninit</span>)]</span>
+<span class="attribute">#![<span class="ident">feature</span>(<span class="ident">maybe_uninit_extra</span>)]</span>
 
-<span class="comment">// So that we can use std when testing.</span>
 <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">test</span>)]</span>
 <span class="attribute">#[<span class="ident">macro_use</span>]</span>
 <span class="kw">extern</span> <span class="kw">crate</span> <span class="ident">std</span>;
 
 <span class="kw">extern</span> <span class="kw">crate</span> <span class="ident">alloc</span>;
 
-<span class="kw">pub</span> <span class="kw">mod</span> <span class="ident">mpsc</span>;
-<span class="kw">pub</span> <span class="kw">mod</span> <span class="ident">prique</span>;
-<span class="kw">pub</span> <span class="kw">mod</span> <span class="ident">task</span>;
-<span class="kw">pub</span> <span class="kw">mod</span> <span class="ident">time</span>;
-
 <span class="kw">mod</span> <span class="ident">condvar</span>;
 <span class="kw">mod</span> <span class="ident">mutex</span>;
+<span class="kw">mod</span> <span class="ident">priority_queue</span>;
 <span class="kw">mod</span> <span class="ident">rwlock</span>;
-<span class="kw">mod</span> <span class="ident">slpque</span>;
-<span class="kw">mod</span> <span class="ident">spinlock</span>;
+<span class="kw">mod</span> <span class="ident">sleep_queue</span>;
+<span class="kw">mod</span> <span class="ident">waker</span>;
+
+<span class="kw">pub</span> <span class="kw">mod</span> <span class="ident">executor</span>;
+<span class="kw">pub</span> <span class="kw">mod</span> <span class="ident">mpsc</span>;
+<span class="kw">pub</span> <span class="kw">mod</span> <span class="ident">task</span>;
+<span class="kw">pub</span> <span class="kw">mod</span> <span class="ident">time</span>;
 
 <span class="doccomment">/// Synchronization primitives.</span>
 <span class="kw">pub</span> <span class="kw">mod</span> <span class="ident">sync</span> {
@@ -94,7 +96,7 @@
     <span class="kw">pub</span> <span class="kw">use</span> <span class="kw">super</span><span class="ident">::mpsc</span>;
     <span class="kw">pub</span> <span class="kw">use</span> <span class="kw">super</span><span class="ident">::mutex</span>::{<span class="ident">Mutex</span>, <span class="ident">MutexGuard</span>};
     <span class="kw">pub</span> <span class="kw">use</span> <span class="kw">super</span><span class="ident">::rwlock</span>::{<span class="ident">RwLock</span>, <span class="ident">RwLockReadGuard</span>, <span class="ident">RwLockUpgradableReadGuard</span>, <span class="ident">RwLockWriteGuard</span>};
-    <span class="kw">pub</span> <span class="kw">use</span> <span class="kw">super</span><span class="ident">::spinlock</span>::{<span class="ident">Spinlock</span>, <span class="ident">SpinlockGuard</span>};
+    <span class="kw">pub</span> <span class="kw">use</span> <span class="ident">spin::lock_api</span>::{<span class="ident">Mutex</span> <span class="kw">as</span> <span class="ident">Spinlock</span>, <span class="ident">MutexGuard</span> <span class="kw">as</span> <span class="ident">SpinlockGuard</span>};
 }
 
 <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">test</span>)]</span>
@@ -105,7 +107,7 @@
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">threads</span> <span class="op">=</span> <span class="macro">vec!</span>[];
         <span class="kw">for</span> <span class="kw">_</span> <span class="kw">in</span> <span class="number">0</span>..<span class="ident">ncpu</span> {
             <span class="kw">let</span> <span class="ident">t</span> <span class="op">=</span> <span class="ident">std::thread::spawn</span>(<span class="kw">move</span> <span class="op">|</span><span class="op">|</span> {
-                <span class="ident">task::run_all</span>();
+                <span class="ident">task::run</span>();
             });
             <span class="ident">threads</span>.<span class="ident">push</span>(<span class="ident">t</span>);
         }

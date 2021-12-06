@@ -850,11 +850,32 @@
 <span id="847">847</span>
 <span id="848">848</span>
 <span id="849">849</span>
+<span id="850">850</span>
+<span id="851">851</span>
+<span id="852">852</span>
+<span id="853">853</span>
+<span id="854">854</span>
+<span id="855">855</span>
+<span id="856">856</span>
+<span id="857">857</span>
+<span id="858">858</span>
+<span id="859">859</span>
+<span id="860">860</span>
+<span id="861">861</span>
+<span id="862">862</span>
+<span id="863">863</span>
+<span id="864">864</span>
+<span id="865">865</span>
+<span id="866">866</span>
+<span id="867">867</span>
+<span id="868">868</span>
 </pre><pre class="rust">
 <span class="doccomment">//! Read-write lock.</span>
 
-<span class="kw">use</span> <span class="kw">crate</span><span class="ident">::slpque::SleepQueue</span>;
+<span class="kw">use</span> <span class="kw">crate</span><span class="ident">::sleep_queue::SleepQueue</span>;
 <span class="kw">use</span> <span class="kw">crate</span><span class="ident">::sync::Spinlock</span>;
+<span class="kw">use</span> <span class="kw">crate</span><span class="ident">::task::SleepKind</span>;
+<span class="kw">use</span> <span class="kw">crate</span><span class="ident">::task::Task</span>;
 <span class="kw">use</span> <span class="ident">core::fmt</span>;
 <span class="kw">use</span> <span class="ident">core::mem</span>;
 <span class="kw">use</span> <span class="ident">core::ops</span>::{<span class="ident">Deref</span>, <span class="ident">DerefMut</span>};
@@ -865,23 +886,85 @@
     <span class="ident">task</span>::{<span class="ident">Context</span>, <span class="ident">Poll</span>},
 };
 
+<span class="kw">const</span> <span class="ident">ONE_WRITER</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="number">1</span>;
+<span class="kw">const</span> <span class="ident">ONE_UPGRADABLE_READER</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="number">2</span>;
 <span class="kw">const</span> <span class="ident">ONE_READER</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="number">4</span>;
 
-<span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Clone</span>, <span class="ident">Copy</span>, <span class="ident">Debug</span>)]</span>
-<span class="kw">enum</span> <span class="ident">RwType</span> {
-    <span class="ident">Reader</span>,
-    <span class="ident">Writer</span>,
-    <span class="ident">UpgradableReader</span>,
-}
-
 <span class="kw">struct</span> <span class="ident">RwLockInner</span> {
-    <span class="doccomment">/// Bit 0 indicates if there is an active writer. If this is true, the other bits must be zero.</span>
-    <span class="doccomment">/// Bit 1 indicates if there is an active upgradable reader. If this is true, bit 0 must be zero.</span>
+    <span class="doccomment">/// Bit 0 indicates if there is an active writer. If this is true, other bits must be zero.</span>
+    <span class="doccomment">/// Bit 1 indicates if there is an active upgradable reader. If this is true, bit 0 must be</span>
+    <span class="doccomment">/// zero.</span>
     <span class="doccomment">/// Other bits indicates the number of normal readers that are reading.</span>
     <span class="ident">state</span>: <span class="ident">usize</span>,
     <span class="doccomment">/// Since it is write-preferring, we need to know whether some writers are sleeping.</span>
     <span class="ident">waiting_writer</span>: <span class="ident">usize</span>,
-    <span class="ident">slpque</span>: <span class="ident">SleepQueue</span><span class="op">&lt;</span><span class="ident">RwType</span><span class="op">&gt;</span>,
+    <span class="ident">slpque</span>: <span class="ident">SleepQueue</span>,
+}
+
+<span class="kw">impl</span> <span class="ident">RwLockInner</span> {
+    <span class="kw">fn</span> <span class="ident">active_writer_cnt</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">usize</span> {
+        <span class="self">self</span>.<span class="ident">state</span> <span class="op">&amp;</span> <span class="ident">ONE_WRITER</span>
+    }
+
+    <span class="kw">fn</span> <span class="ident">active_upgradable_reader_cnt</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">usize</span> {
+        (<span class="self">self</span>.<span class="ident">state</span> <span class="op">&amp;</span> <span class="ident">ONE_UPGRADABLE_READER</span>) <span class="op">/</span> <span class="ident">ONE_UPGRADABLE_READER</span>
+    }
+
+    <span class="kw">fn</span> <span class="ident">active_reader_cnt</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">usize</span> {
+        <span class="self">self</span>.<span class="ident">state</span> <span class="op">/</span> <span class="ident">ONE_READER</span>
+    }
+
+    <span class="kw">fn</span> <span class="ident">try_read</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">wait_writer</span>: <span class="ident">bool</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), ()<span class="op">&gt;</span> {
+        <span class="kw">if</span> <span class="self">self</span>.<span class="ident">active_writer_cnt</span>() <span class="op">=</span><span class="op">=</span> <span class="number">0</span> <span class="op">&amp;&amp;</span> (<span class="op">!</span><span class="ident">wait_writer</span> <span class="op">|</span><span class="op">|</span> <span class="self">self</span>.<span class="ident">waiting_writer</span> <span class="op">=</span><span class="op">=</span> <span class="number">0</span>) {
+            <span class="self">self</span>.<span class="ident">state</span> <span class="op">+</span><span class="op">=</span> <span class="ident">ONE_READER</span>;
+            <span class="prelude-val">Ok</span>(())
+        } <span class="kw">else</span> {
+            <span class="prelude-val">Err</span>(())
+        }
+    }
+
+    <span class="kw">fn</span> <span class="ident">try_write</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">wait_writer</span>: <span class="ident">bool</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), ()<span class="op">&gt;</span> {
+        <span class="kw">if</span> <span class="self">self</span>.<span class="ident">active_writer_cnt</span>() <span class="op">=</span><span class="op">=</span> <span class="number">0</span>
+            <span class="op">&amp;&amp;</span> <span class="self">self</span>.<span class="ident">active_reader_cnt</span>() <span class="op">=</span><span class="op">=</span> <span class="number">0</span>
+            <span class="op">&amp;&amp;</span> <span class="self">self</span>.<span class="ident">active_upgradable_reader_cnt</span>() <span class="op">=</span><span class="op">=</span> <span class="number">0</span>
+            <span class="op">&amp;&amp;</span> (<span class="op">!</span><span class="ident">wait_writer</span> <span class="op">|</span><span class="op">|</span> <span class="self">self</span>.<span class="ident">waiting_writer</span> <span class="op">=</span><span class="op">=</span> <span class="number">0</span>)
+        {
+            <span class="self">self</span>.<span class="ident">state</span> <span class="op">+</span><span class="op">=</span> <span class="ident">ONE_WRITER</span>;
+            <span class="prelude-val">Ok</span>(())
+        } <span class="kw">else</span> {
+            <span class="prelude-val">Err</span>(())
+        }
+    }
+
+    <span class="kw">fn</span> <span class="ident">try_upgradable_read</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">wait_writer</span>: <span class="ident">bool</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), ()<span class="op">&gt;</span> {
+        <span class="kw">if</span> <span class="self">self</span>.<span class="ident">active_writer_cnt</span>() <span class="op">=</span><span class="op">=</span> <span class="number">0</span>
+            <span class="op">&amp;&amp;</span> <span class="self">self</span>.<span class="ident">active_upgradable_reader_cnt</span>() <span class="op">=</span><span class="op">=</span> <span class="number">0</span>
+            <span class="op">&amp;&amp;</span> (<span class="op">!</span><span class="ident">wait_writer</span> <span class="op">|</span><span class="op">|</span> <span class="self">self</span>.<span class="ident">waiting_writer</span> <span class="op">=</span><span class="op">=</span> <span class="number">0</span>)
+        {
+            <span class="self">self</span>.<span class="ident">state</span> <span class="op">+</span><span class="op">=</span> <span class="ident">ONE_UPGRADABLE_READER</span>;
+            <span class="prelude-val">Ok</span>(())
+        } <span class="kw">else</span> {
+            <span class="prelude-val">Err</span>(())
+        }
+    }
+
+    <span class="kw">fn</span> <span class="ident">try_to_wakeup</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>) {
+        <span class="kw">while</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">sleep_kind</span>) <span class="op">=</span> <span class="self">self</span>.<span class="ident">slpque</span>.<span class="ident">peek_front</span>() {
+            <span class="kw">let</span> <span class="ident">try_wake</span> <span class="op">=</span> <span class="kw">match</span> <span class="ident">sleep_kind</span> {
+                <span class="ident">SleepKind::Reader</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">try_read</span>(<span class="bool-val">false</span>),
+                <span class="ident">SleepKind::Writer</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">try_write</span>(<span class="bool-val">false</span>),
+                <span class="ident">SleepKind::UpgradableReader</span> <span class="op">=</span><span class="op">&gt;</span> <span class="self">self</span>.<span class="ident">try_upgradable_read</span>(<span class="bool-val">false</span>),
+                <span class="kw">_</span> <span class="op">=</span><span class="op">&gt;</span> <span class="macro">unreachable!</span>(<span class="string">&quot;invalid sleep kind&quot;</span>),
+            };
+            <span class="kw">if</span> <span class="ident">try_wake</span>.<span class="ident">is_ok</span>() {
+                <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">SleepKind::Writer</span>) <span class="op">=</span> <span class="ident">Task::wakeup_front</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>.<span class="ident">slpque</span>) {
+                    <span class="self">self</span>.<span class="ident">waiting_writer</span> <span class="op">-</span><span class="op">=</span> <span class="number">1</span>;
+                }
+            } <span class="kw">else</span> {
+                <span class="kw">break</span>;
+            }
+        }
+    }
 }
 
 <span class="doccomment">/// An async reader-writer lock.</span>
@@ -894,7 +977,7 @@
 <span class="doccomment">/// # Examples</span>
 <span class="doccomment">///</span>
 <span class="doccomment">/// ```</span>
-<span class="doccomment">/// # ksched::task::spawn(0, async {</span>
+<span class="doccomment">/// # ksched::task::spawn(async {</span>
 <span class="doccomment">/// use ksched::sync::RwLock;</span>
 <span class="doccomment">///</span>
 <span class="doccomment">/// let lock = RwLock::new(5);</span>
@@ -911,7 +994,7 @@
 <span class="doccomment">/// *w += 1;</span>
 <span class="doccomment">/// assert_eq!(*w, 6);</span>
 <span class="doccomment">/// # });</span>
-<span class="doccomment">/// # ksched::task::run_all();</span>
+<span class="doccomment">/// # ksched::task::run();</span>
 <span class="doccomment">/// ```</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">RwLock</span><span class="op">&lt;</span><span class="ident">T</span>: <span class="question-mark">?</span><span class="ident">Sized</span><span class="op">&gt;</span> {
     <span class="doccomment">/// Guard towards status and waiting queue.</span>
@@ -934,14 +1017,14 @@
     <span class="doccomment">///</span>
     <span class="doccomment">/// let lock = RwLock::new(0);</span>
     <span class="doccomment">/// ```</span>
-    <span class="kw">pub</span> <span class="kw">const</span> <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">t</span>: <span class="ident">T</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">RwLock</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">const</span> <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">value</span>: <span class="ident">T</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">RwLock</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span> {
         <span class="ident">RwLock</span> {
             <span class="ident">inner</span>: <span class="ident">Spinlock::new</span>(<span class="ident">RwLockInner</span> {
                 <span class="ident">state</span>: <span class="number">0</span>,
                 <span class="ident">waiting_writer</span>: <span class="number">0</span>,
                 <span class="ident">slpque</span>: <span class="ident">SleepQueue::new</span>(),
             }),
-            <span class="ident">value</span>: <span class="ident">UnsafeCell::new</span>(<span class="ident">t</span>),
+            <span class="ident">value</span>: <span class="ident">UnsafeCell::new</span>(<span class="ident">value</span>),
         }
     }
 
@@ -960,31 +1043,6 @@
     }
 }
 
-<span class="kw">fn</span> <span class="ident">try_read</span>(<span class="ident">g</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">RwLockInner</span>, <span class="ident">wait_writer</span>: <span class="ident">bool</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
-    <span class="kw">if</span> <span class="ident">g</span>.<span class="ident">state</span> <span class="op">&amp;</span> <span class="number">1</span> <span class="op">=</span><span class="op">=</span> <span class="number">0</span> <span class="op">&amp;&amp;</span> (<span class="op">!</span><span class="ident">wait_writer</span> <span class="op">|</span><span class="op">|</span> <span class="ident">g</span>.<span class="ident">waiting_writer</span> <span class="op">=</span><span class="op">=</span> <span class="number">0</span>) {
-        <span class="ident">g</span>.<span class="ident">state</span> <span class="op">+</span><span class="op">=</span> <span class="ident">ONE_READER</span>;
-        <span class="bool-val">true</span>
-    } <span class="kw">else</span> {
-        <span class="bool-val">false</span>
-    }
-}
-<span class="kw">fn</span> <span class="ident">try_upread</span>(<span class="ident">g</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">RwLockInner</span>, <span class="ident">wait_writer</span>: <span class="ident">bool</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
-    <span class="kw">if</span> <span class="ident">g</span>.<span class="ident">state</span> <span class="op">&amp;</span> <span class="number">3</span> <span class="op">=</span><span class="op">=</span> <span class="number">0</span> <span class="op">&amp;&amp;</span> (<span class="op">!</span><span class="ident">wait_writer</span> <span class="op">|</span><span class="op">|</span> <span class="ident">g</span>.<span class="ident">waiting_writer</span> <span class="op">=</span><span class="op">=</span> <span class="number">0</span>) {
-        <span class="ident">g</span>.<span class="ident">state</span> <span class="op">|</span><span class="op">=</span> <span class="number">2</span>;
-        <span class="bool-val">true</span>
-    } <span class="kw">else</span> {
-        <span class="bool-val">false</span>
-    }
-}
-<span class="kw">fn</span> <span class="ident">try_write</span>(<span class="ident">g</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">RwLockInner</span>, <span class="ident">wait_writer</span>: <span class="ident">bool</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
-    <span class="kw">if</span> <span class="ident">g</span>.<span class="ident">state</span> <span class="op">=</span><span class="op">=</span> <span class="number">0</span> <span class="op">&amp;&amp;</span> (<span class="op">!</span><span class="ident">wait_writer</span> <span class="op">|</span><span class="op">|</span> <span class="ident">g</span>.<span class="ident">waiting_writer</span> <span class="op">=</span><span class="op">=</span> <span class="number">0</span>) {
-        <span class="ident">g</span>.<span class="ident">state</span> <span class="op">|</span><span class="op">=</span> <span class="number">1</span>;
-        <span class="bool-val">true</span>
-    } <span class="kw">else</span> {
-        <span class="bool-val">false</span>
-    }
-}
-
 <span class="kw">impl</span><span class="op">&lt;</span><span class="ident">T</span>: <span class="question-mark">?</span><span class="ident">Sized</span><span class="op">&gt;</span> <span class="ident">RwLock</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span> {
     <span class="doccomment">/// Attempts to acquire a read lock.</span>
     <span class="doccomment">///</span>
@@ -993,8 +1051,8 @@
     <span class="doccomment">///</span>
     <span class="doccomment">/// See also [read](`Self::read`)</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">try_read</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">RwLockReadGuard</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span>, <span class="ident">T</span><span class="op">&gt;</span><span class="op">&gt;</span> {
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">g</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
-        <span class="kw">if</span> <span class="ident">try_read</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">g</span>, <span class="bool-val">true</span>) {
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
+        <span class="kw">if</span> <span class="ident">inner</span>.<span class="ident">try_read</span>(<span class="bool-val">true</span>).<span class="ident">is_ok</span>() {
             <span class="prelude-val">Some</span>(<span class="ident">RwLockReadGuard</span>(<span class="self">self</span>))
         } <span class="kw">else</span> {
             <span class="prelude-val">None</span>
@@ -1011,7 +1069,7 @@
     <span class="doccomment">/// # Examples</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// ```</span>
-    <span class="doccomment">/// # ksched::task::spawn(0, async {</span>
+    <span class="doccomment">/// # ksched::task::spawn(async {</span>
     <span class="doccomment">/// use ksched::sync::RwLock;</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// let lock = RwLock::new(1);</span>
@@ -1021,7 +1079,7 @@
     <span class="doccomment">///</span>
     <span class="doccomment">/// assert!(lock.try_read().is_some());</span>
     <span class="doccomment">/// # });</span>
-    <span class="doccomment">/// # ksched::task::run_all();</span>
+    <span class="doccomment">/// # ksched::task::run();</span>
     <span class="doccomment">/// ```</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">read</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">RwLockReadGuard</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span>, <span class="ident">T</span><span class="op">&gt;</span> {
         <span class="kw">struct</span> <span class="ident">Lock</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">T</span>: <span class="question-mark">?</span><span class="ident">Sized</span><span class="op">&gt;</span> {
@@ -1031,15 +1089,14 @@
 
         <span class="kw">impl</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">T</span>: <span class="question-mark">?</span><span class="ident">Sized</span><span class="op">&gt;</span> <span class="ident">Future</span> <span class="kw">for</span> <span class="ident">Lock</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">T</span><span class="op">&gt;</span> {
             <span class="kw">type</span> <span class="ident">Output</span> <span class="op">=</span> <span class="ident">RwLockReadGuard</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">T</span><span class="op">&gt;</span>;
-
-            <span class="kw">fn</span> <span class="ident">poll</span>(<span class="kw-2">mut</span> <span class="self">self</span>: <span class="ident">Pin</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">Self</span><span class="op">&gt;</span>, <span class="ident">cx</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">Context</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Poll</span><span class="op">&lt;</span><span class="self">Self</span><span class="ident">::Output</span><span class="op">&gt;</span> {
-                <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">g</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">lk</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
+            <span class="kw">fn</span> <span class="ident">poll</span>(<span class="kw-2">mut</span> <span class="self">self</span>: <span class="ident">Pin</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">Self</span><span class="op">&gt;</span>, <span class="ident">ctx</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">Context</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Poll</span><span class="op">&lt;</span><span class="self">Self</span><span class="ident">::Output</span><span class="op">&gt;</span> {
+                <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">lk</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
                 <span class="kw">if</span> <span class="self">self</span>.<span class="ident">first</span> {
                     <span class="self">self</span>.<span class="ident">first</span> <span class="op">=</span> <span class="bool-val">false</span>;
-                    <span class="kw">if</span> <span class="ident">try_read</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">g</span>, <span class="bool-val">true</span>) {
+                    <span class="kw">if</span> <span class="ident">inner</span>.<span class="ident">try_read</span>(<span class="bool-val">true</span>).<span class="ident">is_ok</span>() {
                         <span class="ident">Poll::Ready</span>(<span class="ident">RwLockReadGuard</span>(<span class="self">self</span>.<span class="ident">lk</span>))
                     } <span class="kw">else</span> {
-                        <span class="ident">g</span>.<span class="ident">slpque</span>.<span class="ident">sleep</span>(<span class="ident">RwType::Reader</span>, <span class="ident">cx</span>.<span class="ident">waker</span>().<span class="ident">clone</span>());
+                        <span class="ident">Task::sleep_back</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">inner</span>.<span class="ident">slpque</span>, <span class="ident">SleepKind::Reader</span>, <span class="ident">ctx</span>);
                         <span class="ident">Poll::Pending</span>
                     }
                 } <span class="kw">else</span> {
@@ -1065,8 +1122,8 @@
     <span class="doccomment">///</span>
     <span class="doccomment">/// See also [upgradable_read](`Self::upgradable_read`)</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">try_upgradable_read</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">RwLockUpgradableReadGuard</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span>, <span class="ident">T</span><span class="op">&gt;</span><span class="op">&gt;</span> {
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">g</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
-        <span class="kw">if</span> <span class="ident">try_upread</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">g</span>, <span class="bool-val">true</span>) {
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
+        <span class="kw">if</span> <span class="ident">inner</span>.<span class="ident">try_upgradable_read</span>(<span class="bool-val">true</span>).<span class="ident">is_ok</span>() {
             <span class="prelude-val">Some</span>(<span class="ident">RwLockUpgradableReadGuard</span>(<span class="self">self</span>))
         } <span class="kw">else</span> {
             <span class="prelude-val">None</span>
@@ -1086,7 +1143,7 @@
     <span class="doccomment">/// # Examples</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// ```</span>
-    <span class="doccomment">/// # ksched::task::spawn(0, async {</span>
+    <span class="doccomment">/// # ksched::task::spawn(async {</span>
     <span class="doccomment">/// use ksched::sync::{RwLock, RwLockUpgradableReadGuard};</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// let lock = RwLock::new(1);</span>
@@ -1098,7 +1155,7 @@
     <span class="doccomment">/// let mut writer = RwLockUpgradableReadGuard::upgrade(reader).await;</span>
     <span class="doccomment">/// *writer = 2;</span>
     <span class="doccomment">/// # });</span>
-    <span class="doccomment">/// # ksched::task::run_all();</span>
+    <span class="doccomment">/// # ksched::task::run();</span>
     <span class="doccomment">/// ```</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">upgradable_read</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">RwLockUpgradableReadGuard</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span>, <span class="ident">T</span><span class="op">&gt;</span> {
         <span class="kw">struct</span> <span class="ident">Lock</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">T</span>: <span class="question-mark">?</span><span class="ident">Sized</span><span class="op">&gt;</span> {
@@ -1108,15 +1165,14 @@
 
         <span class="kw">impl</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">T</span>: <span class="question-mark">?</span><span class="ident">Sized</span><span class="op">&gt;</span> <span class="ident">Future</span> <span class="kw">for</span> <span class="ident">Lock</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">T</span><span class="op">&gt;</span> {
             <span class="kw">type</span> <span class="ident">Output</span> <span class="op">=</span> <span class="ident">RwLockUpgradableReadGuard</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">T</span><span class="op">&gt;</span>;
-
-            <span class="kw">fn</span> <span class="ident">poll</span>(<span class="kw-2">mut</span> <span class="self">self</span>: <span class="ident">Pin</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">Self</span><span class="op">&gt;</span>, <span class="ident">cx</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">Context</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Poll</span><span class="op">&lt;</span><span class="self">Self</span><span class="ident">::Output</span><span class="op">&gt;</span> {
-                <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">g</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">lk</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
+            <span class="kw">fn</span> <span class="ident">poll</span>(<span class="kw-2">mut</span> <span class="self">self</span>: <span class="ident">Pin</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">Self</span><span class="op">&gt;</span>, <span class="ident">ctx</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">Context</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Poll</span><span class="op">&lt;</span><span class="self">Self</span><span class="ident">::Output</span><span class="op">&gt;</span> {
+                <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">lk</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
                 <span class="kw">if</span> <span class="self">self</span>.<span class="ident">first</span> {
                     <span class="self">self</span>.<span class="ident">first</span> <span class="op">=</span> <span class="bool-val">false</span>;
-                    <span class="kw">if</span> <span class="ident">try_upread</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">g</span>, <span class="bool-val">true</span>) {
+                    <span class="kw">if</span> <span class="ident">inner</span>.<span class="ident">try_upgradable_read</span>(<span class="bool-val">true</span>).<span class="ident">is_ok</span>() {
                         <span class="ident">Poll::Ready</span>(<span class="ident">RwLockUpgradableReadGuard</span>(<span class="self">self</span>.<span class="ident">lk</span>))
                     } <span class="kw">else</span> {
-                        <span class="ident">g</span>.<span class="ident">slpque</span>.<span class="ident">sleep</span>(<span class="ident">RwType::UpgradableReader</span>, <span class="ident">cx</span>.<span class="ident">waker</span>().<span class="ident">clone</span>());
+                        <span class="ident">Task::sleep_back</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">inner</span>.<span class="ident">slpque</span>, <span class="ident">SleepKind::UpgradableReader</span>, <span class="ident">ctx</span>);
                         <span class="ident">Poll::Pending</span>
                     }
                 } <span class="kw">else</span> {
@@ -1139,8 +1195,8 @@
     <span class="doccomment">///</span>
     <span class="doccomment">/// See also [write](`Self::write`)</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">try_write</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">RwLockWriteGuard</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span>, <span class="ident">T</span><span class="op">&gt;</span><span class="op">&gt;</span> {
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">g</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
-        <span class="kw">if</span> <span class="ident">try_write</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">g</span>, <span class="bool-val">true</span>) {
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
+        <span class="kw">if</span> <span class="ident">inner</span>.<span class="ident">try_write</span>(<span class="bool-val">true</span>).<span class="ident">is_ok</span>() {
             <span class="prelude-val">Some</span>(<span class="ident">RwLockWriteGuard</span>(<span class="self">self</span>))
         } <span class="kw">else</span> {
             <span class="prelude-val">None</span>
@@ -1154,7 +1210,7 @@
     <span class="doccomment">/// # Examples</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// ```</span>
-    <span class="doccomment">/// # ksched::task::spawn(0, async {</span>
+    <span class="doccomment">/// # ksched::task::spawn(async {</span>
     <span class="doccomment">/// use ksched::sync::RwLock;</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// let lock = RwLock::new(1);</span>
@@ -1162,7 +1218,7 @@
     <span class="doccomment">/// let writer = lock.write().await;</span>
     <span class="doccomment">/// assert!(lock.try_read().is_none());</span>
     <span class="doccomment">/// # });</span>
-    <span class="doccomment">/// # ksched::task::run_all();</span>
+    <span class="doccomment">/// # ksched::task::run();</span>
     <span class="doccomment">/// ```</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">write</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">RwLockWriteGuard</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span>, <span class="ident">T</span><span class="op">&gt;</span> {
         <span class="kw">struct</span> <span class="ident">Lock</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">T</span>: <span class="question-mark">?</span><span class="ident">Sized</span><span class="op">&gt;</span> {
@@ -1172,16 +1228,15 @@
 
         <span class="kw">impl</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">T</span>: <span class="question-mark">?</span><span class="ident">Sized</span><span class="op">&gt;</span> <span class="ident">Future</span> <span class="kw">for</span> <span class="ident">Lock</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">T</span><span class="op">&gt;</span> {
             <span class="kw">type</span> <span class="ident">Output</span> <span class="op">=</span> <span class="ident">RwLockWriteGuard</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">T</span><span class="op">&gt;</span>;
-
-            <span class="kw">fn</span> <span class="ident">poll</span>(<span class="kw-2">mut</span> <span class="self">self</span>: <span class="ident">Pin</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">Self</span><span class="op">&gt;</span>, <span class="ident">cx</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">Context</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Poll</span><span class="op">&lt;</span><span class="self">Self</span><span class="ident">::Output</span><span class="op">&gt;</span> {
-                <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">g</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">lk</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
+            <span class="kw">fn</span> <span class="ident">poll</span>(<span class="kw-2">mut</span> <span class="self">self</span>: <span class="ident">Pin</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">Self</span><span class="op">&gt;</span>, <span class="ident">ctx</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">Context</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Poll</span><span class="op">&lt;</span><span class="self">Self</span><span class="ident">::Output</span><span class="op">&gt;</span> {
+                <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">lk</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
                 <span class="kw">if</span> <span class="self">self</span>.<span class="ident">first</span> {
                     <span class="self">self</span>.<span class="ident">first</span> <span class="op">=</span> <span class="bool-val">false</span>;
-                    <span class="kw">if</span> <span class="ident">try_write</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">g</span>, <span class="bool-val">true</span>) {
+                    <span class="kw">if</span> <span class="ident">inner</span>.<span class="ident">try_write</span>(<span class="bool-val">true</span>).<span class="ident">is_ok</span>() {
                         <span class="ident">Poll::Ready</span>(<span class="ident">RwLockWriteGuard</span>(<span class="self">self</span>.<span class="ident">lk</span>))
                     } <span class="kw">else</span> {
-                        <span class="ident">g</span>.<span class="ident">slpque</span>.<span class="ident">sleep</span>(<span class="ident">RwType::Writer</span>, <span class="ident">cx</span>.<span class="ident">waker</span>().<span class="ident">clone</span>());
-                        <span class="ident">g</span>.<span class="ident">waiting_writer</span> <span class="op">+</span><span class="op">=</span> <span class="number">1</span>;
+                        <span class="ident">Task::sleep_back</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">inner</span>.<span class="ident">slpque</span>, <span class="ident">SleepKind::Writer</span>, <span class="ident">ctx</span>);
+                        <span class="ident">inner</span>.<span class="ident">waiting_writer</span> <span class="op">+</span><span class="op">=</span> <span class="number">1</span>;
                         <span class="ident">Poll::Pending</span>
                     }
                 } <span class="kw">else</span> {
@@ -1205,7 +1260,7 @@
     <span class="doccomment">/// # Examples</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// ```</span>
-    <span class="doccomment">/// # ksched::task::spawn(0, async {</span>
+    <span class="doccomment">/// # ksched::task::spawn(async {</span>
     <span class="doccomment">/// use ksched::sync::RwLock;</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// let mut lock = RwLock::new(1);</span>
@@ -1213,7 +1268,7 @@
     <span class="doccomment">/// *lock.get_mut() = 2;</span>
     <span class="doccomment">/// assert_eq!(*lock.read().await, 2);</span>
     <span class="doccomment">/// # });</span>
-    <span class="doccomment">/// # ksched::task::run_all();</span>
+    <span class="doccomment">/// # ksched::task::run();</span>
     <span class="doccomment">/// ```</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">get_mut</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">T</span> {
         <span class="kw">unsafe</span> { <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="kw-2">*</span><span class="self">self</span>.<span class="ident">value</span>.<span class="ident">get</span>() }
@@ -1223,6 +1278,7 @@
 <span class="kw">impl</span><span class="op">&lt;</span><span class="ident">T</span>: <span class="ident">fmt::Debug</span> <span class="op">+</span> <span class="question-mark">?</span><span class="ident">Sized</span><span class="op">&gt;</span> <span class="ident">fmt::Debug</span> <span class="kw">for</span> <span class="ident">RwLock</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span> {
     <span class="kw">fn</span> <span class="ident">fmt</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">f</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">fmt::Formatter</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">fmt::Result</span> {
         <span class="kw">struct</span> <span class="ident">Locked</span>;
+
         <span class="kw">impl</span> <span class="ident">fmt::Debug</span> <span class="kw">for</span> <span class="ident">Locked</span> {
             <span class="kw">fn</span> <span class="ident">fmt</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">f</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">fmt::Formatter</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">fmt::Result</span> {
                 <span class="ident">f</span>.<span class="ident">write_str</span>(<span class="string">&quot;&lt;locked&gt;&quot;</span>)
@@ -1254,39 +1310,14 @@
 <span class="kw">unsafe</span> <span class="kw">impl</span><span class="op">&lt;</span><span class="ident">T</span>: <span class="ident">Sync</span> <span class="op">+</span> <span class="question-mark">?</span><span class="ident">Sized</span><span class="op">&gt;</span> <span class="ident">Send</span> <span class="kw">for</span> <span class="ident">RwLockReadGuard</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span>, <span class="ident">T</span><span class="op">&gt;</span> {}
 <span class="kw">unsafe</span> <span class="kw">impl</span><span class="op">&lt;</span><span class="ident">T</span>: <span class="ident">Sync</span> <span class="op">+</span> <span class="question-mark">?</span><span class="ident">Sized</span><span class="op">&gt;</span> <span class="ident">Sync</span> <span class="kw">for</span> <span class="ident">RwLockReadGuard</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span>, <span class="ident">T</span><span class="op">&gt;</span> {}
 
-<span class="doccomment">/// Try to wake up waiters.</span>
-<span class="kw">fn</span> <span class="ident">extend_wake</span>(<span class="ident">g</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">RwLockInner</span>) {
-    <span class="kw">while</span> <span class="kw">let</span> <span class="prelude-val">Some</span>((<span class="ident">t</span>, <span class="ident">w</span>)) <span class="op">=</span> <span class="ident">g</span>.<span class="ident">slpque</span>.<span class="ident">que</span>.<span class="ident">pop_front</span>() {
-        <span class="kw">let</span> <span class="ident">try_wake</span> <span class="op">=</span> <span class="kw">match</span> <span class="ident">t</span> {
-            <span class="ident">RwType::Reader</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">try_read</span>(<span class="ident">g</span>, <span class="bool-val">false</span>),
-            <span class="ident">RwType::UpgradableReader</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">try_upread</span>(<span class="ident">g</span>, <span class="bool-val">false</span>),
-            <span class="ident">RwType::Writer</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">try_write</span>(<span class="ident">g</span>, <span class="bool-val">false</span>)
-                .<span class="ident">then</span>(<span class="op">|</span><span class="op">|</span> {
-                    <span class="ident">g</span>.<span class="ident">waiting_writer</span> <span class="op">-</span><span class="op">=</span> <span class="number">1</span>;
-                })
-                .<span class="ident">is_some</span>(),
-        };
-        <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">test</span>)]</span>
-        <span class="macro">println!</span>(<span class="string">&quot;extend_wake: {:?}, try_wake {}&quot;</span>, <span class="ident">t</span>, <span class="ident">try_wake</span>);
-        <span class="kw">if</span> <span class="ident">try_wake</span> {
-            <span class="ident">w</span>.<span class="ident">wake</span>()
-        } <span class="kw">else</span> {
-            <span class="ident">g</span>.<span class="ident">slpque</span>.<span class="ident">sleep_front</span>(<span class="ident">t</span>, <span class="ident">w</span>);
-            <span class="kw">break</span>;
-        }
-    }
-}
-
 <span class="kw">impl</span><span class="op">&lt;</span><span class="ident">T</span>: <span class="question-mark">?</span><span class="ident">Sized</span><span class="op">&gt;</span> <span class="ident">Drop</span> <span class="kw">for</span> <span class="ident">RwLockReadGuard</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span>, <span class="ident">T</span><span class="op">&gt;</span> {
     <span class="kw">fn</span> <span class="ident">drop</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>) {
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">g</span> <span class="op">=</span> <span class="self">self</span>.<span class="number">0</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
-        <span class="macro">debug_assert_eq!</span>(<span class="ident">g</span>.<span class="ident">state</span> <span class="op">&amp;</span> <span class="number">1</span>, <span class="number">0</span>);
-        <span class="macro">debug_assert_ne!</span>(<span class="ident">g</span>.<span class="ident">state</span>, <span class="number">0</span>);
-        <span class="comment">// Decrement the number of readers.</span>
-        <span class="ident">g</span>.<span class="ident">state</span> <span class="op">-</span><span class="op">=</span> <span class="ident">ONE_READER</span>;
-        <span class="comment">// If this was the last reader.</span>
-        <span class="kw">if</span> <span class="ident">g</span>.<span class="ident">state</span> <span class="op">=</span><span class="op">=</span> <span class="number">0</span> {
-            <span class="ident">extend_wake</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">g</span>);
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="number">0</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
+        <span class="macro">debug_assert_eq!</span>(<span class="ident">inner</span>.<span class="ident">active_writer_cnt</span>(), <span class="number">0</span>);
+        <span class="macro">debug_assert_ne!</span>(<span class="ident">inner</span>.<span class="ident">active_reader_cnt</span>(), <span class="number">0</span>);
+        <span class="ident">inner</span>.<span class="ident">state</span> <span class="op">-</span><span class="op">=</span> <span class="ident">ONE_READER</span>;
+        <span class="kw">if</span> <span class="ident">inner</span>.<span class="ident">state</span> <span class="op">=</span><span class="op">=</span> <span class="number">0</span> {
+            <span class="ident">inner</span>.<span class="ident">try_to_wakeup</span>();
         }
     }
 }
@@ -1318,19 +1349,12 @@
 <span class="kw">unsafe</span> <span class="kw">impl</span><span class="op">&lt;</span><span class="ident">T</span>: <span class="ident">Sync</span> <span class="op">+</span> <span class="question-mark">?</span><span class="ident">Sized</span><span class="op">&gt;</span> <span class="ident">Sync</span> <span class="kw">for</span> <span class="ident">RwLockUpgradableReadGuard</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span>, <span class="ident">T</span><span class="op">&gt;</span> {}
 
 <span class="kw">impl</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">T</span>: <span class="question-mark">?</span><span class="ident">Sized</span><span class="op">&gt;</span> <span class="ident">RwLockUpgradableReadGuard</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">T</span><span class="op">&gt;</span> {
-    <span class="doccomment">/// Converts this guard into a writer guard.</span>
-    <span class="kw">fn</span> <span class="ident">into_writer</span>(<span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">RwLockWriteGuard</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">T</span><span class="op">&gt;</span> {
-        <span class="kw">let</span> <span class="ident">g</span> <span class="op">=</span> <span class="ident">RwLockWriteGuard</span>(<span class="self">self</span>.<span class="number">0</span>);
-        <span class="ident">mem::forget</span>(<span class="self">self</span>);
-        <span class="ident">g</span>
-    }
-
     <span class="doccomment">/// Downgrades into a regular reader guard.</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// # Examples</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// ```</span>
-    <span class="doccomment">/// # ksched::task::spawn(0, async {</span>
+    <span class="doccomment">/// # ksched::task::spawn(async {</span>
     <span class="doccomment">/// use ksched::sync::{RwLock, RwLockUpgradableReadGuard};</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// let lock = RwLock::new(1);</span>
@@ -1344,18 +1368,20 @@
     <span class="doccomment">///</span>
     <span class="doccomment">/// assert!(lock.try_upgradable_read().is_some());</span>
     <span class="doccomment">/// # });</span>
-    <span class="doccomment">/// # ksched::task::run_all();</span>
+    <span class="doccomment">/// # ksched::task::run();</span>
     <span class="doccomment">/// ```</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">downgrade</span>(<span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">RwLockReadGuard</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">T</span><span class="op">&gt;</span> {
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">g</span> <span class="op">=</span> <span class="self">self</span>.<span class="number">0</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
-        <span class="macro">debug_assert_eq!</span>(<span class="ident">g</span>.<span class="ident">state</span> <span class="op">&amp;</span> <span class="number">3</span>, <span class="number">2</span>);
-        <span class="ident">g</span>.<span class="ident">state</span> <span class="op">+</span><span class="op">=</span> <span class="ident">ONE_READER</span> <span class="op">-</span> <span class="number">2</span>;
-        <span class="ident">extend_wake</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">g</span>);
-        <span class="ident">drop</span>(<span class="ident">g</span>);
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="number">0</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
+        <span class="macro">debug_assert_eq!</span>(<span class="ident">inner</span>.<span class="ident">active_writer_cnt</span>(), <span class="number">0</span>);
+        <span class="macro">debug_assert_eq!</span>(<span class="ident">inner</span>.<span class="ident">active_upgradable_reader_cnt</span>(), <span class="number">1</span>);
+        <span class="ident">inner</span>.<span class="ident">state</span> <span class="op">-</span><span class="op">=</span> <span class="ident">ONE_UPGRADABLE_READER</span>;
+        <span class="ident">inner</span>.<span class="ident">state</span> <span class="op">+</span><span class="op">=</span> <span class="ident">ONE_READER</span>;
+        <span class="ident">inner</span>.<span class="ident">try_to_wakeup</span>();
+        <span class="ident">drop</span>(<span class="ident">inner</span>);
 
-        <span class="kw">let</span> <span class="ident">g</span> <span class="op">=</span> <span class="ident">RwLockReadGuard</span>(<span class="self">self</span>.<span class="number">0</span>);
+        <span class="kw">let</span> <span class="ident">guard</span> <span class="op">=</span> <span class="ident">RwLockReadGuard</span>(<span class="self">self</span>.<span class="number">0</span>);
         <span class="ident">mem::forget</span>(<span class="self">self</span>);
-        <span class="ident">g</span>
+        <span class="ident">guard</span>
     }
 
     <span class="doccomment">/// Attempts to upgrade into a write lock.</span>
@@ -1368,7 +1394,7 @@
     <span class="doccomment">/// # Examples</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// ```</span>
-    <span class="doccomment">/// # ksched::task::spawn(0, async {</span>
+    <span class="doccomment">/// # ksched::task::spawn(async {</span>
     <span class="doccomment">/// use ksched::sync::{RwLock, RwLockUpgradableReadGuard};</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// let lock = RwLock::new(1);</span>
@@ -1382,16 +1408,19 @@
     <span class="doccomment">/// drop(reader2);</span>
     <span class="doccomment">/// let writer = RwLockUpgradableReadGuard::try_upgrade(reader).unwrap();</span>
     <span class="doccomment">/// # });</span>
-    <span class="doccomment">/// # ksched::task::run_all();</span>
+    <span class="doccomment">/// # ksched::task::run();</span>
     <span class="doccomment">/// ```</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">try_upgrade</span>(<span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">RwLockWriteGuard</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">T</span><span class="op">&gt;</span>, <span class="self">Self</span><span class="op">&gt;</span> {
-        <span class="comment">// If there are no readers, grab the write lock.</span>
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">g</span> <span class="op">=</span> <span class="self">self</span>.<span class="number">0</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
-        <span class="macro">debug_assert_eq!</span>(<span class="ident">g</span>.<span class="ident">state</span> <span class="op">&amp;</span> <span class="number">3</span>, <span class="number">2</span>);
-        <span class="comment">// If it is the last one.</span>
-        <span class="kw">if</span> <span class="ident">g</span>.<span class="ident">state</span> <span class="op">=</span><span class="op">=</span> <span class="number">2</span> {
-            <span class="ident">g</span>.<span class="ident">state</span> <span class="op">=</span> <span class="number">1</span>;
-            <span class="prelude-val">Ok</span>(<span class="self">self</span>.<span class="ident">into_writer</span>())
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="number">0</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
+        <span class="macro">debug_assert_eq!</span>(<span class="ident">inner</span>.<span class="ident">active_writer_cnt</span>(), <span class="number">0</span>);
+        <span class="macro">debug_assert_eq!</span>(<span class="ident">inner</span>.<span class="ident">active_upgradable_reader_cnt</span>(), <span class="number">1</span>);
+        <span class="kw">if</span> <span class="ident">inner</span>.<span class="ident">active_reader_cnt</span>() <span class="op">=</span><span class="op">=</span> <span class="number">0</span> {
+            <span class="ident">inner</span>.<span class="ident">state</span> <span class="op">=</span> <span class="ident">ONE_WRITER</span>;
+            <span class="ident">drop</span>(<span class="ident">inner</span>);
+
+            <span class="kw">let</span> <span class="ident">guard</span> <span class="op">=</span> <span class="ident">RwLockWriteGuard</span>(<span class="self">self</span>.<span class="number">0</span>);
+            <span class="ident">mem::forget</span>(<span class="self">self</span>);
+            <span class="prelude-val">Ok</span>(<span class="ident">guard</span>)
         } <span class="kw">else</span> {
             <span class="prelude-val">Err</span>(<span class="self">self</span>)
         }
@@ -1399,10 +1428,12 @@
 
     <span class="doccomment">/// Upgrades into a write lock.</span>
     <span class="doccomment">///</span>
+    <span class="doccomment">/// No writer can acquire this lock until the upgrade has finished.</span>
+    <span class="doccomment">///</span>
     <span class="doccomment">/// # Examples</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// ```</span>
-    <span class="doccomment">/// # ksched::task::spawn(0, async {</span>
+    <span class="doccomment">/// # ksched::task::spawn(async {</span>
     <span class="doccomment">/// use ksched::sync::{RwLock, RwLockUpgradableReadGuard};</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// let lock = RwLock::new(1);</span>
@@ -1413,30 +1444,29 @@
     <span class="doccomment">/// let mut writer = RwLockUpgradableReadGuard::upgrade(reader).await;</span>
     <span class="doccomment">/// *writer = 2;</span>
     <span class="doccomment">/// # });</span>
-    <span class="doccomment">/// # ksched::task::run_all();</span>
+    <span class="doccomment">/// # ksched::task::run();</span>
     <span class="doccomment">/// ```</span>
     <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">upgrade</span>(<span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">RwLockWriteGuard</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">T</span><span class="op">&gt;</span> {
-        <span class="kw">struct</span> <span class="ident">Lock</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">T</span>: <span class="question-mark">?</span><span class="ident">Sized</span><span class="op">&gt;</span> {
+        <span class="kw">struct</span> <span class="ident">Upgrade</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">T</span>: <span class="question-mark">?</span><span class="ident">Sized</span><span class="op">&gt;</span> {
             <span class="ident">first</span>: <span class="ident">bool</span>,
             <span class="ident">lk</span>: <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="ident">RwLock</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span>,
         }
 
-        <span class="kw">impl</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">T</span>: <span class="question-mark">?</span><span class="ident">Sized</span><span class="op">&gt;</span> <span class="ident">Future</span> <span class="kw">for</span> <span class="ident">Lock</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">T</span><span class="op">&gt;</span> {
+        <span class="kw">impl</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">T</span>: <span class="question-mark">?</span><span class="ident">Sized</span><span class="op">&gt;</span> <span class="ident">Future</span> <span class="kw">for</span> <span class="ident">Upgrade</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">T</span><span class="op">&gt;</span> {
             <span class="kw">type</span> <span class="ident">Output</span> <span class="op">=</span> <span class="ident">RwLockWriteGuard</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">T</span><span class="op">&gt;</span>;
-
-            <span class="kw">fn</span> <span class="ident">poll</span>(<span class="kw-2">mut</span> <span class="self">self</span>: <span class="ident">Pin</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">Self</span><span class="op">&gt;</span>, <span class="ident">cx</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">Context</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Poll</span><span class="op">&lt;</span><span class="self">Self</span><span class="ident">::Output</span><span class="op">&gt;</span> {
-                <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">g</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">lk</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
+            <span class="kw">fn</span> <span class="ident">poll</span>(<span class="kw-2">mut</span> <span class="self">self</span>: <span class="ident">Pin</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">Self</span><span class="op">&gt;</span>, <span class="ident">ctx</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">Context</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Poll</span><span class="op">&lt;</span><span class="self">Self</span><span class="ident">::Output</span><span class="op">&gt;</span> {
+                <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">lk</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
                 <span class="kw">if</span> <span class="self">self</span>.<span class="ident">first</span> {
                     <span class="self">self</span>.<span class="ident">first</span> <span class="op">=</span> <span class="bool-val">false</span>;
 
-                    <span class="macro">debug_assert_eq!</span>(<span class="ident">g</span>.<span class="ident">state</span> <span class="op">&amp;</span> <span class="number">1</span>, <span class="number">0</span>);
-                    <span class="macro">debug_assert_eq!</span>(<span class="ident">g</span>.<span class="ident">state</span> <span class="op">&amp;</span> <span class="number">2</span>, <span class="number">2</span>);
-                    <span class="ident">g</span>.<span class="ident">state</span> <span class="op">-</span><span class="op">=</span> <span class="number">2</span>;
-                    <span class="kw">if</span> <span class="ident">try_write</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">g</span>, <span class="bool-val">false</span>) {
+                    <span class="macro">debug_assert_eq!</span>(<span class="ident">inner</span>.<span class="ident">active_writer_cnt</span>(), <span class="number">0</span>);
+                    <span class="macro">debug_assert_eq!</span>(<span class="ident">inner</span>.<span class="ident">active_upgradable_reader_cnt</span>(), <span class="number">1</span>);
+                    <span class="ident">inner</span>.<span class="ident">state</span> <span class="op">-</span><span class="op">=</span> <span class="ident">ONE_UPGRADABLE_READER</span>;
+                    <span class="kw">if</span> <span class="ident">inner</span>.<span class="ident">try_write</span>(<span class="bool-val">false</span>).<span class="ident">is_ok</span>() {
                         <span class="ident">Poll::Ready</span>(<span class="ident">RwLockWriteGuard</span>(<span class="self">self</span>.<span class="ident">lk</span>))
                     } <span class="kw">else</span> {
-                        <span class="ident">g</span>.<span class="ident">slpque</span>.<span class="ident">sleep_front</span>(<span class="ident">RwType::Writer</span>, <span class="ident">cx</span>.<span class="ident">waker</span>().<span class="ident">clone</span>());
-                        <span class="ident">g</span>.<span class="ident">waiting_writer</span> <span class="op">+</span><span class="op">=</span> <span class="number">1</span>;
+                        <span class="ident">Task::sleep_front</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">inner</span>.<span class="ident">slpque</span>, <span class="ident">SleepKind::Writer</span>, <span class="ident">ctx</span>);
+                        <span class="ident">inner</span>.<span class="ident">waiting_writer</span> <span class="op">+</span><span class="op">=</span> <span class="number">1</span>;
                         <span class="ident">Poll::Pending</span>
                     }
                 } <span class="kw">else</span> {
@@ -1445,22 +1475,23 @@
             }
         }
 
-        <span class="kw">let</span> <span class="ident">ret</span> <span class="op">=</span> <span class="ident">Lock</span> {
-            <span class="ident">lk</span>: <span class="self">self</span>.<span class="number">0</span>,
+        <span class="kw">let</span> <span class="ident">guard</span> <span class="op">=</span> <span class="ident">Upgrade</span> {
             <span class="ident">first</span>: <span class="bool-val">true</span>,
+            <span class="ident">lk</span>: <span class="self">self</span>.<span class="number">0</span>,
         }
         .<span class="kw">await</span>;
         <span class="ident">mem::forget</span>(<span class="self">self</span>);
-        <span class="ident">ret</span>
+        <span class="ident">guard</span>
     }
 }
 
 <span class="kw">impl</span><span class="op">&lt;</span><span class="ident">T</span>: <span class="question-mark">?</span><span class="ident">Sized</span><span class="op">&gt;</span> <span class="ident">Drop</span> <span class="kw">for</span> <span class="ident">RwLockUpgradableReadGuard</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span>, <span class="ident">T</span><span class="op">&gt;</span> {
     <span class="kw">fn</span> <span class="ident">drop</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>) {
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">g</span> <span class="op">=</span> <span class="self">self</span>.<span class="number">0</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
-        <span class="macro">debug_assert_eq!</span>(<span class="ident">g</span>.<span class="ident">state</span> <span class="op">&amp;</span> <span class="number">3</span>, <span class="number">2</span>);
-        <span class="ident">g</span>.<span class="ident">state</span> <span class="op">-</span><span class="op">=</span> <span class="number">2</span>;
-        <span class="ident">extend_wake</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">g</span>);
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="number">0</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
+        <span class="macro">debug_assert_eq!</span>(<span class="ident">inner</span>.<span class="ident">active_writer_cnt</span>(), <span class="number">0</span>);
+        <span class="macro">debug_assert_eq!</span>(<span class="ident">inner</span>.<span class="ident">active_upgradable_reader_cnt</span>(), <span class="number">1</span>);
+        <span class="ident">inner</span>.<span class="ident">state</span> <span class="op">-</span><span class="op">=</span> <span class="ident">ONE_UPGRADABLE_READER</span>;
+        <span class="ident">inner</span>.<span class="ident">try_to_wakeup</span>();
     }
 }
 
@@ -1491,12 +1522,19 @@
 <span class="kw">unsafe</span> <span class="kw">impl</span><span class="op">&lt;</span><span class="ident">T</span>: <span class="ident">Sync</span> <span class="op">+</span> <span class="question-mark">?</span><span class="ident">Sized</span><span class="op">&gt;</span> <span class="ident">Sync</span> <span class="kw">for</span> <span class="ident">RwLockWriteGuard</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span>, <span class="ident">T</span><span class="op">&gt;</span> {}
 
 <span class="kw">impl</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">T</span>: <span class="question-mark">?</span><span class="ident">Sized</span><span class="op">&gt;</span> <span class="ident">RwLockWriteGuard</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">T</span><span class="op">&gt;</span> {
+    <span class="doccomment">/// Create a writer guard without acquiring the lock.</span>
+    <span class="doccomment">///</span>
+    <span class="doccomment">/// You need to guarantee that you are actually the writer before.</span>
+    <span class="kw">pub</span> <span class="kw">unsafe</span> <span class="kw">fn</span> <span class="ident">from_raw</span>(<span class="ident">lock</span>: <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="ident">RwLock</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
+        <span class="self">Self</span>(<span class="ident">lock</span>)
+    }
+
     <span class="doccomment">/// Downgrades into a regular reader guard.</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// # Examples</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// ```</span>
-    <span class="doccomment">/// # ksched::task::spawn(0, async {</span>
+    <span class="doccomment">/// # ksched::task::spawn(async {</span>
     <span class="doccomment">/// use ksched::sync::{RwLock, RwLockWriteGuard};</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// let lock = RwLock::new(1);</span>
@@ -1511,18 +1549,18 @@
     <span class="doccomment">///</span>
     <span class="doccomment">/// assert!(lock.try_read().is_some());</span>
     <span class="doccomment">/// # });</span>
-    <span class="doccomment">/// # ksched::task::run_all();</span>
+    <span class="doccomment">/// # ksched::task::run();</span>
     <span class="doccomment">/// ```</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">downgrade</span>(<span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">RwLockReadGuard</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">T</span><span class="op">&gt;</span> {
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">g</span> <span class="op">=</span> <span class="self">self</span>.<span class="number">0</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
-        <span class="macro">debug_assert_eq!</span>(<span class="ident">g</span>.<span class="ident">state</span>, <span class="number">1</span>);
-        <span class="ident">g</span>.<span class="ident">state</span> <span class="op">=</span> <span class="ident">ONE_READER</span>;
-        <span class="ident">extend_wake</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">g</span>);
-        <span class="ident">drop</span>(<span class="ident">g</span>);
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="number">0</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
+        <span class="macro">debug_assert_eq!</span>(<span class="ident">inner</span>.<span class="ident">state</span>, <span class="ident">ONE_WRITER</span>);
+        <span class="ident">inner</span>.<span class="ident">state</span> <span class="op">=</span> <span class="ident">ONE_READER</span>;
+        <span class="ident">inner</span>.<span class="ident">try_to_wakeup</span>();
+        <span class="ident">drop</span>(<span class="ident">inner</span>);
 
-        <span class="kw">let</span> <span class="ident">g</span> <span class="op">=</span> <span class="ident">RwLockReadGuard</span>(<span class="self">self</span>.<span class="number">0</span>);
+        <span class="kw">let</span> <span class="ident">guard</span> <span class="op">=</span> <span class="ident">RwLockReadGuard</span>(<span class="self">self</span>.<span class="number">0</span>);
         <span class="ident">mem::forget</span>(<span class="self">self</span>);
-        <span class="ident">g</span>
+        <span class="ident">guard</span>
     }
 
     <span class="doccomment">/// Downgrades into an upgradable reader guard.</span>
@@ -1530,7 +1568,7 @@
     <span class="doccomment">/// # Examples</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// ```</span>
-    <span class="doccomment">/// # ksched::task::spawn(0, async {</span>
+    <span class="doccomment">/// # ksched::task::spawn(async {</span>
     <span class="doccomment">/// use ksched::sync::{RwLock, RwLockUpgradableReadGuard, RwLockWriteGuard};</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// let lock = RwLock::new(1);</span>
@@ -1548,27 +1586,27 @@
     <span class="doccomment">///</span>
     <span class="doccomment">/// assert!(RwLockUpgradableReadGuard::try_upgrade(reader).is_ok())</span>
     <span class="doccomment">/// # });</span>
-    <span class="doccomment">/// # ksched::task::run_all();</span>
+    <span class="doccomment">/// # ksched::task::run();</span>
     <span class="doccomment">/// ```</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">downgrade_to_upgradable</span>(<span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">RwLockUpgradableReadGuard</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">T</span><span class="op">&gt;</span> {
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">g</span> <span class="op">=</span> <span class="self">self</span>.<span class="number">0</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
-        <span class="macro">debug_assert_eq!</span>(<span class="ident">g</span>.<span class="ident">state</span>, <span class="number">1</span>);
-        <span class="ident">g</span>.<span class="ident">state</span> <span class="op">=</span> <span class="number">2</span>;
-        <span class="ident">extend_wake</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">g</span>);
-        <span class="ident">drop</span>(<span class="ident">g</span>);
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="number">0</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
+        <span class="macro">debug_assert_eq!</span>(<span class="ident">inner</span>.<span class="ident">state</span>, <span class="ident">ONE_WRITER</span>);
+        <span class="ident">inner</span>.<span class="ident">state</span> <span class="op">=</span> <span class="ident">ONE_UPGRADABLE_READER</span>;
+        <span class="ident">inner</span>.<span class="ident">try_to_wakeup</span>();
+        <span class="ident">drop</span>(<span class="ident">inner</span>);
 
-        <span class="kw">let</span> <span class="ident">g</span> <span class="op">=</span> <span class="ident">RwLockUpgradableReadGuard</span>(<span class="self">self</span>.<span class="number">0</span>);
+        <span class="kw">let</span> <span class="ident">guard</span> <span class="op">=</span> <span class="ident">RwLockUpgradableReadGuard</span>(<span class="self">self</span>.<span class="number">0</span>);
         <span class="ident">mem::forget</span>(<span class="self">self</span>);
-        <span class="ident">g</span>
+        <span class="ident">guard</span>
     }
 }
 
 <span class="kw">impl</span><span class="op">&lt;</span><span class="ident">T</span>: <span class="question-mark">?</span><span class="ident">Sized</span><span class="op">&gt;</span> <span class="ident">Drop</span> <span class="kw">for</span> <span class="ident">RwLockWriteGuard</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span>, <span class="ident">T</span><span class="op">&gt;</span> {
     <span class="kw">fn</span> <span class="ident">drop</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>) {
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">g</span> <span class="op">=</span> <span class="self">self</span>.<span class="number">0</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
-        <span class="macro">debug_assert_eq!</span>(<span class="ident">g</span>.<span class="ident">state</span>, <span class="number">1</span>);
-        <span class="ident">g</span>.<span class="ident">state</span> <span class="op">=</span> <span class="number">0</span>;
-        <span class="ident">extend_wake</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">g</span>);
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="number">0</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
+        <span class="macro">debug_assert_eq!</span>(<span class="ident">inner</span>.<span class="ident">state</span>, <span class="ident">ONE_WRITER</span>);
+        <span class="ident">inner</span>.<span class="ident">state</span> <span class="op">=</span> <span class="number">0</span>;
+        <span class="ident">inner</span>.<span class="ident">try_to_wakeup</span>();
     }
 }
 
@@ -1611,7 +1649,7 @@
         <span class="kw">let</span> <span class="ident">x</span> <span class="op">=</span> <span class="ident">Arc::new</span>(<span class="ident">RwLock::new</span>(<span class="number">10usize</span>));
         <span class="kw">for</span> <span class="kw">_</span> <span class="kw">in</span> <span class="number">0</span>..<span class="ident">N</span> {
             <span class="kw">let</span> <span class="ident">x</span> <span class="op">=</span> <span class="ident">x</span>.<span class="ident">clone</span>();
-            <span class="ident">task::spawn</span>(<span class="number">0</span>, <span class="kw">async</span> <span class="kw">move</span> {
+            <span class="ident">task::spawn</span>(<span class="kw">async</span> <span class="kw">move</span> {
                 <span class="kw">let</span> <span class="ident">g</span> <span class="op">=</span> <span class="ident">x</span>.<span class="ident">read</span>().<span class="kw">await</span>;
                 <span class="macro">assert_eq!</span>(<span class="kw-2">*</span><span class="ident">g</span>, <span class="number">10</span>);
             })
@@ -1626,7 +1664,7 @@
         <span class="kw">let</span> <span class="ident">x</span> <span class="op">=</span> <span class="ident">Arc::new</span>(<span class="ident">RwLock::new</span>(<span class="number">0usize</span>));
         <span class="kw">for</span> <span class="kw">_</span> <span class="kw">in</span> <span class="number">0</span>..<span class="ident">N</span> {
             <span class="kw">let</span> <span class="ident">x</span> <span class="op">=</span> <span class="ident">x</span>.<span class="ident">clone</span>();
-            <span class="ident">task::spawn</span>(<span class="number">0</span>, <span class="kw">async</span> <span class="kw">move</span> {
+            <span class="ident">task::spawn</span>(<span class="kw">async</span> <span class="kw">move</span> {
                 <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">g</span> <span class="op">=</span> <span class="ident">x</span>.<span class="ident">write</span>().<span class="kw">await</span>;
                 <span class="kw-2">*</span><span class="ident">g</span> <span class="op">+</span><span class="op">=</span> <span class="number">1</span>;
                 <span class="macro">println!</span>(<span class="string">&quot;{}&quot;</span>, <span class="kw-2">*</span><span class="ident">g</span>);
@@ -1634,7 +1672,7 @@
             .<span class="ident">unwrap</span>();
         }
         <span class="ident">run_multi</span>(<span class="number">10</span>);
-        <span class="ident">task::spawn</span>(<span class="number">0</span>, <span class="kw">async</span> <span class="kw">move</span> {
+        <span class="ident">task::spawn</span>(<span class="kw">async</span> <span class="kw">move</span> {
             <span class="kw">let</span> <span class="ident">g</span> <span class="op">=</span> <span class="ident">x</span>.<span class="ident">read</span>().<span class="kw">await</span>;
             <span class="macro">assert_eq!</span>(<span class="kw-2">*</span><span class="ident">g</span>, <span class="ident">N</span>);
         })
@@ -1644,25 +1682,25 @@
 
     <span class="attribute">#[<span class="ident">test</span>]</span>
     <span class="kw">fn</span> <span class="ident">test_readwrite</span>() {
-        <span class="kw">const</span> <span class="ident">N</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="number">100</span>;
-        <span class="kw">let</span> <span class="ident">x</span> <span class="op">=</span> <span class="ident">Arc::new</span>(<span class="ident">RwLock::new</span>(<span class="number">0usize</span>));
+        <span class="kw">const</span> <span class="ident">N</span>: <span class="ident">isize</span> <span class="op">=</span> <span class="number">100</span>;
+        <span class="kw">let</span> <span class="ident">x</span> <span class="op">=</span> <span class="ident">Arc::new</span>(<span class="ident">RwLock::new</span>(<span class="number">0isize</span>));
         <span class="kw">for</span> <span class="kw">_</span> <span class="kw">in</span> <span class="number">0</span>..<span class="ident">N</span> {
             <span class="kw">let</span> <span class="ident">x</span> <span class="op">=</span> <span class="ident">x</span>.<span class="ident">clone</span>();
             <span class="kw">let</span> <span class="ident">x2</span> <span class="op">=</span> <span class="ident">x</span>.<span class="ident">clone</span>();
-            <span class="ident">task::spawn</span>(<span class="number">0</span>, <span class="kw">async</span> <span class="kw">move</span> {
+            <span class="ident">task::spawn</span>(<span class="kw">async</span> <span class="kw">move</span> {
                 <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">g</span> <span class="op">=</span> <span class="ident">x</span>.<span class="ident">write</span>().<span class="kw">await</span>;
                 <span class="kw-2">*</span><span class="ident">g</span> <span class="op">+</span><span class="op">=</span> <span class="number">1</span>;
             })
             .<span class="ident">unwrap</span>();
-            <span class="ident">task::spawn</span>(<span class="number">0</span>, <span class="kw">async</span> <span class="kw">move</span> {
+            <span class="ident">task::spawn</span>(<span class="kw">async</span> <span class="kw">move</span> {
                 <span class="kw">let</span> <span class="ident">g</span> <span class="op">=</span> <span class="ident">x2</span>.<span class="ident">read</span>().<span class="kw">await</span>;
-                <span class="macro">assert!</span>(<span class="kw-2">*</span><span class="ident">g</span> <span class="op">&gt;</span><span class="op">=</span> <span class="number">1</span>);
+                <span class="macro">assert!</span>(<span class="kw-2">*</span><span class="ident">g</span> <span class="op">&gt;</span><span class="op">=</span> <span class="number">0</span>);
             })
             .<span class="ident">unwrap</span>();
         }
         <span class="ident">run_multi</span>(<span class="number">10</span>);
 
-        <span class="ident">task::spawn</span>(<span class="number">0</span>, <span class="kw">async</span> <span class="kw">move</span> {
+        <span class="ident">task::spawn</span>(<span class="kw">async</span> <span class="kw">move</span> {
             <span class="kw">let</span> <span class="ident">g</span> <span class="op">=</span> <span class="ident">x</span>.<span class="ident">read</span>().<span class="kw">await</span>;
             <span class="macro">assert_eq!</span>(<span class="kw-2">*</span><span class="ident">g</span>, <span class="ident">N</span>);
         })
@@ -1677,13 +1715,13 @@
         <span class="kw">for</span> <span class="kw">_</span> <span class="kw">in</span> <span class="number">0</span>..<span class="ident">N</span> {
             <span class="kw">let</span> <span class="ident">x</span> <span class="op">=</span> <span class="ident">x</span>.<span class="ident">clone</span>();
             <span class="kw">let</span> <span class="ident">x2</span> <span class="op">=</span> <span class="ident">x</span>.<span class="ident">clone</span>();
-            <span class="ident">task::spawn</span>(<span class="number">0</span>, <span class="kw">async</span> <span class="kw">move</span> {
+            <span class="ident">task::spawn</span>(<span class="kw">async</span> <span class="kw">move</span> {
                 <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">g</span> <span class="op">=</span> <span class="ident">x</span>.<span class="ident">write</span>().<span class="kw">await</span>;
                 <span class="kw-2">*</span><span class="ident">g</span> <span class="op">+</span><span class="op">=</span> <span class="number">1</span>;
             })
             .<span class="ident">unwrap</span>();
 
-            <span class="ident">task::spawn</span>(<span class="number">0</span>, <span class="kw">async</span> <span class="kw">move</span> {
+            <span class="ident">task::spawn</span>(<span class="kw">async</span> <span class="kw">move</span> {
                 <span class="kw">let</span> <span class="ident">g</span> <span class="op">=</span> <span class="ident">x2</span>.<span class="ident">upgradable_read</span>().<span class="kw">await</span>;
                 <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">g</span> <span class="op">=</span> <span class="ident">g</span>.<span class="ident">upgrade</span>().<span class="kw">await</span>;
                 <span class="kw-2">*</span><span class="ident">g</span> <span class="op">+</span><span class="op">=</span> <span class="number">1</span>;
@@ -1692,7 +1730,7 @@
         }
 
         <span class="ident">run_multi</span>(<span class="number">10</span>);
-        <span class="ident">task::spawn</span>(<span class="number">0</span>, <span class="kw">async</span> <span class="kw">move</span> {
+        <span class="ident">task::spawn</span>(<span class="kw">async</span> <span class="kw">move</span> {
             <span class="kw">let</span> <span class="ident">g</span> <span class="op">=</span> <span class="ident">x</span>.<span class="ident">read</span>().<span class="kw">await</span>;
             <span class="macro">assert_eq!</span>(<span class="kw-2">*</span><span class="ident">g</span>, <span class="number">2</span> <span class="op">*</span> <span class="ident">N</span>);
         })

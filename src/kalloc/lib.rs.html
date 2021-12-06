@@ -37,8 +37,6 @@
 <span id="34">34</span>
 <span id="35">35</span>
 <span id="36">36</span>
-<span id="37">37</span>
-<span id="38">38</span>
 </pre><pre class="rust">
 <span class="doccomment">//! # Bare-metal memory allocator for kernel development.</span>
 <span class="attribute">#![<span class="ident">deny</span>(<span class="ident">missing_docs</span>)]</span>
@@ -48,9 +46,7 @@
 <span class="attribute">#![<span class="ident">feature</span>(<span class="ident">dropck_eyepatch</span>)]</span>
 <span class="attribute">#![<span class="ident">feature</span>(<span class="ident">try_reserve</span>)]</span>
 <span class="attribute">#![<span class="ident">feature</span>(<span class="ident">const_fn_trait_bound</span>)]</span>
-<span class="attribute">#![<span class="ident">feature</span>(<span class="ident">const_generics</span>)]</span>
 
-<span class="comment">// So that we can use std when testing.</span>
 <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">test</span>)]</span>
 <span class="attribute">#[<span class="ident">macro_use</span>]</span>
 <span class="kw">extern</span> <span class="kw">crate</span> <span class="ident">std</span>;
