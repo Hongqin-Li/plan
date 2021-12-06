@@ -4,7 +4,7 @@ Plan
 <br/></h1>
 
 <p align="center">
-Platform-agnostic operating system building blocks in Rust, inspired by <a href="https://9p.io/plan9/">Plan 9</a>.
+Platform-agnostic operating system building blocks in Rust.
 </p>
 
 <div align="center">
@@ -15,39 +15,57 @@ Platform-agnostic operating system building blocks in Rust, inspired by <a href=
 
 <br/><br/>
 
-- [x] Memory management
+## Introduction
+
+Plan is a set of operating system building blocks, focusing on correctness, efficiency and maintainability. It contains practical and common modules to facilitate the construction of operating systems, but can also be used for other infrastructure software where fallible allocation is required, such as databases.
+
+## Goals and Non-Goals
+
+Our primary goal is to provide a correct library. When we talk about the correctness of a system, we are actually discussing both of safety and liveness. With the help of Rust's ownership model, safety can be guaranteed by carefully reasoning about unsafe code. Undefined behavior is forbidden in Plan. As for liveness, Plan is required to be starvation-free. Any operation in Plan must return in bounded time if called properly and all the hardwares involved work normally. Note that starvation-free implies panic-free, so even panic is not allowed.
+
+Besides, efficiency and maintainability are taken into account due to the characteristic of infrastructure software.
+
+Other objectives include
+
+- Less is more, salute to minimalism.
+- The ability to compatible with POSIX.
+
+
+And the following ones are intentionally listed for non-goals.
+
+- Not ISA or SoC specific, as the name suggests.
+- No need to compatible with other file systems.
+- No network socket, network must be abstract as file system or device.
+
+## Features
+
+- Memory management
   - [x] Multi buddy system
-  - [x] Cached allocator(like slab)
-  - [ ] Control with memory limit
-- [ ] Task management
-  - [x] Basic async scheduler and yield
-  - [ ] Timer and sleep
-  - [x] O(1) priority scheduler: in fact, it's O(logP), where P is the maximum priority level. Inspired by [RT-Thread](https://github.com/RT-Thread/rt-thread)
-  - [x] Mutex/Condvar/Rwlock: doc-test ported from [async-std](https://github.com/async-rs/async-std)
-  - [x] IPC: mpsc, can be used to eliminate recusive await
-  - [x] Test Mutex/Condvar/RwLock/mpsc
+  - [x] Cached allocator
+  - [ ] Customized data structures with allocator to support multi-tenant
+- Scheduler and synchronization primitives
+  - [x] Fair-share scheduling by DWRR<sup>[1]</sup> algorithm
+  - [x] Fixed priority pre-emptive scheduling for real-time systems
+  - [x] Mutex/Condvar/Rwlock
+  - [ ] Timer
   - [ ] RT-Mutex
-  - [ ] Online deadlock detection by wait-for graph: inspired by [parking-lot](https://github.com/Amanieu/parking_lot)
-- [x] Address space: inspired by [UVM](https://www.netbsd.org/docs/kernel/uvm.html)
-  - [x] Basic mmap/munmap
+- Core structures and isolation
+  - [x] VFS layer supporting namespace
+  - [ ] Virtual memory with on-demand paging
   - [ ] Pager daemon
-- [x] Namespace: inspired by [plan9](https://github.com/0intro/plan9)
-- [ ] File system and device driver
-  - [x] O(1) generic LRU cache
-  - [x] Log with read-committed isolation level
+- Device drivers and file systems
+  - [ ] Transaction service with serializable isolation
+  - [ ] Log layer
   - [x] Transaction-safe FAT32
-  - [x] Root/block/pipe driver
+  - [x] Root/block/pipe device
   - [ ] Get directory entry
   - [ ] Temporary file system
   - [ ] More FS
 
-## Project structure
+## Project Status
 
-```
-.
-├── kalloc: Buddy system allocator and basic data structures
-├── ksched: Async scheduler and synchronization primitives
-├── kcore: Address space, namespace and device model
-├── kdevice: Device driver such as file system
-└── ktest: Common test utils and cases
-```
+This project is still under heavy development.
+
+## References
+
+[1] Li, Tong, Dan Baumberger, and Scott Hahn. "Efficient and scalable multiprocessor fair scheduling using distributed weighted round-robin." ACM Sigplan Notices 44.4 (2009): 65-74.
